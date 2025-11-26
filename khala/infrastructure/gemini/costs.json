@@ -1,0 +1,15 @@
+[
+  {
+    "timestamp": "2025-11-25T23:29:16.377145+00:00",
+    "model_id": "gemini-2.5-flash",
+    "model_tier": "fast",
+    "input_tokens": 100,
+    "output_tokens": 50,
+    "total_tokens": 150,
+    "cost_usd": "0.00001500",
+    "response_time_ms": 150.0,
+    "task_type": "generation",
+    "success": true,
+    "error_message": null
+  }
+]
