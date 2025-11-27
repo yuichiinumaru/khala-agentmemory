@@ -1,0 +1,55 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment config (never commit real secrets)
+.env
+.env.*
+
+# Deployment artifacts
+*.tar.gz
+vivi-os-bundle.tar.gz
+
+# Backend
+backend/node_modules
+backend/.env
+
+# MCP Server
+mcp-server/node_modules
+mcp-server/.env
+
+# Deployment Secrets (Explicit)
+deploy/.env.deploy
+deploy/appwrite/.env.dev
+deploy/appwrite/.env
+.env.deploy
+
+# Agent Artifacts
+.gemini/
+.agent/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
