@@ -1,0 +1,5 @@
+{
+  "name": "Supernova - Ultimate Dashboard",
+  "description": "A high-performance, AI-integrated graph visualization platform featuring WebGL rendering, force-directed layouts, and a Gemini 2.5 powered analysis engine within a dark glassmorphism UI.",
+  "requestFramePermissions": []
+}

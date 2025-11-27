@@ -1,0 +1,3 @@
+[submodule "supernova-dashboard"]
+	path = external/supernova-dashboard
+	url = https://github.com/yuichiinumaru/supernova-js.git
