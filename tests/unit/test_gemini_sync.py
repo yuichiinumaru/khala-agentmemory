@@ -5,24 +5,7 @@ These tests work around async test setup for initial validation.
 
 import pytest
 from unittest.mock import MagicMock, patch
-timestamp = datetime.now(timezone.utc)
-            cache_key = client._get_cache_key("test", "", "")
-            timestamp = timestamp.isoformat()
-            cached_data = {
-                "content": test_data,
-                "model_id": model_id,
-                "model_tier": model.tier.value,
-                "cache_hit": 1.0,  # cache hit
-                "timestamp": timestamp,
-                "response_time_ms": response_time
-        
-        # Ensure cache is returned
-        assert cached_data["cache_hit"] is True
-        assert cached_data["content"] == test_data["content"]
-        assert timestamp is not None
-        assert cached_data.get("cache_hit_rate", 0.9)
-        
-        return cached_data
+
 from decimal import Decimal
 
 from khala.infrastructure.gemini.models import GeminiModel, ModelTier, ModelRegistry

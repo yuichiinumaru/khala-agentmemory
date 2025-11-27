@@ -357,7 +357,7 @@ class TestGeminiClient:
         mock_embedding_val = MagicMock()
         mock_embedding_val.values = MagicMock()
         mock_embedding_val.values.tolist.return_value = [0.1] * 768
-        mock_embedding_model.embed_content.return_value = [mock_embedding_val] * len(texts)]
+        mock_embedding_model.embed_content.return_value = [mock_embedding_val] * len(texts)
         client._models["gemini-embedding-001"] = mock_embedding_model
         
         embeddings = await client.generate_embeddings(texts)
@@ -469,7 +469,7 @@ class TestGeminiClient:
         model = client.select_model("Any prompt", "generation")
         assert model.tier == ModelTier.SMART
     
-    def test_disable_caching(self):
+    async def test_disable_caching(self):
         """Test client with caching disabled."""
         client.enable_caching = False
         

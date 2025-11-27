@@ -1,0 +1,26 @@
+Estratégia,Descrição,Repositórios que Usam,Benefícios,Complexidade
+Armazenamento Vetorial / Embeddings,Conversão de textos em vetores numéricos para busca semântica por similaridade,"Mem0, MemoRable, MCP Memory Service, Redis Agent, Memory-Plus, MemCP, Zep","Recuperação semântica precisa, busca por significado em vez de palavras exatas",Média-Alta
+Grafos de Conhecimento Temporais,"Estrutura de grafo para armazenar entidades, relacionamentos e suas evoluções temporais","MemCP, Agent-MCP, Mem0, Zep","Rastreamento de relacionamentos complexos, contexto temporal, navegação por entidades",Alta
+Memória em Múltiplas Camadas,"Separação em working memory (curto prazo), long-term memory, episódica","Redis Agent, OpenMemory, MemoRable, Cursor10x","Otimização de performance, acesso rápido ao contexto recente, persistência de longo prazo",Média
+Busca Híbrida,Combina busca vetorial semântica com busca por palavras-chave e metadados,"MCP Memory Service, Mem0, Redis Agent","Maior precisão, recuperação flexível, melhor ranking de relevância",Média-Alta
+Reranking,Re-ordenação dos resultados da busca usando BM25 Okapi ou modelos de reranking,"Mem0 (BM25 para grafo), doobidoo MCP","Melhora qualidade dos resultados, ranking mais preciso",Média
+Consolidação e Compactação,"Sumarização periódica de memórias antigas, compactação e remoção de redundâncias","MCP Memory Keeper, Redis Agent, Agent-MCP","Redução de espaço, manutenção de contexto essencial, performance",Média
+Cache Multi-Nível,"Cache de embeddings, modelos, preparações de consultas (LRU, in-memory)","MCP Memory Service, DevContext, Mem0","Redução de latência, menor custo computacional",Baixa-Média
+Schema Adaptável,"Schema flexível (JSONB, versioning) para evoluir estruturas sem quebrar compatibilidade","MemoRable, MCP Memory Service, Mem0","Flexibilidade, suporte a novos tipos de dados, evolução gradual",Média
+Metadados Ricos e Tags,"Metadados detalhados, tags estruturados e categorizados para filtragem eficiente","MCP Memory Service (Tag Standardization Guide), doobidoo","Organização, busca refinada, análise de padrões",Baixa-Média
+Extração de Entidades/Relacionamentos,"Uso de LLMs ou modelos NER para extrair entidades (pessoas, conceitos) e relações","Mem0, MemCP, MCP Memory Keeper","Enriquecimento automático, grafo de conhecimento, compreensão contextual",Alta
+Análise Temporal e Decay,"Atribuição de timestamps, análise de distribuição temporal, políticas de decaimento de memória antiga","MemCP (temporal graph), MCP Memory Service, Redis Agent","Contexto temporal, priorização de memórias recentes, limpeza automática",Média
+Agentes Especializados,"Múltiplos agentes com funções específicas (analyzer, synthesizer, coordinator)","Agent-MCP, MCP Memory Keeper","Paralelização, especialização de tarefas, melhor qualidade",Alta
+Processamento Background,"Processamento assíncrono de análise de padrões, otimização de índices, consolidação","MemoRable (night processing), Redis Agent (Docket tasks)","Performance em tempo real, otimização contínua",Média-Alta
+Modelos de Embeddings Híbridos,"Uso de múltiplos modelos (BGE, OpenAI, custom) para diferentes tipos de dados","MemoRable, Mem0","Flexibilidade, otimização por tipo de conteúdo",Média-Alta
+Busca ANN (HNSW/IVF),"Algoritmos de busca aproximada de vizinhos mais próximos (HNSW, IVF)","Mem0 (Qdrant, Supabase HNSW), Redis Agent, MCP Memory",Busca vetorial escalável e rápida,Média
+Contexto Emocional,"Rastreamento e integração de estados emocionais (prosody, sentiment)",MemoRable,"Interações personalizadas, empatia, compreensão de nuances",Alta
+Deduplicação,Hashing de conteúdo para evitar armazenamento de memórias duplicadas,"Redis Agent, MCP Memory Service, Cursor10x","Economia de espaço, integridade de dados",Baixa-Média
+Snapshots/Checkpoints,Salvamento periódico de estados de sessão para recuperação,MCP Memory Keeper,"Recuperação de falhas, versionamento de contexto",Média
+Multi-Tenancy,Isolamento de memórias por usuário/agente/namespace,"MCP Memory Service (OAuth2), Redis Agent, Mem0","Segurança, privacidade, suporte a múltiplos usuários",Média
+Interface MCP,Exposição de ferramentas via Model Context Protocol para integração com LLMs,"Todos os repositórios MCP (Memory Keeper, DevContext, Memory Service, etc.)",Integração padronizada com IDEs e agentes de IA,Média
+Triggers Naturais,Detecção automática de quando salvar/buscar memória baseado em contexto conversacional,MCP Memory Service (doobidoo),"Experiência natural, menos intervenção manual",Alta
+Análise de Padrões,"Análise estatística de distribuição temporal, frequência de tags, co-ocorrências","MCP Memory Service, AIAnytime","Insights sobre uso, otimização, descoberta de padrões",Média
+Streaming de Resultados,Processamento e retorno progressivo de grandes volumes de dados,MCP Memory Keeper,"Eficiência de memória, responsividade",Média
+Context Window Management,Gestão dinâmica de janela de contexto baseada em limites de tokens do modelo,"MCP Memory Keeper, Redis Agent, AIAnytime","Evita overflow, otimiza uso de contexto",Média
+Migração de Schema,Scripts de migração automática para evoluir schema de banco de dados,"Redis Agent, MCP Memory Service, MemCP","Evolução suave, compatibilidade backward",Média

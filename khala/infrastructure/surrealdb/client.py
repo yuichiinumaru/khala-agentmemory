@@ -10,7 +10,7 @@ import logging
 from contextlib import asynccontextmanager
 
 try:
-    from surrealdb import Surreal, AsyncSurreal
+    from surrealdb import Surreal
 except ImportError as e:
     raise ImportError(
         "SurrealDB is required. Install with: pip install surrealdb"
@@ -82,6 +82,22 @@ class SurrealDBClient:
             # Add to pool
             self._connection_pool.append(connection)
             self._initialized = True
+            
+            # Define Schema
+            try:
+                # Define memory table and fields
+                await connection.query("DEFINE TABLE memory SCHEMAFULL;")
+                await connection.query("DEFINE FIELD content ON TABLE memory TYPE string;")
+                await connection.query("DEFINE FIELD user_id ON TABLE memory TYPE string;")
+                await connection.query("DEFINE FIELD is_archived ON TABLE memory TYPE bool;")
+                
+                # Define BM25 Index
+                await connection.query("DEFINE ANALYZER ascii TOKENIZERS class FILTERS lowercase, ascii;")
+                await connection.query("DEFINE INDEX content_bm25 ON TABLE memory COLUMNS content SEARCH ANALYZER ascii BM25;")
+                
+                logger.info("Schema defined successfully")
+            except Exception as e:
+                logger.error(f"Failed to define schema: {e}")
             
             logger.info(f"Connected to SurrealDB at {self.url}")
     

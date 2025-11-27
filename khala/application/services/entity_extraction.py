@@ -292,7 +292,7 @@ Return only the JSON array, no explanation.
         
         return prompt
     
-    def _parse_gemini_response(self, response: str, original_text: str) -> List[ExtractedEntity]:
+    async def _parse_gemini_response(self, response: str, original_text: str) -> List[ExtractedEntity]:
         """Parse Gemini JSON response into ExtractedEntity objects."""
         entities = []
         

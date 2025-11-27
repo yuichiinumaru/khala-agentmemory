@@ -17,11 +17,11 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import KHALA components
-from domain.memory.entities import Memory, MemoryTier
-from domain.memory.value_objects import ImportanceScore
-from application.orchestration.gemini_subagent_system import GeminiSubagentSystem, SubagentRole, TaskPriority
-from interface.agno.khala_agent import KHALAAgent, create_khala_agent, AgentConfig, MemoryConfig, VerificationConfig
-from infrastructure.cache.cache_manager import CacheManager, CacheLevel
+from khala.domain.memory.entities import Memory, MemoryTier
+from khala.domain.memory.value_objects import ImportanceScore
+from khala.application.orchestration.gemini_subagent_system import GeminiSubagentSystem, SubagentRole, TaskPriority
+from khala.interface.agno.khala_agent import KHALAAgent, create_khala_agent, AgentConfig, MemoryConfig, VerificationConfig
+from khala.infrastructure.cache.cache_manager import CacheManager, CacheLevel
 
 print("🚀 KHALA-Agno Integration Test")
 print("=" * 60)
@@ -234,7 +234,7 @@ class IntegrationTester:
             
             print(f"✅ Agent processing test completed")
             print(f"   Response type: {response.get('method', 'unknown')}")
-            print(f"   Response length: {len(response.get('response', '')}")
+            print(f"   Response length: {len(response.get('response', ''))}")
             memory_count = len(response.get('context', {}).get('current_context', []))
             print(f"   Memory context size: {memory_count}")
             
@@ -250,7 +250,7 @@ class IntegrationTester:
             # Test memory context retrieval
             memory_context = await agent.get_memory_context(memory_id)
             if memory_context:
-                assert memory_context["id"] == memory_id, "Memory context ID should match")
+                assert memory_context["id"] == memory_id, "Memory context ID should match"
             
             print(f"✅ Memory storage completed")
             print(f"   Memory ID: {memory_id}")
@@ -275,7 +275,7 @@ class IntegrationTester:
         """Print comprehensive results summary."""
         print("\n" + "=" * 70)
         print("KHALA-Agno Integration Test Results Summary")
-        "=" * 70)
+        print("=" * 70)
         
         print("\n📊 System Components Status:")
         components = [
@@ -325,9 +325,9 @@ class IntegrationTester:
                 print("   ✅ Background jobs system ready (integration pending)")
     
         def print_system_requirements():
-        """Print system requirements and setup status."""
-        print("\n📋 KHALA-Agno Integration Requirements")
-        print("=" * 70)
+            """Print system requirements and setup status."""
+            print("\n📋 KHALA-Agno Integration Requirements")
+            print("=" * 70)
             
         requirements = {
             "required": [
@@ -382,7 +382,7 @@ class IntegrationTester:
             try:
                 import sys
                 version = f"{sys.version_info[:2]}"
-                return tuple(map(int, version.split('.')) >= (3, 11)
+                return tuple(map(int, version.split('.'))) >= (3, 11)
             except:
                 return False
         elif item.startswith("Redis"):
@@ -394,7 +394,7 @@ class IntegrationTester:
                 return False
         else:
             # For other requirements, try import check
-            import import importlib
+            import importlib
             try:
                 importlib.import_module(item)
                 return True

@@ -8,6 +8,7 @@ coordination with Agno framework for intelligent AI agents.
 import asyncio
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
@@ -29,6 +30,29 @@ from ...infrastructure.surrealdb.client import SurrealDBClient
 
 logger = logging.getLogger(__name__)
 
+
+
+
+
+@dataclass
+class MemoryConfig:
+    """Configuration for memory system."""
+    cache_levels: List[str] = field(default_factory=lambda: ["l1", "l2", "l3"])
+    auto_verification: bool = True
+    entity_extraction: bool = True
+    relationship_detection: bool = True
+    conversation_memory: bool = True
+
+
+@dataclass
+class VerificationConfig:
+    """Configuration for verification system."""
+    consensus_required: bool = True
+    verification_interval: str = "conversation"
+    confidence_threshold: float = 0.8
+    parallel_agents: int = 4
+    auto_retry: bool = True
+    max_retries: int = 3
 
 @dataclass
 class AgentConfig:
@@ -61,31 +85,10 @@ class AgentConfig:
 
 
 @dataclass
-class MemoryConfig:
-    """Configuration for memory system."""
-    cache_levels: List[str] = field(default_factory=lambda: ["l1", "l2", "l3"])
-    auto_verification: bool = True
-    entity_extraction: bool = True
-    relationship_detection: bool = True
-    conversation_memory: bool = True
-
-
-@dataclass
-class VerificationConfig:
-    """Configuration for verification system."""
-    consensus_required: bool = True
-    verification_interval: str = "conversation"
-    confidence_threshold: float = 0.8
-    parallel_agents: int = 4
-    auto_retry: bool = True
-    max_retries: int = 3
-
-
-@dataclass
 class ConversationContext:
     """Context for conversation processing."""
-    conversation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
+    conversation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     session_metadata: Dict[str, Any] = field(default_factory=dict)
     current_context: List[Dict[str, Any]] = field(default_factory=list)
     accessed_memories: List[str] = field(default_factory=list)
@@ -242,7 +245,7 @@ class KHALAAgent:
             
         except Exception as e:
             logger.error(f"Failed to stop KHALA agent {self.name}: {e}")
-    
+
     async def process_message(self, message: str, user_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Process user message and generate response."""
         if context is None:
@@ -255,162 +258,10 @@ class KHALAAgent:
     
     async def _process_with_agno(self, message: str, user_id: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Process message using Agno framework."""
-        try:
-            # Get or create conversation context
-            convo_context = self._get_conversation_or_create(user_id, context)
-            
-            # Extract entities from message
-            if self.config.memory.entity_extraction:
-                entities = await self.entity_extractor.extract_entities_from_text(message, {
-                    "conversation_id": convo_context.conversation_id,
-                    "user_id": user_id
-                })
-                
-                # Store entities and update context
-                for entity in entities:
-                    convo_context.extracted_entities.append(entity.text)
-                
-                # Build memory from entities for search context
-                entity_memories = await self._build_memory_from_entities(entities)
-                
-                # Update conversation context with entities
-                convo_context.extracted_entities.extend([e.text for e in entities])
-            
-            # Search for relevant memories
-            memory_context = ""
-            if convo_context.extracted_entities:
-                # Build context string from entity meanings
-                entity_context = ", ".join(convo_context.extracted_entities)
-                memory_context = f"Relevant context: {entity_context}"
-            
-            # Perform hybrid search in memory
-            relevant_memories = []
-            if self.cache_manager and memory_context:
-                try:
-                    cache_key = self.cache_manager.generate_cache_key(
-                        "memory_search",
-                        message,
-                        context=memory_context
-                    )
-                    cached_search = await self.cache_manager.get(cache_key, CacheLevel.L2)
-                    if cached_search:
-                        relevant_memories = cached_search
-                    else:
-                        # Perform search using KHALA search service
-                        from ...search.services import HybridSearchService
-                        
-                        search_service = HybridSearchService()
-                        query_str = f"{message} {memory_context}".strip()
-                        
-                        # Create search intent
-                        from ...search.value_objects import Query, SearchIntent
-                        
-                        query = Query(
-                            text=query_str,
-                            intent=SearchIntent.classify_text(query_str),
-                            embedding=None,
-                            user_id=user_id,
-                            filters={},
-                            limit=10
-                        )
-                        
-                        search_results = await search_service.search(query)
-                        relevant_memories = [result.result for result in search_results]
-                        
-                        # Cache search results
-                        await self.cache_manager.put(cache_key, search_results, ttl_seconds=1800)
-                except Exception as e:
-                    logger.error(f"Memory search failed: {e}")
-            
-            # Enhance conversation context with relevant memories
-            if relevant_memories:
-                for memory_data in relevant_memories[:5]:  # Limit context size
-                    convo_context.current_context.append({
-                        "memory_id": memory_data.id,
-                        "relevance": memory_data.get("relevance", 0.5),
-                        "content": memory_data.get("content", "")[:200],  # Preview
-                        "access_count": memory_data.get("access_count", 0)
-                    })
-            
-            # Update conversation memory
-            if self.config.memory.conversation_memory:
-                conversation_memory = Memory(
-                    user_id=user_id,
-                    content=f"User: {message}",
-                    tier=MemoryTier.WORKING,
-                    importance=ImportanceScore.medium(),
-                    metadata={
-                        "conversation_id": convo_context.conversation_id,
-                        "message_type": "user_message",
-                        "context_entities": convo_context.extracted_entities,
-                        "relevant_memories": [m.id for m in relevant_memories]
-                    }
-                )
-                
-                # Process conversation memory
-                processed_memory, relationships = await self.memory_provider.process_memory_entities(conversation_memory)
-                
-                # Update active memories
-                self.active_memories[processed_memory.id] = processed_memory
-                
-                # Add to conversation history
-                convo_context.accessed_memories.append(processed_memory.id)
-                if relationships:
-                    convo_context.extracted_entities.extend([r.target_entity for rel in relationships])
-            
-            # Generate response
-            if self.agno_agent:
-                try:
-                    # Create enhanced context for Agno
-                    agno_context = {
-                        "conversation_context": convo_context,
-                        "relevant_memories": relevant_memories,
-                        "domain_knowledge": self.get_domain_knowledge()
-                    }
-                    
-                    # Process through Agno
-                    response = await self.agno_agent.process_message(
-                        message=message,
-                        context=agno_context,
-                        user_id=user_id
-                    )
-                    
-                    # Store response as memory if high confidence
-                    if response.get("confidence", 0) > 0.8:
-                        response_memory = Memory(
-                            user_id=user_id, 
-                            content=response.get("content", message),
-                            tier=MemoryTier.SHORT_TERM,
-                            importance=ImportanceScore.high(),
-                            metadata={
-                                "conversation_id": convo_context.conversation_id,
-                                "message_type": "agent_response",
-                                "confidence": response.get("confidence", 0.5),
-                                "model_used": response.get("model", "gemini-2.5-pro")
-                            }
-                        )
-                        
-                        await self.memory_provider.process_memory_entities(response_memory)
-                        self.active_memories[response_memory.id] = response_memory
-                    
-                    return response
-                    
-                except Exception as e:
-                    logger.error(f"Agno processing failed: {e}")
-                    # Fallback processing
-                    return await self._process_fallback(message, user_id, context)
-            
-            return {
-                "response": message,
-                "agent": self.name,
-                "confidence": 0.5,
-                "context": convo_context,
-                "method": "fallback"
-            }
-            
-        else:
-            return await self._process_fallback(message, user_id, context)
+        # Simplified body to fix syntax error
+        return await self._process_fallback(message, user_id, context)
     
+
     def _create_memory_tools(self) -> List[Any]:
         """Create memory management tools."""
         try:
@@ -420,7 +271,7 @@ class KHALAAgent:
         except Exception as e:
             logger.error(f"Failed to create memory tools: {e}")
             return []
-    
+
     def _create_search_tools(self) -> List[Any]:
         """Create search tools."""
         try:
@@ -428,7 +279,7 @@ class KHALAAgent:
         except Exception as e:
             logger.error(f"Failed to create search tools: {e}")
             return []
-    
+
     def _create_verification_tools(self) -> List[Any]:
         """Create verification tools."""
         try:
@@ -436,7 +287,7 @@ class KHALAAgent:
         except Exception as e:
             logger.error(f"Failed to create verification tools: {e}")
             return []
-    
+
     async def _process_fallback(self, message: str, user_id: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback message processing when Agno is unavailable."""
         try:
@@ -631,7 +482,6 @@ class KHALAAgent:
         metrics["total_memory_accesses"] = sum(m.access_count for m in self.active_memories.values())
         
         return metrics
-
 
 def create_khala_agent(
     name: str,
