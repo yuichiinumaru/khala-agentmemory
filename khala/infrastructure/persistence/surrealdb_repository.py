@@ -37,14 +37,16 @@ class SurrealDBMemoryRepository(MemoryRepository):
         embedding: EmbeddingVector, 
         user_id: str, 
         top_k: int = 10, 
-        min_similarity: float = 0.6
+        min_similarity: float = 0.6,
+        filters: Optional[Dict[str, Any]] = None
     ) -> List[Memory]:
         """Search memories by vector similarity."""
         results = await self.client.search_memories_by_vector(
             embedding=embedding,
             user_id=user_id,
             top_k=top_k,
-            min_similarity=min_similarity
+            min_similarity=min_similarity,
+            filters=filters
         )
         # Convert dict results to Memory objects
         return [self.client._deserialize_memory(data) for data in results]
@@ -53,13 +55,15 @@ class SurrealDBMemoryRepository(MemoryRepository):
         self, 
         query_text: str, 
         user_id: str, 
-        top_k: int = 10
+        top_k: int = 10,
+        filters: Optional[Dict[str, Any]] = None
     ) -> List[Memory]:
         """Search memories by text (BM25/Full-text)."""
         results = await self.client.search_memories_by_bm25(
             query_text=query_text,
             user_id=user_id,
-            top_k=top_k
+            top_k=top_k,
+            filters=filters
         )
         return [self.client._deserialize_memory(data) for data in results]
         

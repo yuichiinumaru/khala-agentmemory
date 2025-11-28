@@ -284,32 +284,79 @@ class SurrealDBClient:
         
         async with self.get_connection() as conn:
             await conn.query(query, params)
+
+    def _build_filter_query(self, filters: Dict[str, Any], params: Dict[str, Any]) -> str:
+        """Build WHERE clause segment from filters and update params."""
+        if not filters:
+            return ""
+
+        clauses = []
+        for key, value in filters.items():
+            # Validate key (alphanumeric, underscore, dot)
+            if not all(c.isalnum() or c in "_." for c in key):
+                logger.warning(f"Skipping invalid filter key: {key}")
+                continue
+
+            safe_param_key = f"filter_{key.replace('.', '_')}"
+
+            if isinstance(value, (list, tuple)):
+                clauses.append(f"{key} IN ${safe_param_key}")
+                params[safe_param_key] = value
+            elif isinstance(value, dict) and "op" in value:
+                op = value.get("op", "eq")
+                val = value.get("value")
+                params[safe_param_key] = val
+
+                if op == "eq":
+                    clauses.append(f"{key} = ${safe_param_key}")
+                elif op == "gt":
+                    clauses.append(f"{key} > ${safe_param_key}")
+                elif op == "lt":
+                    clauses.append(f"{key} < ${safe_param_key}")
+                elif op == "gte":
+                    clauses.append(f"{key} >= ${safe_param_key}")
+                elif op == "lte":
+                    clauses.append(f"{key} <= ${safe_param_key}")
+                elif op == "contains":
+                    clauses.append(f"string::contains({key}, ${safe_param_key})")
+            else:
+                clauses.append(f"{key} = ${safe_param_key}")
+                params[safe_param_key] = value
+
+        if not clauses:
+            return ""
+
+        return " AND " + " AND ".join(clauses)
     
     async def search_memories_by_vector(
         self, 
         embedding: EmbeddingVector, 
         user_id: str,
         top_k: int = 10,
-        min_similarity: float = 0.6
+        min_similarity: float = 0.6,
+        filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """Search memories using vector similarity."""
-        query = """
-        SELECT *, vector::similarity::cosine(embedding, $embedding) AS similarity
-        FROM memory 
-        WHERE user_id = $user_id 
-        AND is_archived = false
-        AND embedding != NONE
-        AND vector::similarity::cosine(embedding, $embedding) > $min_similarity
-        ORDER BY similarity DESC
-        LIMIT $top_k;
-        """
-        
         params = {
             "user_id": user_id,
             "embedding": embedding.values,
             "min_similarity": min_similarity,
             "top_k": top_k,
         }
+
+        filter_clause = self._build_filter_query(filters, params)
+
+        query = f"""
+        SELECT *, vector::similarity::cosine(embedding, $embedding) AS similarity
+        FROM memory 
+        WHERE user_id = $user_id 
+        AND is_archived = false
+        AND embedding != NONE
+        AND vector::similarity::cosine(embedding, $embedding) > $min_similarity
+        {filter_clause}
+        ORDER BY similarity DESC
+        LIMIT $top_k;
+        """
         
         async with self.get_connection() as conn:
             response = await conn.query(query, params)
@@ -322,23 +369,27 @@ class SurrealDBClient:
         self,
         query_text: str,
         user_id: str,
-        top_k: int = 10
+        top_k: int = 10,
+        filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """Search memories using BM25 full-text search."""
-        query = """
-        SELECT *
-        FROM memory
-        WHERE user_id = $user_id
-        AND content @@ $query_text
-        AND is_archived = false
-        LIMIT $top_k;
-        """
-        
         params = {
             "user_id": user_id,
             "query_text": query_text,
             "top_k": top_k,
         }
+
+        filter_clause = self._build_filter_query(filters, params)
+
+        query = f"""
+        SELECT *
+        FROM memory
+        WHERE user_id = $user_id
+        AND content @@ $query_text
+        AND is_archived = false
+        {filter_clause}
+        LIMIT $top_k;
+        """
         
         async with self.get_connection() as conn:
             response = await conn.query(query, params)
