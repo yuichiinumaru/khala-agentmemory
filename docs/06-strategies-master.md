@@ -1,7 +1,8 @@
-# 06-STRATEGIES-MASTER.md: The 100+ Strategy Guide
+# 06-STRATEGIES-MASTER.md: The 150+ Strategy Guide
 
 **Project**: KHALA v2.0
 **Status**: Comprehensive List of All Integrated Strategies
+**Total Count**: 159 Strategies (57 Core/Advanced + 23 Novel + 58 SurrealDB Optimization + 21 Experimental)
 
 ---
 
@@ -76,55 +77,127 @@ Strategies that add "brain power" to the storage.
 
 ---
 
-## 3. Novel & Experimental Strategies
+## 3. SurrealDB Multimodal Optimization Strategies (New Research)
 
-Cutting-edge ideas pushed into implementation.
+Advanced patterns leveraging specific SurrealDB capabilities.
 
-58. **Dream-Inspired Consolidation**: "Nightly" processes that form loose associations between distant memories.
-59. **Counterfactual Simulation**: "What if" reasoning stored as alternative scenarios.
-60. **Socratic Questioning Interface**: System asks *user* questions to fill memory gaps.
-61. **Memory forgetting curves**: Implementing Ebbinghaus forgetting curves.
-62. **Episodic vs Semantic Split**: Explicit separation of "What happened" vs "What is true".
-63. **Procedural Memory Encoding**: storing "Muscle memory" for agents (tool usage patterns).
-64. **Concept Drift Detection**: Alerting when a known fact changes (e.g., User moved cities).
-65. **Adversarial Memory Injection Testing**: Self-attacking to test robustness.
-66. **Privacy-Preserving Sanitization**: Auto-stripping PII before long-term storage.
-67. **Federated Knowledge Sync**: (Future) Syncing between distinct Khala instances.
-68. **Surprise-Based Learning**: High priority for facts that contradict existing models.
-69. **Curiosity-Driven Exploration**: Agents querying their own memory to find "holes".
-70. **Metacognitive Indexing**: Tagging memories with "How sure am I about this?".
-71. **Source Reliability Scoring**: Weighting memories by the trustworthiness of the source.
-72. **Conflict Resolution Protocols**: Automated logic for when two memories contradict.
-73. **Narrative Threading**: Linking episodic memories into a "Story".
-74. **Dialectical Tuning**: Adjusting agent personality based on memory content.
-75. **Contextual Bandits for Retrieval**: Reinforcement learning to tune search parameters.
-76. **Temporal Heatmaps**: Visualizing when memories were formed.
-77. **Keyword Extraction for Tagging**: Auto-generating tags via RAKE/YAKE + LLM.
-78. **Entity Disambiguation**: Resolving "Apple" (Fruit) vs "Apple" (Tech).
-79. **Relationship Strength Decay**: Social bonds fade if not reinforced.
-80. **Community Detection**: Finding clusters of related entities in the graph.
-81. **Centrality Analysis**: Identifying "Key Players" in the knowledge graph.
-82. **Pathfinding Algorithms**: Shortest path queries between concepts.
-83. **Subgraph Isomorphism**: Finding similar structural patterns in data.
-84. **Vector Quantization**: Compressing embeddings for efficiency.
-85. **Dimension Reduction**: Visualizing 768d vectors in 2D/3D (UMAP/t-SNE).
-86. **Negative Constraints**: "Do NOT remember this" instructions.
-87. **Scoped Memories**: Memories valid only within a specific project/scope.
-88. **Transient Scratchpads**: Temporary memory spaces for complex reasoning.
-89. **Recursive Summarization**: Summarizing summaries for ultra-long-term storage.
-90. **Anchor Point Navigation**: key memories serving as entry points for search.
-91. **Bias Detection**: Analyzing memory for potential biases.
-92. **Sentiment Analysis Timeline**: Tracking user mood over weeks/months.
-93. **Intent-Based Prefetching**: Loading memories *before* the user finishes typing (predictive).
-94. **User Modeling**: Explicit profile construction from implicit memories.
-95. **Goal Tracking**: Linking memories to active user goals.
-96. **Dependency Mapping**: "If I delete this, what else breaks?".
-97. **Version Control for Memories**: Git-like history for knowledge.
-98. **Forking Capabilities**: Branching memory states for simulation.
-99. **Merge Conflict Resolution**: UI for humans to fix memory clashes.
-100. **Self-Healing Index**: Detecting and fixing corrupted vector indexes.
-101. **Knowledge Distillation**: Teaching a smaller model using the memory of a larger one.
+### Document Model Optimization
+58. **Hierarchical Nested Documents**: Replacing flat structures with rich nested context (Verification, Debate, Multimodal) in a single doc.
+59. **Polymorphic Memory Documents**: Storing different memory types (Decision, Code, Fact) in one table with type-specific fields.
+60. **Document Versioning**: Storing full history (`versions` array) within the document for audit trails without JOINs.
+61. **Array-Based Accumulation**: Appending events directly to a document's event log instead of a separate table.
+62. **Computed Properties**: Using `DEFINE FIELD ... VALUE` to calculate decay and freshness on-read.
+63. **Conditional Content Fields**: Storing different formats (Tiny, Small, Full) based on content size.
+64. **Schema-Flexible Metadata**: allowing arbitrary agent-specific metadata structures.
+65. **Document-Level Transactions**: Atomic updates to memory, history, and events simultaneously.
+
+### Graph Model Optimization
+66. **Hyperedge Emulation**: Using a document node to represent an N-way relationship (e.g., Debate participants).
+67. **Temporal Graph (Bi-temporal)**: Tracking `valid_from` and `valid_to` on edges to reconstruct past states.
+68. **Weighted Directed Multigraph**: Multiple edges types/weights between nodes (e.g., `references` vs `contradicts`).
+69. **Hierarchical Graph**: Organizing memories by abstraction levels (Observation -> Pattern -> Principle).
+70. **Bidirectional Relationship Tracking**: Explicitly maintaining forward and reverse edge metadata.
+71. **Recursive Graph Patterns**: Using `<-influences<-` queries to find root causes or downstream effects.
+72. **Agent-Centric Partitioning**: Creating subgraphs per agent for personalized views.
+73. **Consensus Graph**: Edges that represent multi-agent agreement status.
+74. **Pattern Discovery**: Detecting star topologies or dense clusters natively.
+75. **Temporal Graph Evolution**: Snapshots of graph metrics over time.
+76. **Explainability Graph**: Storing reasoning chains as graph paths.
+77. **Graph-as-Query**: Using traversal itself as the primary retrieval mechanism.
+
+### Vector Model Optimization
+78. **Multi-Vector Representations**: Storing Semantic, Lexical, and Conceptual vectors for the same memory.
+79. **Vector Quantization**: Using half-precision or int8 vectors for speed/storage tradeoffs.
+80. **Vector Drift Detection**: Monitoring how embeddings change over time or across model versions.
+81. **Vector Clustering & Centroids**: Pre-computing cluster centroids for 100x faster broad search.
+82. **Adaptive Vector Dimensions**: Using smaller vectors for low-importance memories.
+83. **Vector-Space Anomaly Detection**: Finding outliers that represent novel or erroneous data.
+84. **Vector Interpolation**: Blending two memories to find the "concept" between them.
+85. **Vector Provenance**: Tracking which model version generated an embedding.
+86. **Vector-Based Conflict Resolution**: Using geometric distance to identify contradictions.
+87. **Vector Search with Filters**: Combining HNSW with rigid metadata filters.
+88. **Feedback-Loop Vectors**: Adjusting effective vector ranking based on user clicks.
+89. **Vector Ensemble**: Averaging scores from multiple embedding models.
+90. **Vector Deduplication**: Merging memories based on extreme cosine similarity (>0.98).
+91. **Vector-Based Forgetting**: "Fading" vectors towards a generic mean over time.
+92. **Vector Attention**: Weighting specific segments of a memory vector higher.
+
+### Full-Text Search Optimization
+93. **Phrase Search with Ranking**: BM25 with specific tokenizer settings for English/Code.
+94. **Linguistic Analysis**: Storing POS tags and named entities to boost search relevance.
+95. **Multilingual Search**: Storing content in multiple languages or translation vectors.
+96. **Typo Tolerance**: Fuzzy matching for robust user queries.
+97. **Contextual Search**: Finding terms within a specific proximity window (e.g., "Vector" near "Database").
+98. **Faceted Search**: Pre-computing counts by Type, Tier, and Agent.
+99. **Advanced Text Analytics**: Scoring readability and complexity to filter results.
+100. **Query Expansion**: Automatically adding synonyms to search queries.
+101. **Search History Suggestions**: Autocomplete based on successful past queries.
+102. **Semantic-FTS Hybrid**: Weighted scoring of BM25 + Vector.
+
+### Time-Series Optimization
+103. **Memory Decay Time-Series**: Tracking score drop-off day-by-day.
+104. **Agent Activity Timeline**: Logging who accessed what and when.
+105. **System Metrics Time-Series**: Monitoring latency and cache hits.
+106. **Consolidation Schedule**: Predicting optimal times for cleanup jobs.
+107. **Debate Outcome Trends**: Tracking consensus rates over weeks.
+108. **Learning Curve Tracking**: Measuring agent accuracy improvement.
+109. **Importance Distribution**: Histogram of memory values over time.
+110. **Graph Evolution Metrics**: Tracking node/edge count growth.
+
+### Geospatial Optimization
+111. **Agent Location Context**: Tagging memories with virtual or physical coordinates.
+112. **Spatial Memory Organization**: Partitioning knowledge by "Region" (Conceptual or Physical).
+113. **Concept Cartography**: Mapping concepts to a 2D plane for "Nearness" visualization.
+114. **Migration Path Tracking**: Seeing how an idea moves between agents/regions.
+115. **Geospatial Similarity**: Combining semantic distance with spatial distance.
 
 ---
 
-*This list represents the total capability set of KHALA v2.0.*
+## 4. Novel & Experimental Strategies
+
+Cutting-edge ideas from recent agent research.
+
+116. **Flows vs Crews Pattern**: Separating deterministic workflows from autonomous agents.
+117. **Hierarchical Agent Delegation**: Managers automatically breaking down tasks.
+118. **Episodic Data Model**: Processing memories as discrete "Episodes" vs streams.
+119. **Temporal Edge Invalidation**: Marking edges "inactive" instead of deleting (Soft Delete).
+120. **Custom Pydantic Entity Types**: Strict schema enforcement for extracted entities.
+121. **Graph Distance Reranking**: Re-ordering search results by graph hop distance.
+122. **Path Lookup Acceleration**: Pre-indexing common graph paths.
+123. **Parallel Search Execution**: Running Vector, Graph, and FTS queries concurrently.
+124. **Multi-Hop Constraints**: Limiting reasoning to 3 hops to prevent hallucinations.
+125. **Human-in-the-Loop Checkpoints**: Pausing before critical memory merges.
+126. **Semaphore Concurrency Limiting**: Preventing LLM rate limits.
+127. **Structured LLM Output**: Enforcing JSON schemas for all extractions.
+128. **AgentTool Wrappers**: Treating other agents as callable tools.
+129. **Dream-Inspired Consolidation**: "Nightly" loose association forming.
+130. **Counterfactual Simulation**: Storing "What if" scenarios.
+131. **Socratic Questioning**: Agents asking users to fill knowledge gaps.
+132. **Privacy-Preserving Sanitization**: Auto-redacting PII.
+133. **Surprise-Based Learning**: Prioritizing facts that contradict the model.
+134. **Curiosity-Driven Exploration**: Agents querying their own memory holes.
+135. **Metacognitive Indexing**: Tagging "How sure am I?".
+136. **Source Reliability Scoring**: Weighting by origin trust.
+137. **Conflict Resolution Protocols**: Automated contradiction handling.
+138. **Narrative Threading**: Linking episodic memories into stories.
+139. **Contextual Bandits**: RL-tuned retrieval parameters.
+140. **Temporal Heatmaps**: Visualizing memory formation bursts.
+141. **Keyword Extraction Tagging**: Auto-generating tags.
+142. **Entity Disambiguation**: Distinguishing "Apple" (Fruit) vs (Tech).
+143. **Community Detection**: Finding clusters in the graph.
+144. **Centrality Analysis**: Identifying key concepts.
+145. **Pathfinding Algorithms**: Shortest path reasoning.
+146. **Subgraph Isomorphism**: Finding structural matches.
+147. **Negative Constraints**: "Do NOT remember" rules.
+148. **Scoped Memories**: Project-specific memory silos.
+149. **Transient Scratchpads**: Temp memory for complex reasoning.
+150. **Recursive Summarization**: Summarizing summaries.
+151. **Anchor Point Navigation**: Key memories as search entry points.
+152. **Bias Detection**: Analyzing memory for skew.
+153. **Intent-Based Prefetching**: Predictive loading.
+154. **User Modeling**: Explicit profile construction.
+155. **Dependency Mapping**: Impact analysis for deletions.
+156. **Version Control**: Git for knowledge.
+157. **Forking Capabilities**: Branching memory states.
+158. **Merge Conflict Resolution**: UI for memory clashes.
+159. **Self-Healing Index**: Auto-repairing vectors.
