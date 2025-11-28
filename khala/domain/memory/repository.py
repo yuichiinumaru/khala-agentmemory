@@ -35,7 +35,8 @@ class MemoryRepository(ABC):
         embedding: EmbeddingVector, 
         user_id: str, 
         top_k: int = 10, 
-        min_similarity: float = 0.6
+        min_similarity: float = 0.6,
+        filters: Optional[Dict[str, Any]] = None
     ) -> List[Memory]:
         """Search memories by vector similarity."""
         pass
@@ -45,7 +46,8 @@ class MemoryRepository(ABC):
         self, 
         query_text: str, 
         user_id: str, 
-        top_k: int = 10
+        top_k: int = 10,
+        filters: Optional[Dict[str, Any]] = None
     ) -> List[Memory]:
         """Search memories by text (BM25/Full-text)."""
         pass

@@ -133,12 +133,13 @@ class HybridSearchService:
         # Convert numpy array to list for database
         embedding_vector = EmbeddingVector(query.embedding.tolist())
         
-        # Search using repository
+        # Search using repository with filters
         memory_records = await self.memory_repository.search_by_vector(
             embedding_vector, 
             query.user_id,
             top_k,
-            min_similarity=similarity_threshold
+            min_similarity=similarity_threshold,
+            filters=query.filters
         )
         
         results = []
@@ -170,7 +171,8 @@ class HybridSearchService:
         memory_records = await self.memory_repository.search_by_text(
             query.text,
             query.user_id,
-            top_k
+            top_k,
+            filters=query.filters
         )
         
         results = []
