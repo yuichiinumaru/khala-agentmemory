@@ -17,11 +17,13 @@ class EmbeddingVector:
     """Immutable embedding vector for semantic search."""
     
     values: List[float]
-    dimensions: int = 768  # Gemini embedding dimension
+    # dimensions is optional to support different embedding models (e.g. 768 vs 1536)
+    # If provided, validation ensures the values list matches this size.
+    dimensions: Optional[int] = None
     
     def __post_init__(self) -> None:
         """Validate the embedding vector."""
-        if len(self.values) != self.dimensions:
+        if self.dimensions is not None and len(self.values) != self.dimensions:
             raise ValueError(
                 f"Embedding must have {self.dimensions} dimensions, "
                 f"got {len(self.values)}"
