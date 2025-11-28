@@ -55,6 +55,16 @@ class Memory:
     source: Optional[MemorySource] = field(default=None)  # Task 28: Traceability
     sentiment: Optional[Sentiment] = field(default=None)  # Task 37: Emotion
     
+    def __hash__(self) -> int:
+        """Hash based on ID."""
+        return hash(self.id)
+
+    def __eq__(self, other: object) -> bool:
+        """Equality based on ID."""
+        if not isinstance(other, Memory):
+            return NotImplemented
+        return self.id == other.id
+
     def __post_init__(self) -> None:
         """Validate memory entity after creation."""
         if not self.content.strip():
@@ -122,9 +132,13 @@ class Memory:
         self.tier = next_tier
         self.updated_at = datetime.now(timezone.utc)
     
-    def archive(self) -> None:
-        """Archive this memory."""
-        if not self.should_archive():
+    def archive(self, force: bool = False) -> None:
+        """Archive this memory.
+
+        Args:
+            force: If True, bypass archival criteria (e.g. for duplicates).
+        """
+        if not force and not self.should_archive():
             raise ValueError("Memory does not meet archival criteria")
         
         self.is_archived = True
