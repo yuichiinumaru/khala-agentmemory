@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 import logging
+import json
 import asyncio
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.surrealdb.client import SurrealDBClient
@@ -62,7 +63,6 @@ class PatternRecognitionService:
                 temperature=0.2
             )
 
-            import json
             content = response.get("content", "").strip()
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()

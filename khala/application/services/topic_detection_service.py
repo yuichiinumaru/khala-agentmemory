@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Optional
 import logging
+import json
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 
@@ -63,7 +64,6 @@ class TopicDetectionService:
             )
 
             # Parse JSON from response
-            import json
             content = response.get("content", "").strip()
             # Handle potential markdown code blocks
             if "```json" in content:

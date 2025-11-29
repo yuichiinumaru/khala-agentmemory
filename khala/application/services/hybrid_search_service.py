@@ -63,32 +63,45 @@ class HybridSearchService:
         all_vector_results: List[Memory] = []
         all_bm25_results: List[Memory] = []
 
-        for q in expanded_queries:
-            # 1a. Vector Search
+        async def _fetch_vector(q_text: str) -> List[Memory]:
             try:
-                embedding_values = await self.embedding_service.get_embedding(q)
+                embedding_values = await self.embedding_service.get_embedding(q_text)
                 embedding = EmbeddingVector(values=embedding_values)
-                v_results = await self.memory_repo.search_by_vector(
+                return await self.memory_repo.search_by_vector(
                     embedding=embedding,
                     user_id=user_id,
                     top_k=candidate_k,
                     filters=filters
                 )
-                all_vector_results.extend(v_results)
             except Exception as e:
-                logger.error(f"Vector search failed for query '{q}': {e}")
+                logger.error(f"Vector search failed for query '{q_text}': {e}")
+                return []
 
-            # 1b. BM25 Search
+        async def _fetch_bm25(q_text: str) -> List[Memory]:
             try:
-                b_results = await self.memory_repo.search_by_text(
-                    query_text=q,
+                return await self.memory_repo.search_by_text(
+                    query_text=q_text,
                     user_id=user_id,
                     top_k=candidate_k,
                     filters=filters
                 )
-                all_bm25_results.extend(b_results)
             except Exception as e:
-                logger.error(f"BM25 search failed for query '{q}': {e}")
+                logger.error(f"BM25 search failed for query '{q_text}': {e}")
+                return []
+
+        # Gather all tasks: 2 tasks per query (Vector + BM25)
+        tasks = []
+        for q in expanded_queries:
+            tasks.append(_fetch_vector(q))
+            tasks.append(_fetch_bm25(q))
+
+        results = await asyncio.gather(*tasks)
+
+        # Separate results back into vector and bm25 lists
+        # Order is [V1, B1, V2, B2, ...]
+        for i in range(0, len(results), 2):
+            all_vector_results.extend(results[i])
+            all_bm25_results.extend(results[i+1])
 
         if not all_vector_results and not all_bm25_results:
             return []
@@ -133,7 +146,7 @@ class HybridSearchService:
 
         # 5. Log search session
         if self.db_client:
-             try:
+            try:
                 await self.db_client.create_search_session({
                     "user_id": user_id,
                     "query": query,
@@ -142,7 +155,7 @@ class HybridSearchService:
                     "results_count": len(final_results),
                     "metadata": {"rrf_k": rrf_k}
                 })
-             except Exception as e:
-                 logger.warning(f"Failed to log search session: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to log search session: {e}")
 
         return final_results
