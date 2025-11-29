@@ -53,3 +53,6 @@ deploy/appwrite/.env
 .DS_Store
 Thumbs.db
 
+__pycache__/
+*.pyc
+*.egg-info
