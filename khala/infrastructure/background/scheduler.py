@@ -158,7 +158,13 @@ def create_scheduler(job_processor: JobProcessor) -> BackgroundScheduler:
         priority=JobPriority.LOW
     )
 
-    # 2. Weekly Consistency Check (Example)
-    # scheduler.add_task(...)
+    # 2. Weekly Consolidation
+    scheduler.add_task(
+        name="weekly_consolidation",
+        job_type="smart_consolidation",
+        interval_seconds=604800, # 7 days
+        payload={"scan_all": True},
+        priority=JobPriority.LOW
+    )
 
     return scheduler

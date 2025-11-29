@@ -5,6 +5,7 @@ transaction support, and error handling optimized for the KHALA memory system.
 """
 
 import asyncio
+import hashlib
 from typing import Dict, List, Optional, Any, Union
 import logging
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ from khala.domain.memory.entities import Memory, Entity, Relationship
 from khala.domain.memory.value_objects import EmbeddingVector
 from khala.domain.skills.entities import Skill
 from khala.domain.skills.value_objects import SkillType, SkillLanguage, SkillParameter
+from .schema import DatabaseSchema
 
 logger = logging.getLogger(__name__)
 
@@ -83,69 +85,12 @@ class SurrealDBClient:
             self._connection_pool.append(connection)
             self._initialized = True
             
-            # Define Schema
+            # Initialize Schema using DatabaseSchema manager
             try:
-                # 1. Define memory table and fields
-                await connection.query("DEFINE TABLE memory SCHEMAFULL;")
-                await connection.query("DEFINE FIELD id ON memory TYPE record;")
-                await connection.query("DEFINE FIELD user_id ON memory TYPE string;")
-                await connection.query("DEFINE FIELD content ON memory TYPE string;")
-                await connection.query("DEFINE FIELD embedding ON memory TYPE array<float>;")
-                await connection.query("DEFINE FIELD created_at ON memory TYPE datetime DEFAULT time::now();")
-                await connection.query("DEFINE FIELD updated_at ON memory TYPE datetime DEFAULT time::now();")
-                await connection.query("DEFINE FIELD tier ON memory TYPE string ASSERT $value IN ['working', 'short_term', 'long_term'];")
-                await connection.query("DEFINE FIELD importance ON memory TYPE float ASSERT $value >= 0 AND $value <= 1;")
-                await connection.query("DEFINE FIELD tags ON memory TYPE array<string>;")
-                await connection.query("DEFINE FIELD metadata ON memory TYPE object FLEXIBLE;")
-                await connection.query("DEFINE FIELD is_archived ON memory TYPE bool;")
-
-                # Define Indexes for memory
-                await connection.query("DEFINE INDEX idx_memory_embedding ON memory FIELDS embedding MTPREE DIMENSION 768 DIST M=16 EF=200;")
-                await connection.query("DEFINE ANALYZER ascii TOKENIZERS class FILTERS lowercase, ascii;")
-                await connection.query("DEFINE INDEX content_bm25 ON TABLE memory COLUMNS content SEARCH ANALYZER ascii BM25;")
-                await connection.query("DEFINE INDEX idx_memory_user_tier ON memory FIELDS user_id, tier;")
-
-                # 2. Define entity table (Graph Node)
-                await connection.query("DEFINE TABLE entity SCHEMAFULL;")
-                await connection.query("DEFINE FIELD name ON entity TYPE string;")
-                await connection.query("DEFINE FIELD type ON entity TYPE string;")
-                await connection.query("DEFINE FIELD description ON entity TYPE string;")
-                await connection.query("DEFINE FIELD embedding ON entity TYPE array<float>;")
-                await connection.query("DEFINE FIELD aliases ON entity TYPE array<string>;")
-                await connection.query("DEFINE FIELD last_seen ON entity TYPE datetime;")
-
-                # Define Indexes for entity
-                await connection.query("DEFINE INDEX idx_entity_name ON entity FIELDS name UNIQUE;")
-                await connection.query("DEFINE INDEX idx_entity_embedding ON entity FIELDS embedding MTPREE DIMENSION 768 DIST M=16;")
-
-                # 3. Define relationship table (Graph Edge)
-                await connection.query("DEFINE TABLE relationship SCHEMAFULL TYPE RELATION IN entity OUT entity;")
-                await connection.query("DEFINE FIELD type ON relationship TYPE string;")
-                await connection.query("DEFINE FIELD weight ON relationship TYPE float;")
-                await connection.query("DEFINE FIELD first_seen ON relationship TYPE datetime;")
-                await connection.query("DEFINE FIELD last_verified ON relationship TYPE datetime;")
-                await connection.query("DEFINE FIELD bi_temporal_start ON relationship TYPE datetime;")
-                await connection.query("DEFINE FIELD bi_temporal_end ON relationship TYPE datetime;")
-
-                # 4. Define audit_log table
-                await connection.query("DEFINE TABLE audit_log SCHEMAFULL;")
-                await connection.query("DEFINE FIELD timestamp ON audit_log TYPE datetime DEFAULT time::now();")
-                await connection.query("DEFINE FIELD actor ON audit_log TYPE string;")
-                await connection.query("DEFINE FIELD action ON audit_log TYPE string;")
-                await connection.query("DEFINE FIELD target_id ON audit_log TYPE record;")
-                await connection.query("DEFINE FIELD details ON audit_log TYPE object;")
-
-                # 5. Define skill table
-                await connection.query("DEFINE TABLE skill SCHEMAFULL;")
-                await connection.query("DEFINE FIELD name ON skill TYPE string;")
-                await connection.query("DEFINE FIELD code ON skill TYPE string;")
-                await connection.query("DEFINE FIELD description ON skill TYPE string;")
-                await connection.query("DEFINE FIELD usage_count ON skill TYPE int DEFAULT 0;")
-                await connection.query("DEFINE FIELD success_rate ON skill TYPE float DEFAULT 0.0;")
-                
-                logger.info("Schema defined successfully")
+                schema_manager = DatabaseSchema(self)
+                await schema_manager.create_schema()
             except Exception as e:
-                logger.error(f"Failed to define schema: {e}")
+                logger.error(f"Failed to initialize schema: {e}")
             
             logger.info(f"Connected to SurrealDB at {self.url}")
     
@@ -181,10 +126,14 @@ class SurrealDBClient:
     
     async def create_memory(self, memory: Memory) -> str:
         """Create a new memory in the database."""
+        # Calculate content hash for deduplication
+        content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
+
         query = """
         CREATE type::thing('memory', $id) CONTENT {
             user_id: $user_id,
             content: $content,
+            content_hash: $content_hash,
             embedding: $embedding,
             tier: $tier,
             importance: $importance,
@@ -208,6 +157,7 @@ class SurrealDBClient:
             "id": memory.id,
             "user_id": memory.user_id,
             "content": memory.content,
+            "content_hash": content_hash,
             "embedding": memory.embedding.values if memory.embedding else None,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
@@ -276,10 +226,14 @@ class SurrealDBClient:
     
     async def update_memory(self, memory: Memory) -> None:
         """Update an existing memory."""
+        # Recalculate hash on update
+        content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
+
         query = """
         UPDATE type::thing('memory', $id) CONTENT {
             user_id: $user_id,
             content: $content,
+            content_hash: $content_hash,
             embedding: $embedding,
             tier: $tier,
             importance: $importance,
@@ -303,6 +257,7 @@ class SurrealDBClient:
             "id": memory.id,
             "user_id": memory.user_id,
             "content": memory.content,
+            "content_hash": content_hash,
             "embedding": memory.embedding.values if memory.embedding else None,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
