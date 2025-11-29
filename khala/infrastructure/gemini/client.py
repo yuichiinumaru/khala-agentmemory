@@ -7,9 +7,10 @@ and connection management for the Google Gemini API.
 import asyncio
 import json
 import time
+import hashlib
 from decimal import Decimal
-from typing import Dict, List, Optional, Any, Union
-from datetime import datetime, timezone
+from typing import Dict, List, Optional, Any, Union, Tuple
+from datetime import datetime, timezone, timedelta
 import logging
 
 try:
@@ -268,7 +269,7 @@ class GeminiClient:
         
         # Check cache if enabled
         if self.enable_caching:
-            cache_key = self._get_cache_key(prompt, model.model_id)
+            cache_key = self._get_cache_key(prompt, model_id=model.model_id)
             cached_response = self._get_cached_response(cache_key)
             if cached_response:
                 logger.debug(f"Cache hit for {model.model_id}")
@@ -336,7 +337,7 @@ class GeminiClient:
         
         # Cache response if enabled
         if self.enable_caching:
-            cache_key = self._get_cache_key(prompt, model.model_id)
+            cache_key = self._get_cache_key(prompt, model_id=model.model_id)
             cached_data = {
                 "content": response.text,
                 "model_id": model.model_id,
@@ -382,8 +383,6 @@ class GeminiClient:
         # Note: EmbeddingModel is separate from GenerativeModel
         if embedding_model.model_id not in self._models:
              # For embeddings we use genai.embed_content directly usually, but if we want to cache the model object:
-             # Actually genai.EmbeddingModel is deprecated in favor of genai.embed_content or using GenerativeModel for some tasks
-             # But let's stick to what works.
              pass
         
         embeddings = []
@@ -421,33 +420,75 @@ class GeminiClient:
         
         return embeddings
     
-    def _get_cache_key(self, prompt: str, model_id: str) -> str:
-        """Generate cache key for a prompt."""
-        return f"{model_id}:{hash(prompt)}"
+    def _get_cache_key(self, content: str, prefix: str = "", model_id: str = "") -> str:
+        """Generate cache key.
+
+        Args:
+            content: Content to cache
+            prefix: Cache key prefix
+            model_id: Model identifier
+
+        Returns:
+            Cache key
+        """
+        # Create base hash from content
+        content_hash = hashlib.md5(content.encode()).hexdigest()[:16]
+
+        # Build cache key
+        components = []
+        if prefix:
+            components.append(prefix)
+        if model_id:
+            components.append(model_id)
+        components.append(content_hash)
+
+        return "_".join(components)
     
     def _get_cached_response(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        """Get cached response if valid."""
-        if cache_key not in self._response_cache:
+        """Get cached response if available and not expired.
+        
+        Args:
+            cache_key: Cache key to retrieve
+
+        Returns:
+            Cached response or None
+        """
+        if not self.enable_caching:
             return None
         
-        cached_data = self._response_cache[cache_key]
-        timestamp = self._cache_timestamps.get(cache_key)
-        
-        # Check if cache is still valid
-        if not timestamp:
+        cached_record = self._response_cache.get(cache_key)
+        if not cached_record:
             return None
         
-        age_seconds = (datetime.now(timezone.utc) - timestamp).total_seconds()
+        # Check if cache has expired
+        now = datetime.now(timezone.utc)
+
+        # Handle different ways timestamp might be stored (in record or in separate dict)
+        if "timestamp" in cached_record:
+            if isinstance(cached_record["timestamp"], str):
+                 cache_time = datetime.fromisoformat(cached_record["timestamp"])
+            else:
+                 cache_time = cached_record["timestamp"]
+        else:
+            cache_time = self._cache_timestamps.get(cache_key, now)
+
+        age_seconds = (now - cache_time).total_seconds()
+
         if age_seconds > self.cache_ttl_seconds:
-            # Cache expired, remove it
-            del self._response_cache[cache_key]
-            del self._cache_timestamps[cache_key]
+            # Remove expired cache entry
+            if cache_key in self._response_cache:
+                del self._response_cache[cache_key]
+            if cache_key in self._cache_timestamps:
+                del self._cache_timestamps[cache_key]
             return None
         
-        # Mark as cache hit
-        cached_data["cache_hit"] = True
-        return cached_data
-    
+        # Update cache hit tracking
+        if cache_key not in self._cache_timestamps:
+            self._cache_timestamps[cache_key] = now
+
+        cached_record["cache_hit"] = True
+        return cached_record
+
     def _cache_response(self, cache_key: str, data: Dict[str, Any]) -> None:
         """Cache a response with timestamp."""
         self._response_cache[cache_key] = data
@@ -471,36 +512,8 @@ class GeminiClient:
         """Get optimization recommendations."""
         return self.cost_tracker.get_optimization_report()
 
+    # --- Debate and Verification Methods ---
 
-# Example usage helper
-async def example_usage():
-    """Example of using the GeminiClient with cascading."""
-    client = GeminiClient(enable_cascading=True)
-    
-    # Simple question - should use fast model
-    simple_response = await client.generate_text(
-        "What is 2 + 2?",
-        use_cascading=True
-    )
-    print(f"Simple response used {simple_response['model_tier']} tier")
-    
-    # Complex analysis - should use smart model
-    complex_response = await client.generate_text(
-        "Analyze the following code and identify potential security vulnerabilities: /* complex code here */",
-        use_cascading=True
-    )
-    print(f"Complex response used {complex_response['model_tier']} tier")
-    
-    # Check budget status
-    budget = client.get_budget_status()
-    print(f"Budget status: {budget['alert_level']} ({budget['budget_used_percent']:.1f}% used)")
-    
-    # Get optimization recommendations
-    optimizations = client.get_optimization_report()
-    print(f"Optimization opportunities: {len(optimizations['optimizations'])} found")
-
-
-    # Debate system support methods
     def _create_debate_agent(self, role: str) -> 'DebateAgent':
         """Create a debate agent with the specified role.
         
@@ -581,7 +594,7 @@ async def example_usage():
             }
     
     async def _detect_conflicts(self, memories: List['Memory']) -> Dict[str, Any]:
-        """Detect conflicts between memories.
+        """Detect conflicts between memories (Consistency Signals).
         
         Args:
             memories: List of memories to check for conflicts
@@ -707,61 +720,112 @@ async def example_usage():
                 "overall_score": 0.0,
                 "error": str(e)
             }
+
+    # --- Mixture of Thought (MoT) ---
     
-    def _get_cache_key(self, content: str, prefix: str = "", model_id: str = "") -> str:
-        """Generate cache key.
+    async def generate_mixture_of_thought(
+        self,
+        prompt: str,
+        num_perspectives: int = 3,
+        model_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generate multiple perspectives and synthesize them (Mixture of Thought).
+
+        This implements the Parallel Extraction strategy (M06.DEV.005) by generating
+        multiple reasoning paths with varied parameters and synthesizing the results.
         
         Args:
-            content: Content to cache
-            prefix: Cache key prefix
-            model_id: Model identifier
+            prompt: The main prompt or question
+            num_perspectives: Number of parallel perspectives to generate
+            model_id: Optional specific model to use (defaults to cascading)
             
         Returns:
-            Cache key
+            Dictionary containing perspectives and synthesized result
         """
-        import hashlib
+        start_time = time.time()
         
-        # Create base hash from content
-        content_hash = hashlib.md5(content.encode()).hexdigest()[:16]
+        # 1. Generate N responses with high temperature to encourage diversity
+        tasks = []
+        for i in range(num_perspectives):
+            # Vary temperature slightly for each perspective
+            perspective_temp = 0.7 + (i * 0.1)
+            perspective_prompt = f"Perspective {i+1}: Analyze the following from a unique angle: {prompt}"
+
+            tasks.append(self.generate_text(
+                prompt=perspective_prompt,
+                model_id=model_id,
+                temperature=min(1.0, perspective_temp),
+                use_cascading=True
+            ))
         
-        # Build cache key
-        components = []
-        if prefix:
-            components.append(prefix)
-        if model_id:
-            components.append(model_id)
-        components.append(content_hash)
+        # Run in parallel
+        perspective_results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        return "_".join(components)
-    
-    def _get_cached_response(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        """Get cached response if available and not expired.
+        valid_perspectives = []
+        for res in perspective_results:
+            if isinstance(res, dict) and 'content' in res:
+                valid_perspectives.append(res['content'])
+            elif isinstance(res, Exception):
+                logger.warning(f"Perspective generation failed: {res}")
         
-        Args:
-            cache_key: Cache key to retrieve
+        if not valid_perspectives:
+            raise ValueError("Failed to generate any valid perspectives")
             
-        Returns:
-            Cached response or None
+        # 2. Synthesize
+        synthesis_prompt = f"""
+        Analyze the following perspectives on the topic:
+        {prompt}
+        
+        Perspectives:
+        {json.dumps(valid_perspectives, indent=2)}
+        
+        Synthesize a final comprehensive answer that incorporates the best insights from all perspectives.
+        Resolve any contradictions and provide a balanced conclusion.
         """
-        if not self.enable_caching:
-            return None
         
-        cached_record = self._response_cache.get(cache_key)
-        if not cached_record:
-            return None
+        # Use smart model for synthesis
+        final_response = await self.generate_text(
+            prompt=synthesis_prompt,
+            model_id="gemini-2.5-pro", # Use smart model for synthesis
+            temperature=0.2, # Low temperature for synthesis
+            use_cascading=False
+        )
         
-        # Check if cache has expired
-        now = datetime.now(timezone.utc)
-        cache_time = cached_record.get("timestamp", now)
-        age_seconds = (now - cache_time).total_seconds()
+        total_time = (time.time() - start_time) * 1000
         
-        if age_seconds > self.cache_ttl_seconds:
-            # Remove expired cache entry
-            del self._response_cache[cache_key]
-            return None
-        
-        # Update cache hit tracking
-        if cache_key not in self._cache_timestamps:
-            self._cache_timestamps[cache_key] = now
-        
-        return cached_record
+        return {
+            "final_response": final_response,
+            "perspectives": valid_perspectives,
+            "meta": {
+                "num_perspectives": len(valid_perspectives),
+                "total_time_ms": total_time
+            }
+        }
+
+
+# Example usage helper
+async def example_usage():
+    """Example of using the GeminiClient with cascading."""
+    client = GeminiClient(enable_cascading=True)
+
+    # Simple question - should use fast model
+    simple_response = await client.generate_text(
+        "What is 2 + 2?",
+        use_cascading=True
+    )
+    print(f"Simple response used {simple_response['model_tier']} tier")
+
+    # Complex analysis - should use smart model
+    complex_response = await client.generate_text(
+        "Analyze the following code and identify potential security vulnerabilities: /* complex code here */",
+        use_cascading=True
+    )
+    print(f"Complex response used {complex_response['model_tier']} tier")
+
+    # Check budget status
+    budget = client.get_budget_status()
+    print(f"Budget status: {budget['alert_level']} ({budget['budget_used_percent']:.1f}% used)")
+
+    # Get optimization recommendations
+    optimizations = client.get_optimization_report()
+    print(f"Optimization opportunities: {len(optimizations['optimizations'])} found")
