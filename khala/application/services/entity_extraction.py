@@ -451,7 +451,7 @@ Return only the JSON array, no explanation.
                 r"(\w+)\s+(?:uses|uses?|utilizes)\s+(\w+)",
                 r"(\w+)\s+(?:powered\s+by|built\s+on|implemented\s+with)\s+(\w+)"
             ],
-            RelationshipType.RELATES_TO: [
+            RelationshipType.RELATED_TO: [
                 r"(\w+)\s+(?:relates?\s+to|connected\s+to|associated\s+with)\s+(\w+)"
             ]
         }

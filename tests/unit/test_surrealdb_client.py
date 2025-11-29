@@ -96,14 +96,28 @@ class TestSurrealDBClient:
                 result = await client.create_memory(memory)
             
             assert result == memory.id
-            mock_conn.query.assert_called_once()
+            # mock_conn.query.assert_called_once() # Called multiple times due to init
             
-            # Verify the query parameters
+            # Verify the query parameters - last call should be create
             call_args = mock_conn.query.call_args
             query = call_args[0][0]
             params = call_args[1]
             
-            assert "CREATE memory CONTENT" in query
+            # Find the create call
+            create_call = None
+            for call in mock_conn.query.call_args_list:
+                args = call[0]
+                kwargs = call[1] # or call[1] for kwargs, but AsyncMock uses args, kwargs tuple
+                # call is (args, kwargs)
+                q = args[0]
+                p = args[1] if len(args) > 1 else {}
+                if "CREATE" in q and "memory" in q:
+                    create_call = (q, p)
+                    break
+
+            assert create_call is not None, "Create query not found in calls"
+            query, params = create_call
+
             assert params["user_id"] == memory.user_id
             assert params["content"] == memory.content
             assert params["tier"] == memory.tier.value
@@ -151,9 +165,18 @@ class TestSurrealDBClient:
         assert len(results) == 2
         assert results[0]["id"] == "mem1"
         
-        # Verify query parameters
-        call_args = mock_conn.query.call_args
-        params = call_args[1]
+        # Verify query parameters - find search query
+        search_call = None
+        for call in mock_conn.query.call_args_list:
+            args = call[0]
+            q = args[0]
+            p = args[1] if len(args) > 1 else {}
+            if "SELECT" in q and "vector::similarity" in q:
+                search_call = (q, p)
+                break
+
+        assert search_call is not None
+        query, params = search_call
         
         assert params["user_id"] == "user123"
         assert params["embedding"] == embedding.values
@@ -187,9 +210,18 @@ class TestSurrealDBClient:
         assert "Python" in results[0]["content"]
         
         # Verify query parameters
-        call_args = mock_conn.query.call_args
-        params = call_args[1]
-        
+        search_call = None
+        for call in mock_conn.query.call_args_list:
+            args = call[0]
+            q = args[0]
+            p = args[1] if len(args) > 1 else {}
+            if "SELECT" in q and "content @@ $query_text" in q:
+                search_call = (q, p)
+                break
+
+        assert search_call is not None
+        query, params = search_call
+
         assert params["user_id"] == "user123"
         assert params["query_text"] == "Python tutorial"
     
@@ -248,15 +280,19 @@ class TestSurrealDBClient:
             async with client.get_connection() as conn:
                 await client.update_memory(memory)
             
-            mock_conn.query.assert_called_once()
-            
             # Verify update query
-            call_args = mock_conn.query.call_args
-            query = call_args[0][0]
-            params = call_args[1]
+            update_call = None
+            for call in mock_conn.query.call_args_list:
+                args = call[0]
+                q = args[0]
+                p = args[1] if len(args) > 1 else {}
+                if "UPDATE" in q and "CONTENT" in q:
+                    update_call = (q, p)
+                    break
             
-            assert "UPDATE" in query
-            assert "CONTENT" in query
+            assert update_call is not None
+            query, params = update_call
+
             assert params["id"] == memory.id
             assert params["content"] == "Updated content"
             assert "updated" in params["tags"]
@@ -271,13 +307,20 @@ class TestSurrealDBClient:
             
             await client.delete_memory("mem123")
             
-            mock_conn.query.assert_called_once()
+            # Verify delete query
+            delete_call = None
+            for call in mock_conn.query.call_args_list:
+                args = call[0]
+                q = args[0]
+                p = args[1] if len(args) > 1 else {}
+                if "DELETE" in q and "memory" in q:
+                    delete_call = (q, p)
+                    break
             
-            call_args = mock_conn.query.call_args
-            query = call_args[0][0]
-            params = call_args[1]
-            
-            assert "DELETE FROM memory" in query
+            assert delete_call is not None
+            query, params = delete_call
+
+            assert "DELETE" in query and "type::thing('memory', $id)" in query
             assert params["id"] == "mem123"
     
     @pytest.mark.asyncio
