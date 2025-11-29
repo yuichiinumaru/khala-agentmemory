@@ -27,6 +27,7 @@ class DatabaseSchema:
         DEFINE FIELD id ON memory TYPE string;
         DEFINE FIELD user_id ON memory TYPE string;
         DEFINE FIELD content ON memory TYPE string;
+        DEFINE FIELD content_hash ON memory TYPE string;
         DEFINE FIELD embedding ON memory TYPE array<float> FLEXIBLE;
         DEFINE FIELD tier ON memory TYPE enum<working,short_term,long_term>;
         DEFINE FIELD importance ON memory TYPE float;
@@ -58,6 +59,9 @@ class DatabaseSchema:
         -- Primary index (multi-tenancy)
         DEFINE INDEX user_index ON memory FIELDS user_id;
         
+        -- Deduplication index
+        DEFINE INDEX content_hash_index ON memory FIELDS content_hash;
+
         -- Search indexes
         DEFINE INDEX vector_search ON memory FIELDS embedding HNSW 
           PARAMETERS {
@@ -149,6 +153,28 @@ class DatabaseSchema:
         DEFINE INDEX audit_user_index ON audit_log FIELDS user_id;
         DEFINE INDEX audit_memory_index ON audit_log FIELDS memory_id;
         """,
+
+        # Skill table
+        "skill_table": """
+        DEFINE TABLE skill SCHEMAFULL;
+        DEFINE FIELD name ON skill TYPE string;
+        DEFINE FIELD code ON skill TYPE string;
+        DEFINE FIELD description ON skill TYPE string;
+        DEFINE FIELD usage_count ON skill TYPE int DEFAULT 0;
+        DEFINE FIELD success_rate ON skill TYPE float DEFAULT 0.0;
+        DEFINE FIELD language ON skill TYPE string;
+        DEFINE FIELD skill_type ON skill TYPE string;
+        DEFINE FIELD parameters ON skill TYPE array<object>;
+        DEFINE FIELD return_type ON skill TYPE string;
+        DEFINE FIELD dependencies ON skill TYPE array<string>;
+        DEFINE FIELD tags ON skill TYPE array<string>;
+        DEFINE FIELD metadata ON skill TYPE object FLEXIBLE;
+        DEFINE FIELD embedding ON skill TYPE array<float>;
+        DEFINE FIELD created_at ON skill TYPE datetime;
+        DEFINE FIELD updated_at ON skill TYPE datetime;
+        DEFINE FIELD version ON skill TYPE string;
+        DEFINE FIELD is_active ON skill TYPE bool;
+        """,
         
         # Custom functions
         "functions": """
@@ -233,6 +259,7 @@ class DatabaseSchema:
             "entity_table",
             "relationship_table",
             "audit_log_table",
+            "skill_table",
             "functions",
             "rbac_permissions",
         ]
@@ -256,6 +283,7 @@ class DatabaseSchema:
             "REMOVE TABLE entity", 
             "REMOVE TABLE relationship",
             "REMOVE TABLE audit_log",
+            "REMOVE TABLE skill",
             "REMOVE FUNCTION fn::decay_score",
             "REMOVE FUNCTION fn::should_promote",
             "REMOVE FUNCTION fn::should_archive",
@@ -278,6 +306,7 @@ class DatabaseSchema:
             ("entity", "SELECT count() FROM entity;"),
             ("relationship", "SELECT count() FROM relationship;"),
             ("audit_log", "SELECT count() FROM audit_log;"),
+            ("skill", "SELECT count() FROM skill;"),
         ]
         
         for table_name, query in table_checks:
