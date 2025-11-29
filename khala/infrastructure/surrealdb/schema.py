@@ -124,6 +124,8 @@ class DatabaseSchema:
         DEFINE FIELD strength ON relationship TYPE float;
         DEFINE FIELD valid_from ON relationship TYPE datetime;
         DEFINE FIELD valid_to ON relationship TYPE datetime;
+        DEFINE FIELD transaction_time_start ON relationship TYPE datetime;
+        DEFINE FIELD transaction_time_end ON relationship TYPE datetime;
         DEFINE FIELD created_at ON relationship TYPE datetime;
         
         -- Indexes

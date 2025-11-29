@@ -5,32 +5,63 @@ from khala.domain.memory.repository import MemoryRepository
 from khala.domain.memory.entities import Memory
 from khala.domain.memory.value_objects import EmbeddingVector
 from khala.infrastructure.surrealdb.client import SurrealDBClient
+from khala.infrastructure.persistence.audit_repository import AuditRepository
+from khala.domain.audit.entities import AuditLog
 
 logger = logging.getLogger(__name__)
 
 class SurrealDBMemoryRepository(MemoryRepository):
     """
-    SurrealDB implementation of the MemoryRepository interface.
+    SurrealDB implementation of the MemoryRepository interface with Audit Logging.
     """
     
-    def __init__(self, client: SurrealDBClient):
+    def __init__(self, client: SurrealDBClient, audit_repo: Optional[AuditRepository] = None):
         self.client = client
+        self.audit_repo = audit_repo or AuditRepository(client)
         
     async def create(self, memory: Memory) -> str:
         """Save a new memory."""
-        return await self.client.create_memory(memory)
+        memory_id = await self.client.create_memory(memory)
+        await self.audit_repo.log(AuditLog(
+            user_id=memory.user_id,
+            action="create",
+            target_id=memory_id,
+            target_type="memory",
+            details={"tier": memory.tier.value}
+        ))
+        return memory_id
         
     async def get_by_id(self, memory_id: str) -> Optional[Memory]:
         """Retrieve a memory by its ID."""
+        # Auditing reads might be too verbose, but can be enabled if strict audit is required.
+        # For now, we only audit state changes.
         return await self.client.get_memory(memory_id)
         
     async def update(self, memory: Memory) -> None:
         """Update an existing memory."""
         await self.client.update_memory(memory)
+        await self.audit_repo.log(AuditLog(
+            user_id=memory.user_id,
+            action="update",
+            target_id=memory.id,
+            target_type="memory",
+            details={"tier": memory.tier.value}
+        ))
         
     async def delete(self, memory_id: str) -> None:
         """Delete a memory."""
+        # We need to fetch the memory first to get user_id for audit
+        memory = await self.get_by_id(memory_id)
+        user_id = memory.user_id if memory else "unknown"
+
         await self.client.delete_memory(memory_id)
+        await self.audit_repo.log(AuditLog(
+            user_id=user_id,
+            action="delete",
+            target_id=memory_id,
+            target_type="memory",
+            details={}
+        ))
         
     async def search_by_vector(
         self, 
@@ -48,7 +79,6 @@ class SurrealDBMemoryRepository(MemoryRepository):
             min_similarity=min_similarity,
             filters=filters
         )
-        # Convert dict results to Memory objects
         return [self.client._deserialize_memory(data) for data in results]
         
     async def search_by_text(

@@ -239,6 +239,8 @@ class Relationship:
     strength: float
     valid_from: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     valid_to: Optional[datetime] = field(default=None)
+    transaction_time_start: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    transaction_time_end: Optional[datetime] = field(default=None)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     
     def __post_init__(self) -> None:
@@ -251,6 +253,9 @@ class Relationship:
         
         if self.valid_to and self.valid_to <= self.valid_from:
             raise ValueError("valid_to must be after valid_from")
+
+        if self.transaction_time_end and self.transaction_time_end <= self.transaction_time_start:
+            raise ValueError("transaction_time_end must be after transaction_time_start")
     
     def is_active(self) -> bool:
         """Check if relationship is currently active."""

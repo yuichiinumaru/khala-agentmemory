@@ -288,6 +288,64 @@ class SurrealDBClient:
         async with self.get_connection() as conn:
             await conn.query(query, params)
 
+    async def create_entity(self, entity: Entity) -> str:
+        """Create a new entity in the database."""
+        query = """
+        CREATE type::thing('entity', $id) CONTENT {
+            text: $text,
+            entity_type: $entity_type,
+            confidence: $confidence,
+            embedding: $embedding,
+            metadata: $metadata,
+            created_at: $created_at
+        };
+        """
+
+        params = {
+            "id": entity.id,
+            "text": entity.text,
+            "entity_type": entity.entity_type.value,
+            "confidence": entity.confidence,
+            "embedding": entity.embedding.values if entity.embedding else None,
+            "metadata": entity.metadata,
+            "created_at": entity.created_at.isoformat(),
+        }
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+            return entity.id
+
+    async def create_relationship(self, relationship: Relationship) -> str:
+        """Create a new relationship in the database."""
+        query = """
+        CREATE type::thing('relationship', $id) CONTENT {
+            from_entity_id: $from_entity_id,
+            to_entity_id: $to_entity_id,
+            relation_type: $relation_type,
+            strength: $strength,
+            valid_from: $valid_from,
+            valid_to: $valid_to,
+            transaction_time_start: $transaction_time_start,
+            transaction_time_end: $transaction_time_end
+        };
+        """
+
+        params = {
+            "id": relationship.id,
+            "from_entity_id": relationship.from_entity_id,
+            "to_entity_id": relationship.to_entity_id,
+            "relation_type": relationship.relation_type,
+            "strength": relationship.strength,
+            "valid_from": relationship.valid_from.isoformat(),
+            "valid_to": relationship.valid_to.isoformat() if relationship.valid_to else None,
+            "transaction_time_start": relationship.transaction_time_start.isoformat(),
+            "transaction_time_end": relationship.transaction_time_end.isoformat() if relationship.transaction_time_end else None,
+        }
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+            return relationship.id
+
     def _build_filter_query(self, filters: Dict[str, Any], params: Dict[str, Any]) -> str:
         """Build WHERE clause segment from filters and update params."""
         if not filters:

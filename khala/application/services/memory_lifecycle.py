@@ -16,6 +16,7 @@ from khala.domain.memory.services import (
     DeduplicationService,
     ConsolidationService
 )
+from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +63,17 @@ class MemoryLifecycleService:
         stats["deduplicated"] = await self.deduplicate_memories(user_id)
 
         # 4. Consolidation (Optional/Heavy operation)
-        # Placeholder: Consolidation requires LLM integration which is handled separately.
-        # stats["consolidated"] = await self.consolidate_memories(user_id)
+        # We use a distributed lock here to ensure only one instance performs consolidation
+        # for a given user at a time.
+        lock = SurrealDBLock(self.repository.client, f"consolidation_lock_{user_id}")
+        if await lock.acquire():
+            try:
+                # Placeholder: Consolidation requires LLM integration which is handled separately.
+                stats["consolidated"] = await self.consolidate_memories(user_id)
+            finally:
+                await lock.release()
+        else:
+            logger.info(f"Skipping consolidation for user {user_id}: Lock acquired by another process.")
 
         logger.info(f"Lifecycle job completed for user {user_id}: {stats}")
         return stats
