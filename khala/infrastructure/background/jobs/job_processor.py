@@ -25,6 +25,7 @@ except ImportError:
 from ....domain.memory.entities import Memory, MemoryTier
 from ....domain.memory.value_objects import ImportanceScore, DecayScore
 from ....domain.memory.services import MemoryService
+from ....application.services.temporal_analyzer import TemporalAnalysisService
 from ...surrealdb.client import SurrealDBClient
 
 logger = logging.getLogger(__name__)
@@ -423,50 +424,20 @@ class JobProcessor:
         
         # Get memory IDs from payload
         memory_ids = job.payload.get("memory_ids", [])
-        decay_cutoff_days = job.payload.get("cutoff_days", 90)
         
         if not memory_ids:
             raise ValueError("No memory IDs provided in payload")
         
-        processed_memories = []
-        for memory_id in memory_ids:
-            try:
-                memory = await self.db_client.get_memory(memory_id)
-                if memory:
-                    # Calculate new decay score
-                    decay_score = DecayScore.calculate(
-                        age_days=(datetime.now(timezone.utc) - memory.created_at).days,
-                        half_life_hours=memory.tier.ttl_hours,
-                        access_factor=memory.access_count / max(1, memory.access_count)
-                    )
-                    
-                    # Update memory decay score
-                    await self.db_client.update_memory(
-                        memory_id,
-                        updates={
-                            "decay_score": decay_score.value,
-                            "updated_at": datetime.now(timezone.utc).isoformat()
-                        }
-                    )
-                    
-                    processed_memories.append({
-                        "memory_id": memory_id,
-                        "decay_score": decay_score.value,
-                        "access_count": memory.access_count
-                    })
-                    
-            except Exception as e:
-                logger.error(f"Failed to process memory {memory_id}: {e}")
+        # Use TemporalAnalysisService for processing
+        temporal_service = TemporalAnalysisService(self.db_client)
+        results = await temporal_service.batch_process_decay(memory_ids)
         
         execution_time = (time.time() - start_time) * 1000
         
         return JobResult(
             job_id=job.job_id,
-            success=len(processed_memories) > 0,
-            result={
-                "processed_memories": len(processed_memories),
-                "memory_results": processed_memories
-            },
+            success=results["processed"] > 0,
+            result=results,
             execution_time_ms=execution_time
         )
     
