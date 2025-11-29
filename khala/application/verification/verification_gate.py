@@ -170,8 +170,7 @@ class VerificationGate:
         self.debate_threshold = 0.7  # Trigger debate for high-importance memories
         
         # Performance tracking
-        total_verification(self.client)
-        verification_history: List[VerificationResult] = []
+        self.verification_history: List[VerificationResult] = []
     
     async def verify_memory(self, 
                           memory: Memory, 

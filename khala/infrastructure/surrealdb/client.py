@@ -9,6 +9,7 @@ import hashlib
 from typing import Dict, List, Optional, Any, Union
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 try:
     from surrealdb import Surreal, AsyncSurreal
@@ -18,7 +19,7 @@ except ImportError as e:
     ) from e
 
 from khala.domain.memory.entities import Memory, Entity, Relationship
-from khala.domain.memory.value_objects import EmbeddingVector
+from khala.domain.memory.value_objects import EmbeddingVector, MemorySource, Sentiment
 from khala.domain.skills.entities import Skill
 from khala.domain.skills.value_objects import SkillType, SkillLanguage, SkillParameter
 from .schema import DatabaseSchema
@@ -146,13 +147,30 @@ class SurrealDBClient:
             access_count: $access_count,
             llm_cost: $llm_cost,
             verification_score: $verification_score,
+            verification_count: $verification_count,
+            verification_status: $verification_status,
+            verified_at: $verified_at,
             verification_issues: $verification_issues,
             debate_consensus: $debate_consensus,
             is_archived: $is_archived,
-            decay_score: $decay_score
+            decay_score: $decay_score,
+            source: $source,
+            sentiment: $sentiment
         };
         """
         
+        # Serialize source and handle datetime
+        source_data = None
+        if memory.source:
+            source_data = asdict(memory.source)
+            if source_data.get('timestamp'):
+                source_data['timestamp'] = source_data['timestamp'].isoformat()
+
+        # Serialize sentiment
+        sentiment_data = None
+        if memory.sentiment:
+            sentiment_data = asdict(memory.sentiment)
+
         params = {
             "id": memory.id,
             "user_id": memory.user_id,
@@ -170,10 +188,15 @@ class SurrealDBClient:
             "access_count": memory.access_count,
             "llm_cost": memory.llm_cost,
             "verification_score": memory.verification_score,
+            "verification_count": memory.verification_count,
+            "verification_status": memory.verification_status,
+            "verified_at": memory.verified_at.isoformat() if memory.verified_at else None,
             "verification_issues": memory.verification_issues,
             "debate_consensus": memory.debate_consensus,
             "is_archived": memory.is_archived,
             "decay_score": memory.decay_score.value if memory.decay_score else None,
+            "source": source_data,
+            "sentiment": sentiment_data,
         }
         
         async with self.get_connection() as conn:
@@ -246,13 +269,30 @@ class SurrealDBClient:
             access_count: $access_count,
             llm_cost: $llm_cost,
             verification_score: $verification_score,
+            verification_count: $verification_count,
+            verification_status: $verification_status,
+            verified_at: $verified_at,
             verification_issues: $verification_issues,
             debate_consensus: $debate_consensus,
             is_archived: $is_archived,
-            decay_score: $decay_score
+            decay_score: $decay_score,
+            source: $source,
+            sentiment: $sentiment
         };
         """
         
+        # Serialize source and handle datetime
+        source_data = None
+        if memory.source:
+            source_data = asdict(memory.source)
+            if source_data.get('timestamp'):
+                source_data['timestamp'] = source_data['timestamp'].isoformat()
+
+        # Serialize sentiment
+        sentiment_data = None
+        if memory.sentiment:
+            sentiment_data = asdict(memory.sentiment)
+
         params = {
             "id": memory.id,
             "user_id": memory.user_id,
@@ -269,10 +309,15 @@ class SurrealDBClient:
             "access_count": memory.access_count,
             "llm_cost": memory.llm_cost,
             "verification_score": memory.verification_score,
+            "verification_count": memory.verification_count,
+            "verification_status": memory.verification_status,
+            "verified_at": memory.verified_at.isoformat() if memory.verified_at else None,
             "verification_issues": memory.verification_issues,
             "debate_consensus": memory.debate_consensus,
             "is_archived": memory.is_archived,
             "decay_score": memory.decay_score.value if memory.decay_score else None,
+            "source": source_data,
+            "sentiment": sentiment_data,
         }
         
         async with self.get_connection() as conn:
@@ -506,6 +551,25 @@ class SurrealDBClient:
         if data.get("embedding"):
             embedding = EmbeddingVector(data["embedding"])
         
+        # Reconstruct MemorySource
+        source = None
+        if data.get("source"):
+            src_data = data["source"]
+            if src_data.get("timestamp"):
+                src_data["timestamp"] = parse_dt(src_data["timestamp"])
+            try:
+                source = MemorySource(**src_data)
+            except Exception as e:
+                logger.warning(f"Failed to deserialize MemorySource: {e}")
+
+        # Reconstruct Sentiment
+        sentiment = None
+        if data.get("sentiment"):
+            try:
+                sentiment = Sentiment(**data["sentiment"])
+            except Exception as e:
+                logger.warning(f"Failed to deserialize Sentiment: {e}")
+
         # Create Memory object
         from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
         
@@ -530,10 +594,15 @@ class SurrealDBClient:
             access_count=data.get("access_count", 0),
             llm_cost=data.get("llm_cost", 0.0),
             verification_score=data.get("verification_score", 0.0),
+            verification_count=data.get("verification_count", 0),
+            verification_status=data.get("verification_status", "pending"),
+            verified_at=parse_dt(data.get("verified_at")),
             verification_issues=data.get("verification_issues", []),
             debate_consensus=data.get("debate_consensus"),
             is_archived=data.get("is_archived", False),
             decay_score=None,  # Would need to recreate DecayScore if needed
+            source=source,
+            sentiment=sentiment
         )
 
     async def get_user_sessions(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:

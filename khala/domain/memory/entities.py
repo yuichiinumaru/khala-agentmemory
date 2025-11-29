@@ -46,6 +46,9 @@ class Memory:
     access_count: int = 0
     llm_cost: float = 0.0
     verification_score: float = 0.0
+    verification_count: int = 0
+    verification_status: str = "pending"
+    verified_at: Optional[datetime] = None
     verification_issues: List[str] = field(default_factory=list)
     debate_consensus: Optional[Dict[str, Any]] = field(default=None)
     is_archived: bool = False
@@ -55,6 +58,11 @@ class Memory:
     source: Optional[MemorySource] = field(default=None)  # Task 28: Traceability
     sentiment: Optional[Sentiment] = field(default=None)  # Task 37: Emotion
     
+    @property
+    def importance_score(self) -> ImportanceScore:
+        """Alias for importance to support legacy code."""
+        return self.importance
+
     def __hash__(self) -> int:
         """Hash based on ID."""
         return hash(self.id)
