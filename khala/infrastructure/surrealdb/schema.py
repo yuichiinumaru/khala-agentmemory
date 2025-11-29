@@ -154,6 +154,24 @@ class DatabaseSchema:
         DEFINE INDEX audit_memory_index ON audit_log FIELDS memory_id;
         """,
 
+        # Search Session table
+        "search_session_table": """
+        DEFINE TABLE search_session SCHEMAFULL;
+
+        DEFINE FIELD id ON search_session TYPE string;
+        DEFINE FIELD user_id ON search_session TYPE string;
+        DEFINE FIELD query ON search_session TYPE string;
+        DEFINE FIELD expanded_queries ON search_session TYPE array<string>;
+        DEFINE FIELD filters ON search_session TYPE object FLEXIBLE;
+        DEFINE FIELD timestamp ON search_session TYPE datetime DEFAULT time::now();
+        DEFINE FIELD results_count ON search_session TYPE int DEFAULT 0;
+        DEFINE FIELD metadata ON search_session TYPE object FLEXIBLE;
+
+        -- Indexes
+        DEFINE INDEX session_user_index ON search_session FIELDS user_id;
+        DEFINE INDEX session_time_index ON search_session FIELDS timestamp DESC;
+        """,
+
         # Skill table
         "skill_table": """
         DEFINE TABLE skill SCHEMAFULL;
@@ -259,6 +277,7 @@ class DatabaseSchema:
             "entity_table",
             "relationship_table",
             "audit_log_table",
+            "search_session_table",
             "skill_table",
             "functions",
             "rbac_permissions",
@@ -283,6 +302,7 @@ class DatabaseSchema:
             "REMOVE TABLE entity", 
             "REMOVE TABLE relationship",
             "REMOVE TABLE audit_log",
+            "REMOVE TABLE search_session",
             "REMOVE TABLE skill",
             "REMOVE FUNCTION fn::decay_score",
             "REMOVE FUNCTION fn::should_promote",
@@ -306,6 +326,7 @@ class DatabaseSchema:
             ("entity", "SELECT count() FROM entity;"),
             ("relationship", "SELECT count() FROM relationship;"),
             ("audit_log", "SELECT count() FROM audit_log;"),
+            ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
         ]
         

@@ -1,8 +1,11 @@
 from typing import List, Dict, Any, Optional
 import logging
+import asyncio
 from khala.domain.memory.repository import MemoryRepository
 from khala.domain.ports.embedding_service import EmbeddingService
 from khala.domain.memory.entities import Memory, EmbeddingVector
+from khala.application.services.query_expansion_service import QueryExpansionService
+from khala.infrastructure.surrealdb.client import SurrealDBClient
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +16,14 @@ class HybridSearchService:
     def __init__(
         self,
         memory_repository: MemoryRepository,
-        embedding_service: EmbeddingService
+        embedding_service: EmbeddingService,
+        query_expansion_service: Optional[QueryExpansionService] = None,
+        db_client: Optional[SurrealDBClient] = None
     ):
         self.memory_repo = memory_repository
         self.embedding_service = embedding_service
+        self.query_expansion_service = query_expansion_service
+        self.db_client = db_client
 
     async def search(
         self,
@@ -26,7 +33,8 @@ class HybridSearchService:
         filters: Optional[Dict[str, Any]] = None,
         rrf_k: int = 60,
         vector_weight: float = 1.0,
-        bm25_weight: float = 1.0
+        bm25_weight: float = 1.0,
+        expand_query: bool = False
     ) -> List[Memory]:
         """
         Perform hybrid search using Reciprocal Rank Fusion (RRF).
@@ -43,39 +51,46 @@ class HybridSearchService:
         Returns:
             List of unique Memory objects sorted by RRF score.
         """
-        # 1. Fetch candidates in parallel (conceptually, here async)
+        # 0. Query Expansion
+        expanded_queries = [query]
+        if expand_query and self.query_expansion_service:
+            expanded_queries = await self.query_expansion_service.expand_query(query)
+
+        # 1. Fetch candidates in parallel for all queries
         # We fetch top_k * 2 candidates from each source to ensure good fusion overlap
         candidate_k = top_k * 2
 
-        # 1a. Vector Search
-        vector_results: List[Memory] = []
-        try:
-            embedding_values = await self.embedding_service.get_embedding(query)
-            embedding = EmbeddingVector(values=embedding_values)
-            vector_results = await self.memory_repo.search_by_vector(
-                embedding=embedding,
-                user_id=user_id,
-                top_k=candidate_k,
-                filters=filters
-            )
-        except Exception as e:
-            logger.error(f"Vector search failed: {e}")
-            # Continue with just BM25 if vector fails
+        all_vector_results: List[Memory] = []
+        all_bm25_results: List[Memory] = []
 
-        # 1b. BM25 Search
-        bm25_results: List[Memory] = []
-        try:
-            bm25_results = await self.memory_repo.search_by_text(
-                query_text=query,
-                user_id=user_id,
-                top_k=candidate_k,
-                filters=filters
-            )
-        except Exception as e:
-            logger.error(f"BM25 search failed: {e}")
-            # Continue with just Vector if BM25 fails
+        for q in expanded_queries:
+            # 1a. Vector Search
+            try:
+                embedding_values = await self.embedding_service.get_embedding(q)
+                embedding = EmbeddingVector(values=embedding_values)
+                v_results = await self.memory_repo.search_by_vector(
+                    embedding=embedding,
+                    user_id=user_id,
+                    top_k=candidate_k,
+                    filters=filters
+                )
+                all_vector_results.extend(v_results)
+            except Exception as e:
+                logger.error(f"Vector search failed for query '{q}': {e}")
 
-        if not vector_results and not bm25_results:
+            # 1b. BM25 Search
+            try:
+                b_results = await self.memory_repo.search_by_text(
+                    query_text=q,
+                    user_id=user_id,
+                    top_k=candidate_k,
+                    filters=filters
+                )
+                all_bm25_results.extend(b_results)
+            except Exception as e:
+                logger.error(f"BM25 search failed for query '{q}': {e}")
+
+        if not all_vector_results and not all_bm25_results:
             return []
 
         # 2. Compute RRF Scores
@@ -84,14 +99,28 @@ class HybridSearchService:
         # Map memory_id -> Memory object
         memories: Dict[str, Memory] = {}
 
-        # Process Vector Results
-        for rank, memory in enumerate(vector_results):
+        # Process Vector Results (Deduplicate first to handle multiple expansions returning same result)
+        seen_vector_ids = set()
+        unique_vector_results = []
+        for m in all_vector_results:
+            if m.id not in seen_vector_ids:
+                seen_vector_ids.add(m.id)
+                unique_vector_results.append(m)
+
+        for rank, memory in enumerate(unique_vector_results):
             memories[memory.id] = memory
             scores[memory.id] = scores.get(memory.id, 0.0) + \
                 (vector_weight * (1.0 / (rrf_k + rank + 1)))
 
         # Process BM25 Results
-        for rank, memory in enumerate(bm25_results):
+        seen_bm25_ids = set()
+        unique_bm25_results = []
+        for m in all_bm25_results:
+            if m.id not in seen_bm25_ids:
+                seen_bm25_ids.add(m.id)
+                unique_bm25_results.append(m)
+
+        for rank, memory in enumerate(unique_bm25_results):
             memories[memory.id] = memory
             scores[memory.id] = scores.get(memory.id, 0.0) + \
                 (bm25_weight * (1.0 / (rrf_k + rank + 1)))
@@ -101,5 +130,19 @@ class HybridSearchService:
 
         # 4. Return top_k results
         final_results = [memories[mid] for mid in sorted_ids[:top_k]]
+
+        # 5. Log search session
+        if self.db_client:
+             try:
+                await self.db_client.create_search_session({
+                    "user_id": user_id,
+                    "query": query,
+                    "expanded_queries": expanded_queries,
+                    "filters": filters,
+                    "results_count": len(final_results),
+                    "metadata": {"rrf_k": rrf_k}
+                })
+             except Exception as e:
+                 logger.warning(f"Failed to log search session: {e}")
 
         return final_results
