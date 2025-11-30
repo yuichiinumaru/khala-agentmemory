@@ -161,7 +161,16 @@ def create_scheduler(job_processor: JobProcessor) -> BackgroundScheduler:
     # 2. Weekly Consolidation
     scheduler.add_task(
         name="weekly_consolidation",
-        job_type="smart_consolidation",
+        job_type="consolidation",
+        interval_seconds=604800, # 7 days
+        payload={"scan_all": True},
+        priority=JobPriority.LOW
+    )
+
+    # 3. Weekly Deduplication
+    scheduler.add_task(
+        name="weekly_deduplication",
+        job_type="deduplication",
         interval_seconds=604800, # 7 days
         payload={"scan_all": True},
         priority=JobPriority.LOW
