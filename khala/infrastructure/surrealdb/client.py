@@ -663,12 +663,54 @@ class SurrealDBClient:
             sentiment=sentiment
         )
 
+    async def create_search_session(self, session_data: Dict[str, Any]) -> str:
+        """Create a new search session log.
+
+        Args:
+            session_data: Dictionary containing session data (user_id, query, etc)
+
+        Returns:
+            The ID of the created session
+        """
+        query = """
+        CREATE search_session CONTENT {
+            user_id: $user_id,
+            query: $query,
+            expanded_queries: $expanded_queries,
+            filters: $filters,
+            timestamp: time::now(),
+            results_count: $results_count,
+            metadata: $metadata
+        };
+        """
+
+        params = {
+            "user_id": session_data.get("user_id"),
+            "query": session_data.get("query"),
+            "expanded_queries": session_data.get("expanded_queries", []),
+            "filters": session_data.get("filters", {}),
+            "results_count": session_data.get("results_count", 0),
+            "metadata": session_data.get("metadata", {})
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list) and len(response) > 0:
+                item = response[0]
+                if isinstance(item, dict):
+                     # Handle different response formats
+                    if 'id' in item:
+                        return item['id']
+                    if 'result' in item and isinstance(item['result'], list) and len(item['result']) > 0:
+                        return item['result'][0].get('id')
+            return ""
+
     async def get_user_sessions(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Retrieve past search sessions for a user."""
         query = """
         SELECT * FROM search_session
         WHERE user_id = $user_id
-        ORDER BY created_at DESC
+        ORDER BY timestamp DESC
         LIMIT $limit;
         """
         params = {"user_id": user_id, "limit": limit}

@@ -13,7 +13,14 @@ After reading the documentation, you should examine the codebase, focusing on th
 - Read the relevant source code files in `khala/`.
 - Check existing tests in `tests/`.
 
-## 3. Project Documentation
+## 3. Repository Hygiene
+
+**CRITICAL:** You must **NEVER** include binary files, `__pycache__` directories, or `*.pyc` files in your commits.
+- Ensure your `.gitignore` is correctly configured.
+- Before submitting any changes, verify that no `__pycache__` directories or binary files are present in the file list.
+- Use `git status` or `ls -R` to double-check before requesting review.
+
+## 4. Project Documentation
 
 The project documentation is located in the `docs/` folder. Below is a brief description of each document:
 
