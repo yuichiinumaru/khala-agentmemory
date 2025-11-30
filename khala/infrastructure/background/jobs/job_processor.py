@@ -422,11 +422,30 @@ class JobProcessor:
         """Execute decay scoring job."""
         start_time = time.time()
         
-        # Get memory IDs from payload
         memory_ids = job.payload.get("memory_ids", [])
         
+        # Handle "scan_all" or empty ID list
+        if not memory_ids and job.payload.get("scan_all", False):
+            # Fetch all active memory IDs
+            query = "SELECT id FROM memory WHERE is_archived = false;"
+            async with self.db_client.get_connection() as conn:
+                response = await conn.query(query)
+                if response and isinstance(response, list) and isinstance(response[0], dict):
+                    # Handle SurrealDB response wrapper if present
+                    items = response[0].get('result', response)
+                    memory_ids = [
+                        item['id'].split(':')[1] if isinstance(item['id'], str) and ':' in item['id'] else item['id']
+                        for item in items
+                    ]
+
         if not memory_ids:
-            raise ValueError("No memory IDs provided in payload")
+             # Just return success if nothing to process
+             return JobResult(
+                job_id=job.job_id,
+                success=True,
+                result={"processed": 0, "message": "No memories to process"},
+                execution_time_ms=(time.time() - start_time) * 1000
+            )
         
         # Use TemporalAnalysisService for processing
         temporal_service = TemporalAnalysisService(self.db_client)
@@ -445,49 +464,43 @@ class JobProcessor:
         """Execute memory consolidation job."""
         start_time = time.time()
         
-        # Get consolidation parameters
-        similarity_threshold = job.payload.get("similarity_threshold", 0.8)
-        max_group_size = job.payload.get("max_group_size", 5)
+        user_id = job.payload.get("user_id")
+        # Handle case where user_id might not be provided in payload (e.g. system-wide)
+        # For now, we require user_id or list of user_ids to iterate
         
-        # Get memories with high similarity scores
-        # This would involve vector similarity calculation in a real implementation
-        # For now, we'll simulate the process
+        processed_count = 0
         
-        consolidation_results = []
+        from khala.application.services.memory_lifecycle import MemoryLifecycleService
+        from khala.infrastructure.persistence.surrealdb_repository import SurrealDBMemoryRepository
         
-        # Simulate finding similar memory groups
-        # In reality, this would use vector search or semantic similarity
-        sample_groups = [
-            ["mem_1", "mem_2"],  # Group 1
-            ["mem_3", "mem_4", "mem_5"]  # Group 2
-        ]
+        repo = SurrealDBMemoryRepository(self.db_client)
+        lifecycle_service = MemoryLifecycleService(repository=repo)
         
-        for group in sample_groups[:max_group_size]:
+        users_to_process = [user_id] if user_id else []
+        if not users_to_process and job.payload.get("scan_all"):
+             # Fetch all distinct user_ids
+             query = "SELECT user_id FROM memory GROUP BY user_id;"
+             async with self.db_client.get_connection() as conn:
+                response = await conn.query(query)
+                if response and isinstance(response, list) and isinstance(response[0], dict):
+                    items = response[0].get('result', response)
+                    users_to_process = [item['user_id'] for item in items if 'user_id' in item]
+
+        for uid in users_to_process:
             try:
-                # In a real implementation, this would:
-                # 1. Calculate semantic similarity
-                # 2. Create merged memory content
-                # 3. Update entity relationships
-                # 4. Archive duplicate memories
-                
-                consolidation_results.append({
-                    "group_members": group,
-                    "similarity_score": similarity_threshold + 0.1,
-                    "consolidated": True,
-                    "merged_memory_id": group[0] + "_merged"
-                })
-                
+                count = await lifecycle_service.consolidate_memories(uid)
+                processed_count += count
             except Exception as e:
-                logger.error(f"Failed to consolidate group {group}: {e}")
+                logger.error(f"Consolidation failed for user {uid}: {e}")
         
         execution_time = (time.time() - start_time) * 1000
         
         return JobResult(
             job_id=job.job_id,
-            success=len(consolidation_results) > 0,
+            success=True,
             result={
-                "groups_processed": len(consolidation_results),
-                "consolidation_results": consolidation_results
+                "users_processed": len(users_to_process),
+                "memories_consolidated": processed_count
             },
             execution_time_ms=execution_time
         )
@@ -496,47 +509,41 @@ class JobProcessor:
         """Execute memory deduplication job."""
         start_time = time.time()
         
-        # Get deduplication parameters
-        hash_threshold = job.payload.get("hash_threshold", 0.95)
-        semantic_threshold = job.payload.get("semantic_threshold", 0.8)
+        processed_count = 0
+
+        from khala.application.services.memory_lifecycle import MemoryLifecycleService
+        from khala.infrastructure.persistence.surrealdb_repository import SurrealDBMemoryRepository
         
-        # Find and remove duplicate memories
-        duplicates_removed = []
+        repo = SurrealDBMemoryRepository(self.db_client)
+        lifecycle_service = MemoryLifecycleService(repository=repo)
         
-        # Simulate deduplication process
-        # In reality, this would use content hashing and semantic similarity
-        sample_duplicates = [
-            {"original": "mem_1", "duplicates": ["mem_2", "mem_3"]},
-            {"original": "mem_4", "duplicates": ["mem_5"]}
-        ]
+        user_id = job.payload.get("user_id")
+        users_to_process = [user_id] if user_id else []
         
-        for dup_data in sample_duplicates:
+        if not users_to_process and job.payload.get("scan_all"):
+             # Fetch all distinct user_ids
+             query = "SELECT user_id FROM memory GROUP BY user_id;"
+             async with self.db_client.get_connection() as conn:
+                response = await conn.query(query)
+                if response and isinstance(response, list) and isinstance(response[0], dict):
+                    items = response[0].get('result', response)
+                    users_to_process = [item['user_id'] for item in items if 'user_id' in item]
+
+        for uid in users_to_process:
             try:
-                # In a real implementation, this would:
-                # 1. Calculate content hashes
-                # 2. Find identical/similar content
-                # 3. Merge metadata and relationships
-                # 4. Archive duplicate memories
-                
-                duplicates_removed.append({
-                    "original_memory": dup_data["original"],
-                    "duplicates_found": len(dup_data["duplicates"]),
-                    "duplicates": dup_data["duplicates"],
-                    "action_taken": "archived"
-                })
-                
+                count = await lifecycle_service.deduplicate_memories(uid)
+                processed_count += count
             except Exception as e:
-                logger.error(f"Failed to deduplicate group: {dup_data}: {e}")
+                logger.error(f"Deduplication failed for user {uid}: {e}")
         
         execution_time = (time.time() - start_time) * 1000
         
         return JobResult(
             job_id=job.job_id,
-            success=len(duplicates_removed) > 0,
+            success=True,
             result={
-                "duplicates_found": sum(dr["duplicates_found"] for dr in duplicates_removed),
-                "duplicates_removed": len(duplicates_removed),
-                "deduplication_results": duplicates_removed
+                "users_processed": len(users_to_process),
+                "duplicates_removed": processed_count
             },
             execution_time_ms=execution_time
         )
