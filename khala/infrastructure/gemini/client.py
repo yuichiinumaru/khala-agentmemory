@@ -239,6 +239,7 @@ class GeminiClient:
     async def generate_text(
         self,
         prompt: str,
+        images: Optional[List[Any]] = None,
         model_id: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
@@ -249,6 +250,7 @@ class GeminiClient:
         
         Args:
             prompt: Text prompt for generation
+            images: Optional list of images (PIL.Image or blob)
             model_id: Specific model to use (overrides cascading)
             temperature: Override model temperature
             max_tokens: Override max tokens
@@ -261,14 +263,24 @@ class GeminiClient:
         start_time = time.time()
         
         # Select model
-        if model_id:
+        # If images are provided, force use of a multimodal model (gemini-2.5-pro or flash)
+        if images:
+            if not model_id:
+                # Default to Flash for multimodal as it's efficient, or Pro if quality needed
+                # For now, let's use the one selected by complexity, but ensure it supports images.
+                # All Gemini models in our registry (Pro/Flash) support images.
+                model = self.select_model(prompt, task_type)
+            else:
+                model = ModelRegistry.get_model(model_id)
+                use_cascading = False
+        elif model_id:
             model = ModelRegistry.get_model(model_id)
             use_cascading = False
         else:
             model = self.select_model(prompt, task_type)
         
-        # Check cache if enabled
-        if self.enable_caching:
+        # Check cache if enabled (skip for images for now as hashing them is expensive)
+        if self.enable_caching and not images:
             cache_key = self._get_cache_key(prompt, model_id=model.model_id)
             cached_response = self._get_cached_response(cache_key)
             if cached_response:
@@ -302,13 +314,18 @@ class GeminiClient:
                 logger.error(f"Failed to initialize model {model.model_id}: {e}")
                 raise
         
+        # Prepare content
+        content_parts = [prompt]
+        if images:
+            content_parts.extend(images)
+
         # Execute generation with retries
         model_instance = self._models[model.model_id]
         
         for attempt in range(self.max_retries + 1):
             try:
                 response = model_instance.generate_content(
-                    prompt,
+                    content_parts,
                     stream=False,
                     request_options={"timeout": self.timeout_seconds}
                 )
