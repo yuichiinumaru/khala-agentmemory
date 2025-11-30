@@ -130,6 +130,26 @@ class SurrealDBClient:
         # Calculate content hash for deduplication
         content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
 
+        # Check for existing memory with same hash
+        check_query = "SELECT id FROM memory WHERE content_hash = $content_hash LIMIT 1;"
+        async with self.get_connection() as conn:
+            check_response = await conn.query(check_query, {"content_hash": content_hash})
+            if check_response:
+                # Handle possible result wrappers (SurrealDB python client can return various formats)
+                items = check_response
+                if isinstance(check_response, list) and len(check_response) > 0:
+                    if isinstance(check_response[0], dict) and 'result' in check_response[0]:
+                        items = check_response[0]['result']
+
+                if items and isinstance(items, list) and len(items) > 0:
+                     existing_item = items[0]
+                     existing_id = existing_item.get('id')
+                     if existing_id:
+                         if isinstance(existing_id, str) and existing_id.startswith("memory:"):
+                             existing_id = existing_id.split(":")[1]
+                         logger.info(f"Duplicate memory detected. Returning existing ID: {existing_id}")
+                         return existing_id
+
         query = """
         CREATE type::thing('memory', $id) CONTENT {
             user_id: $user_id,
@@ -181,6 +201,7 @@ class SurrealDBClient:
             "importance": memory.importance.value,
             "tags": memory.tags,
             "category": memory.category,
+            "summary": memory.summary,
             "metadata": memory.metadata,
             "created_at": memory.created_at.isoformat(),
             "updated_at": memory.updated_at.isoformat(),
@@ -645,6 +666,7 @@ class SurrealDBClient:
             embedding=embedding,
             tags=data.get("tags", []),
             category=data.get("category"),
+            summary=data.get("summary"),
             metadata=data.get("metadata", {}),
             created_at=parse_dt(data["created_at"]),
             updated_at=parse_dt(data["updated_at"]),
