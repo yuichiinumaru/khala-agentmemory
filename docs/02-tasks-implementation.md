@@ -1,150 +1,207 @@
 # 02-TASKS-IMPLEMENTATION.md: Complete Task Breakdown
 
 **Project**: KHALA v2.0
-**Reference**: [01-plan-overview.md](01-plan-overview.md)
+**Reference**: [06-strategies-master.md](06-strategies-master.md)
 **Status**: Active
 
 ---
 
-## Review Findings (Modules 01-05)
-*Review Conducted by Jules*
+## 1. PENDING TASKS (Modules 11-12 & Optimization)
 
-**Summary**: Modules 01-05 are largely implemented with high fidelity. However, critical integration gaps exist in the Foundation module, and some automation features are missing.
+### Module 11: SurrealDB Optimization (Strategies 58-115)
 
-**Critical Gaps**:
-1.  **Schema Discrepancy (M01)**: The active database client (`client.py`) uses a hardcoded, incomplete schema initialization that differs from the comprehensive `schema.py`. Consequently, **Custom Functions** (Decay/Promotion) and **RBAC Roles** are defined in code but never deployed to the database.
-2.  **Deduplication (M03)**: No mechanism exists to prevent duplicate memory creation (Hash-based deduplication is missing).
-3.  **Consolidation Automation (M03)**: While "Smart Consolidation" logic exists via Agents, there is no scheduled job to trigger it automatically.
+#### Document Model Optimization
+- [ ] **M11.DOC.001**: Hierarchical Nested Documents (Strategy 58).
+- [ ] **M11.DOC.002**: Polymorphic Memory Documents (Strategy 59).
+- [ ] **M11.DOC.003**: Document Versioning (Strategy 60).
+- [ ] **M11.DOC.004**: Array-Based Accumulation (Strategy 61).
+- [ ] **M11.DOC.005**: Computed Properties (Strategy 62).
+- [ ] **M11.DOC.006**: Conditional Content Fields (Strategy 63).
+- [ ] **M11.DOC.007**: Schema-Flexible Metadata (Strategy 64).
+- [ ] **M11.DOC.008**: Document-Level Transactions (Strategy 65).
 
----
+#### Graph Model Optimization
+- [x] **M11.GRP.001**: Hyperedge Emulation (Strategy 66) *[Implemented as Hyperedges (42)]*.
+- [x] **M11.GRP.002**: Temporal Graph (Bi-temporal) (Strategy 67) *[Implemented as Bi-temporal Edges (41)]*.
+- [ ] **M11.GRP.003**: Weighted Directed Multigraph (Strategy 68).
+- [ ] **M11.GRP.004**: Hierarchical Graph (Strategy 69).
+- [ ] **M11.GRP.005**: Bidirectional Relationship Tracking (Strategy 70).
+- [ ] **M11.GRP.006**: Recursive Graph Patterns (Strategy 71).
+- [ ] **M11.GRP.007**: Agent-Centric Partitioning (Strategy 72).
+- [ ] **M11.GRP.008**: Consensus Graph (Strategy 73).
+- [ ] **M11.GRP.009**: Pattern Discovery (Strategy 74).
+- [ ] **M11.GRP.010**: Temporal Graph Evolution (Strategy 75).
+- [ ] **M11.GRP.011**: Explainability Graph (Strategy 76).
+- [ ] **M11.GRP.012**: Graph-as-Query (Strategy 77).
 
-## Task Organization
-- **Format**: `M{module}.{category}.{task}`
-- **Priorities**: P0 (Critical), P1 (High), P2 (Medium), P3 (Low)
-- **Status**: TODO, IN_PROGRESS, REVIEW, DONE
+#### Vector Model Optimization
+- [ ] **M11.VEC.001**: Multi-Vector Representations (Strategy 78).
+- [ ] **M11.VEC.002**: Vector Quantization (Strategy 79).
+- [ ] **M11.VEC.003**: Vector Drift Detection (Strategy 80).
+- [ ] **M11.VEC.004**: Vector Clustering & Centroids (Strategy 81).
+- [ ] **M11.VEC.005**: Adaptive Vector Dimensions (Strategy 82).
+- [ ] **M11.VEC.006**: Vector-Space Anomaly Detection (Strategy 83).
+- [ ] **M11.VEC.007**: Vector Interpolation (Strategy 84).
+- [ ] **M11.VEC.008**: Vector Provenance (Strategy 85).
+- [ ] **M11.VEC.009**: Vector-Based Conflict Resolution (Strategy 86).
+- [x] **M11.VEC.010**: Vector Search with Filters (Strategy 87) *[Implemented in M02]*.
+- [ ] **M11.VEC.011**: Feedback-Loop Vectors (Strategy 88).
+- [ ] **M11.VEC.012**: Vector Ensemble (Strategy 89).
+- [ ] **M11.VEC.013**: Vector Deduplication (Strategy 90).
+- [ ] **M11.VEC.014**: Vector-Based Forgetting (Strategy 91).
+- [ ] **M11.VEC.015**: Vector Attention (Strategy 92).
 
----
+#### Full-Text Search Optimization
+- [x] **M11.FTS.001**: Phrase Search with Ranking (Strategy 93) *[Implemented via BM25]*.
+- [ ] **M11.FTS.002**: Linguistic Analysis (Strategy 94).
+- [ ] **M11.FTS.003**: Multilingual Search (Strategy 95).
+- [ ] **M11.FTS.004**: Typo Tolerance (Strategy 96).
+- [ ] **M11.FTS.005**: Contextual Search (Strategy 97).
+- [ ] **M11.FTS.006**: Faceted Search (Strategy 98).
+- [ ] **M11.FTS.007**: Advanced Text Analytics (Strategy 99).
+- [x] **M11.FTS.008**: Query Expansion (Strategy 100) *[Implemented in M08]*.
+- [ ] **M11.FTS.009**: Search History Suggestions (Strategy 101).
+- [ ] **M11.FTS.010**: Semantic-FTS Hybrid (Strategy 102).
 
-## Module 01: Foundation (Core Infrastructure)
+#### Time-Series & Geospatial Optimization
+- [ ] **M11.TS.001**: Memory Decay Time-Series (Strategy 103).
+- [ ] **M11.TS.002**: Agent Activity Timeline (Strategy 104).
+- [ ] **M11.TS.003**: System Metrics Time-Series (Strategy 105).
+- [ ] **M11.TS.004**: Consolidation Schedule (Strategy 106).
+- [ ] **M11.TS.005**: Debate Outcome Trends (Strategy 107).
+- [ ] **M11.TS.006**: Learning Curve Tracking (Strategy 108).
+- [ ] **M11.TS.007**: Importance Distribution (Strategy 109).
+- [ ] **M11.TS.008**: Graph Evolution Metrics (Strategy 110).
+- [ ] **M11.GEO.001**: Agent Location Context (Strategy 111).
+- [ ] **M11.GEO.002**: Spatial Memory Organization (Strategy 112).
+- [ ] **M11.GEO.003**: Concept Cartography (Strategy 113).
+- [ ] **M11.GEO.004**: Migration Path Tracking (Strategy 114).
+- [ ] **M11.GEO.005**: Geospatial Similarity (Strategy 115).
 
-### Setup & Environment
-- [x] **M01.SETUP.001** [P0]: Install Python 3.11+ & Dependencies.
-- [x] **M01.SETUP.002** [P0]: Install & Configure SurrealDB 2.0+.
-- [x] **M01.SETUP.003** [P0]: Install Redis 7+.
-- [x] **M01.SETUP.004** [P0]: Initialize Project Structure & Git.
+### Module 12: Novel & Experimental (Strategies 116-159)
 
-### Database Schema (SurrealDB)
-- [x] **M01.DEV.001** [P0]: Define Namespaces & Databases (`infrastructure/surrealdb/schema.surql`).
-- [x] **M01.DEV.002** [P0]: Create `memory` table (Vectors, HNSW Index).
-- [x] **M01.DEV.003** [P0]: Create `entity` table & `relationship` (Graph Edges).
-- [ ] **M01.DEV.004** [P0]: Define Custom Functions (Decay, Promotion). *(Implemented in `schema.py` but not connected to Client)*
-- [ ] **M01.DEV.005** [P0]: Implement RBAC & Multi-Tenancy. *(Implemented in `schema.py` but not connected to Client)*
-
-### Core Logic
-- [x] **M01.DEV.006** [P0]: Implement SurrealDB Client Wrapper (Async, WebSocket).
-- [x] **M01.DEV.007** [P1]: Implement Basic CRUD Operations.
-
----
-
-## Module 02: Search System (Retrieval)
-
-- [x] **M02.DEV.001** [P0]: Implement Vector Search (HNSW).
-- [x] **M02.DEV.002** [P0]: Implement BM25 Full-Text Search.
-- [x] **M02.DEV.003** [P0]: Implement Metadata Filtering.
-- [x] **M02.DEV.004** [P0]: Create **Hybrid Search Orchestrator** (Vector + BM25 + Filter).
-- [x] **M02.DEV.005** [P0]: Implement **Query Intent Classifier** (Routing).
-- [x] **M02.DEV.006** [P1]: Implement Caching Layer (L1/L2/L3).
-- [x] **M02.DEV.007** [P1]: Implement **Context Assembler** (Token Management).
-
----
-
-## Module 03: Memory Lifecycle (Management)
-
-- [x] **M03.DEV.001** [P0]: Implement **3-Tier Hierarchy Manager** (Working, Short, Long).
-- [x] **M03.DEV.002** [P0]: Implement **Auto-Promotion Logic**.
-- [ ] **M03.DEV.003** [P0]: Implement **Consolidation System** (Merging). *(Agent logic exists; Automation missing)*
-- [x] **M03.DEV.004** [P0]: Implement **Decay Scoring Algorithm**.
-- [ ] **M03.DEV.005** [P0]: Implement **Deduplication** (Hash-based + Semantic). *(Semantic exists via Agents; Hash-based missing)*
-- [x] **M03.DEV.006** [P1]: Implement Archival System.
-
----
-
-## Module 04: Processing & Analysis (Intelligence)
-
-- [x] **M04.DEV.001** [P0]: Implement **Entity Extractor** (NER via LLM).
-- [x] **M04.DEV.002** [P0]: Implement **Relationship Extractor** (Graph Building).
-- [x] **M04.DEV.003** [P0]: Implement **Temporal Analyzer** (Recency weighting).
-- [x] **M04.DEV.004** [P0]: Implement **Background Job Scheduler** (Daily/Weekly tasks).
-- [x] **M04.DEV.005** [P1]: Implement **Skill Library** (Pattern -> Skill).
-- [x] **M04.DEV.006** [P1]: Implement **Instruction Registry**.
-
----
-
-## Module 05: Integration & Coordination
-
-- [x] **M05.DEV.001** [P0]: Implement **MCP Server** (Model Context Protocol).
-- [x] **M05.DEV.002** [P0]: Implement MCP Tools (`store`, `retrieve`, `consolidate`).
-- [x] **M05.DEV.003** [P0]: Implement **Multi-Agent Orchestrator**.
-- [x] **M05.DEV.004** [P0]: Implement **LIVE Subscriptions** (Real-time events).
-- [x] **M05.DEV.005** [P1]: Implement Health Checks & Metrics Collection.
-
----
-
-## Module 06: Cost Optimization
-
-- [ ] **M06.DEV.001** [P0]: Implement **LLM Cascade Router** (Fast/Medium/Smart).
-- [ ] **M06.DEV.002** [P0]: Implement **Task Complexity Classifier**.
-- [ ] **M06.DEV.003** [P0]: Implement Cost Tracking System.
-- [ ] **M06.DEV.004** [P1]: Implement **Consistency Signals** (Confidence Routing).
-- [ ] **M06.DEV.005** [P2]: Implement **Mixture of Thought** (Parallel Extraction).
-
----
-
-## Module 07: Quality Assurance
-
-- [ ] **M07.DEV.001** [P0]: Implement **Self-Verification Loop** (6-check gate).
-- [ ] **M07.DEV.002** [P0]: Implement **Multi-Agent Debate** (Analyzer/Synthesizer/Curator).
-- [ ] **M07.DEV.003** [P1]: Implement **Information Traceability** (Provenance).
-
----
-
-## Module 08: Advanced Search
-
-- [ ] **M08.DEV.001** [P1]: Implement **Advanced Multi-Index Strategy** (7+ indexes).
-- [ ] **M08.DEV.002** [P2]: Implement **Multi-Perspective Questions** (Expansion).
-- [ ] **M08.DEV.003** [P2]: Implement **Topic Change Detection**.
-- [ ] **M08.DEV.004** [P2]: Implement **Cross-Session Pattern Recognition**.
-
----
-
-## Module 09: Production Features
-
-- [ ] **M09.DEV.001** [P0]: Implement **Audit Logging System**.
-- [ ] **M09.DEV.002** [P1]: Implement **Bi-temporal Graph Edges**.
-- [ ] **M09.DEV.003** [P1]: Implement **Distributed Consolidation**.
-- [ ] **M09.DEV.004** [P2]: Implement **Hyperedges** & Relationship Inheritance.
-- [ ] **M09.DEV.005** [P2]: Create Standard Operating Procedures (SOPs).
-
----
-
-## Module 10: Advanced Capabilities (Novelty)
-
-- [ ] **M10.DEV.001** [P1]: Implement **Multimodal Support** (Image/Table/Code storage).
-- [ ] **M10.DEV.002** [P1]: Implement **Cross-Modal Retrieval**.
-- [ ] **M10.DEV.003** [P2]: Implement **AST Code Representation**.
-- [ ] **M10.DEV.004** [P2]: Implement **Multi-Step Planning** & Hierarchical Decomposition.
-- [ ] **M10.DEV.005** [P2]: Implement **Hypothesis Testing Framework**.
-- [ ] **M10.DEV.006** [P1]: Integrate **Graph Visualization** Data Feed (for UI).
+- [ ] **M12.EXP.001**: Flows vs Crews Pattern (Strategy 116).
+- [ ] **M12.EXP.002**: Hierarchical Agent Delegation (Strategy 117).
+- [ ] **M12.EXP.003**: Episodic Data Model (Strategy 118).
+- [ ] **M12.EXP.004**: Temporal Edge Invalidation (Strategy 119).
+- [ ] **M12.EXP.005**: Custom Pydantic Entity Types (Strategy 120).
+- [ ] **M12.EXP.006**: Graph Distance Reranking (Strategy 121).
+- [ ] **M12.EXP.007**: Path Lookup Acceleration (Strategy 122).
+- [ ] **M12.EXP.008**: Parallel Search Execution (Strategy 123).
+- [ ] **M12.EXP.009**: Multi-Hop Constraints (Strategy 124).
+- [ ] **M12.EXP.010**: Human-in-the-Loop Checkpoints (Strategy 125).
+- [ ] **M12.EXP.011**: Semaphore Concurrency Limiting (Strategy 126).
+- [ ] **M12.EXP.012**: Structured LLM Output (Strategy 127).
+- [ ] **M12.EXP.013**: AgentTool Wrappers (Strategy 128).
+- [ ] **M12.EXP.014**: Dream-Inspired Consolidation (Strategy 129).
+- [ ] **M12.EXP.015**: Counterfactual Simulation (Strategy 130).
+- [ ] **M12.EXP.016**: Socratic Questioning (Strategy 131).
+- [ ] **M12.EXP.017**: Privacy-Preserving Sanitization (Strategy 132).
+- [ ] **M12.EXP.018**: Surprise-Based Learning (Strategy 133).
+- [ ] **M12.EXP.019**: Curiosity-Driven Exploration (Strategy 134).
+- [ ] **M12.EXP.020**: Metacognitive Indexing (Strategy 135).
+- [ ] **M12.EXP.021**: Source Reliability Scoring (Strategy 136).
+- [ ] **M12.EXP.022**: Conflict Resolution Protocols (Strategy 137).
+- [ ] **M12.EXP.023**: Narrative Threading (Strategy 138).
+- [ ] **M12.EXP.024**: Contextual Bandits (Strategy 139).
+- [ ] **M12.EXP.025**: Temporal Heatmaps (Strategy 140).
+- [ ] **M12.EXP.026**: Keyword Extraction Tagging (Strategy 141).
+- [ ] **M12.EXP.027**: Entity Disambiguation (Strategy 142).
+- [ ] **M12.EXP.028**: Community Detection (Strategy 143).
+- [ ] **M12.EXP.029**: Centrality Analysis (Strategy 144).
+- [ ] **M12.EXP.030**: Pathfinding Algorithms (Strategy 145).
+- [ ] **M12.EXP.031**: Subgraph Isomorphism (Strategy 146).
+- [ ] **M12.EXP.032**: Negative Constraints (Strategy 147).
+- [ ] **M12.EXP.033**: Scoped Memories (Strategy 148).
+- [ ] **M12.EXP.034**: Transient Scratchpads (Strategy 149).
+- [ ] **M12.EXP.035**: Recursive Summarization (Strategy 150).
+- [ ] **M12.EXP.036**: Anchor Point Navigation (Strategy 151).
+- [ ] **M12.EXP.037**: Bias Detection (Strategy 152).
+- [ ] **M12.EXP.038**: Intent-Based Prefetching (Strategy 153).
+- [ ] **M12.EXP.039**: User Modeling (Strategy 154).
+- [ ] **M12.EXP.040**: Dependency Mapping (Strategy 155).
+- [ ] **M12.EXP.041**: Version Control (Strategy 156).
+- [ ] **M12.EXP.042**: Forking Capabilities (Strategy 157).
+- [ ] **M12.EXP.043**: Merge Conflict Resolution (Strategy 158).
+- [ ] **M12.EXP.044**: Self-Healing Index (Strategy 159).
 
 ---
 
-## Deployment & Documentation Tasks
+## 2. COMPLETED TASKS (Modules 01-10)
 
-- [ ] **DOC.001**: Complete all Architecture & Strategy Docs.
-- [ ] **DEPLOY.001**: Security Audit & Performance Benchmarking.
-- [ ] **DEPLOY.002**: Production Setup & Database Migration.
-- [ ] **DEPLOY.003**: Monitoring & Alerting Setup.
+### Module 01: Foundation
+- [x] **M01.001**: Vector Storage (Strategy 1).
+- [x] **M01.002**: Document Model (Strategy 3).
+- [x] **M01.003**: RBAC Multi-Tenancy (Strategy 4).
 
----
+### Module 02: Search System
+- [x] **M02.001**: Hybrid Search (Strategy 6).
+- [x] **M02.002**: L1/L2/L3 Cache System (Strategy 7).
+- [x] **M02.003**: Context Assembly (Strategy 8).
+- [x] **M02.004**: BM25 Full-Text Search (Strategy 29).
+- [x] **M02.005**: Query Intent Classification (Strategy 30).
 
-**Total Estimated Tasks**: ~350
+### Module 03: Memory Lifecycle
+- [x] **M03.001**: 3-Tier Memory Hierarchy (Strategy 9).
+- [x] **M03.002**: Auto-Promotion Logic (Strategy 10).
+- [x] **M03.003**: Consolidation System (Strategy 11).
+- [x] **M03.004**: Deduplication (Strategy 12).
+- [x] **M03.005**: Temporal Analysis (Strategy 14).
+- [x] **M03.006**: Decay Scoring (Strategy 21).
+
+### Module 04: Processing & Analysis
+- [x] **M04.001**: Graph Relationships (Strategy 2).
+- [x] **M04.002**: Background Job Processing (Strategy 13).
+- [x] **M04.003**: Entity Extraction (Strategy 15).
+- [x] **M04.004**: Metadata & Tags System (Strategy 16).
+- [x] **M04.005**: Natural Memory Triggers (Strategy 17).
+- [x] **M04.006**: Skill Library System (Strategy 35).
+- [x] **M04.007**: Instruction Registry (Strategy 36).
+
+### Module 05: Integration
+- [x] **M05.001**: LIVE Real-time Subscriptions (Strategy 5).
+- [x] **M05.002**: MCP Interface (Strategy 18).
+- [x] **M05.003**: Multi-Agent Coordination (Strategy 19).
+- [x] **M05.004**: Monitoring & Health Checks (Strategy 20).
+- [x] **M05.005**: Agent-to-Agent Communication (Strategy 22).
+
+### Module 06: Cost Optimization
+- [x] **M06.001**: LLM Cascading (Strategy 23).
+- [x] **M06.002**: Consistency Signals (Strategy 24).
+- [x] **M06.003**: Mixture of Thought (Strategy 25).
+- [x] **M06.004**: LLM Cost Dashboard (Strategy 57) *[Basic Metrics Implemented]*.
+
+### Module 07: Quality Assurance
+- [x] **M07.001**: Self-Verification Loop (Strategy 26).
+- [x] **M07.002**: Multi-Agent Debate (Strategy 27).
+- [x] **M07.003**: Information Traceability (Strategy 28).
+
+### Module 08: Advanced Search
+- [x] **M08.001**: Significance Scoring (Strategy 31).
+- [x] **M08.002**: Multi-Perspective Questions (Strategy 32).
+- [x] **M08.003**: Topic Change Detection (Strategy 33).
+- [x] **M08.004**: Cross-Session Pattern Recognition (Strategy 34).
+- [x] **M08.005**: Advanced Multi-Index Strategy (Strategy 38).
+
+### Module 09: Production Features
+- [x] **M09.001**: Audit Logging System (Strategy 39).
+- [x] **M09.002**: Execution-Based Evaluation (Strategy 40).
+- [x] **M09.003**: Bi-temporal Graph Edges (Strategy 41).
+- [x] **M09.004**: Hyperedges (Strategy 42).
+- [x] **M09.005**: Relationship Inheritance (Strategy 43).
+- [x] **M09.006**: Distributed Consolidation (Strategy 44).
+- [x] **M09.007**: Modular Component Architecture (Strategy 45).
+- [x] **M09.008**: SOPs (Strategy 46).
+- [x] **M09.009**: Von Neumann Pattern (Strategy 47).
+- [x] **M09.010**: Dynamic Context Window (Strategy 48).
+
+### Module 10: Advanced Capabilities
+- [x] **M10.001**: Emotion-Driven Memory (Strategy 37) *[Via Sentiment field]*.
+- [x] **M10.002**: Multimodal Support (Strategy 49).
+- [x] **M10.003**: Cross-Modal Retrieval (Strategy 50).
+- [x] **M10.004**: AST Code Representation (Strategy 51).
+- [x] **M10.005**: Multi-Step Planning (Strategy 52).
+- [x] **M10.006**: Hierarchical Task Decomposition (Strategy 53).
+- [x] **M10.007**: Hypothesis Testing Framework (Strategy 54).
+- [x] **M10.008**: Context-Aware Tool Selection (Strategy 55).
+- [x] **M10.009**: Graph Visualization (Strategy 56) *[Via Metrics/MCP]*.
