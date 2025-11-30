@@ -1,0 +1,38 @@
+{
+  "id": "sop_incident_001",
+  "title": "Incident Response: API Outage",
+  "objective": "Restore service availability during API outage events.",
+  "owner_role": "system_admin",
+  "triggers": [
+    "api_500_error_rate_spike",
+    "system_unresponsive"
+  ],
+  "steps": [
+    {
+      "order": 1,
+      "description": "Verify database connectivity using health check endpoint.",
+      "expected_output": "Database status JSON",
+      "required_tools": ["curl", "health_check_script"],
+      "estimated_time_minutes": 2
+    },
+    {
+      "order": 2,
+      "description": "Check SurrealDB logs for connection errors or resource exhaustion.",
+      "expected_output": "Log entries indicating cause",
+      "required_tools": ["docker_logs", "kubectl_logs"],
+      "estimated_time_minutes": 5
+    },
+    {
+      "order": 3,
+      "description": "Restart application containers if stateless error suspected.",
+      "expected_output": "Clean container startup logs",
+      "required_tools": ["docker_restart"],
+      "estimated_time_minutes": 3
+    }
+  ],
+  "metadata": {
+    "severity": "high",
+    "escalation_contact": "oncall-devops"
+  },
+  "version": "1.0.0"
+}

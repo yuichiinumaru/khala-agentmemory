@@ -17,6 +17,7 @@ from khala.domain.memory.services import (
     ConsolidationService
 )
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
+from khala.infrastructure.gemini.client import GeminiClient
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +27,14 @@ class MemoryLifecycleService:
     def __init__(
         self,
         repository: MemoryRepository,
+        gemini_client: Optional[GeminiClient] = None,
         memory_service: Optional[MemoryService] = None,
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
         consolidation_service: Optional[ConsolidationService] = None
     ):
         self.repository = repository
+        self.gemini_client = gemini_client or GeminiClient()
         self.memory_service = memory_service or MemoryService()
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
@@ -182,9 +185,7 @@ class MemoryLifecycleService:
     async def consolidate_memories(self, user_id: str) -> int:
         """Consolidate memories.
 
-        Note: This requires LLM interaction to summarize/merge content.
-        This implementation prepares the groups but does not perform
-        the actual text generation merging yet.
+        Uses LLM to summarize and merge groups of similar memories.
         """
         consolidated_count = 0
 
@@ -199,14 +200,51 @@ class MemoryLifecycleService:
 
             for group in groups:
                 if len(group) > 1:
-                    # TODO: Call LLM to merge `group` into a new memory
-                    # new_memory_content = llm.summarize([m.content for m in group])
-                    # new_memory = Memory(..., content=new_memory_content, ...)
-                    # await self.repository.create(new_memory)
-                    # for m in group:
-                    #     m.archive()
-                    #     await self.repository.update(m)
-                    # consolidated_count += len(group)
-                    pass
+                    try:
+                        # 1. Summarize group content
+                        contents = [m.content for m in group]
+                        memory_list_str = "\n".join([f'- {c}' for c in contents])
+                        prompt = f"""
+                        Consolidate the following {len(contents)} memory fragments into a single, comprehensive memory.
+                        Maintain all key details but remove redundancies.
+
+                        Memories:
+                        {memory_list_str}
+
+                        New Memory Content:
+                        """
+
+                        # Use the "smart" model (gemini-2.5-pro) which is defined in ModelRegistry
+                        response = await self.gemini_client.generate_text(
+                            prompt=prompt,
+                            task_type="generation",
+                            model_id="gemini-2.5-pro"
+                        )
+                        new_content = response.get("content", "").strip()
+
+                        if new_content:
+                            # 2. Create new consolidated memory
+                            new_memory = Memory(
+                                user_id=user_id,
+                                content=new_content,
+                                tier=MemoryTier.LONG_TERM, # Promote to long-term
+                                importance=0.8, # Reset importance or calculate avg
+                                metadata={"consolidated_from": [m.id for m in group]}
+                            )
+                            # Embed if possible (omitted for brevity, handled by create trigger or separate service usually)
+
+                            await self.repository.create(new_memory)
+
+                            # 3. Archive original memories
+                            for m in group:
+                                m.archive(force=True)
+                                m.metadata["consolidated_into"] = new_memory.id
+                                await self.repository.update(m)
+
+                            consolidated_count += len(group)
+                            logger.info(f"Consolidated {len(group)} memories into new memory {new_memory.id}")
+
+                    except Exception as e:
+                        logger.error(f"Failed to consolidate group: {e}")
 
         return consolidated_count
