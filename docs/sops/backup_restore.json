@@ -1,0 +1,38 @@
+{
+  "id": "sop_backup_001",
+  "title": "Database Backup Procedure",
+  "objective": "Ensure daily backups of SurrealDB are securely stored.",
+  "owner_role": "db_admin",
+  "triggers": [
+    "scheduled_daily_0000_utc",
+    "pre_deployment_manual_trigger"
+  ],
+  "steps": [
+    {
+      "order": 1,
+      "description": "Trigger SurrealDB export command.",
+      "expected_output": "backup.surql file",
+      "required_tools": ["surreal_cli"],
+      "estimated_time_minutes": 10
+    },
+    {
+      "order": 2,
+      "description": "Compress backup file.",
+      "expected_output": "backup.surql.gz",
+      "required_tools": ["gzip"],
+      "estimated_time_minutes": 5
+    },
+    {
+      "order": 3,
+      "description": "Upload to secure object storage (S3).",
+      "expected_output": "S3 upload confirmation",
+      "required_tools": ["aws_cli"],
+      "estimated_time_minutes": 5
+    }
+  ],
+  "metadata": {
+    "retention_policy": "30_days",
+    "encryption": "AES-256"
+  },
+  "version": "1.0.0"
+}
