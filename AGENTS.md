@@ -1,52 +1,78 @@
-# AGENTS.md
+# AGENTS.md: AI Developer Guide
 
-Welcome to the KHALA Project. This file provides instructions for AI agents working on this codebase.
+**Project**: KHALA (Knowledge Hierarchical Adaptive Long-term Agent)
+**Version**: 2.0
+**Status**: Advanced Implementation Phase (Modules 1-10 Complete)
 
-## 1. Mandatory Documentation Reading
+---
 
-Before starting any task, you **MUST** read the documentation located in the `docs/` folder. This documentation provides the context, architecture, and standards required for contributing to this project.
+## 1. Project Status & Context
 
-## 2. Codebase Examination
+The KHALA project is in an advanced stage of development.
+- **Modules 01-10 (Foundation to Advanced Capabilities)** are largely **COMPLETE**. This includes the core SurrealDB infrastructure, memory lifecycle (with automated consolidation/deduplication), multimodal support, and search systems.
+- **Current Focus**: We are now entering **Phase 2: Optimization & Novelty**. The primary active tasks are in **Module 11 (SurrealDB Optimizations)** and **Module 12 (Novel/Experimental Strategies)**.
 
-After reading the documentation, you should examine the codebase, focusing on the areas related to your specific task.
-- Explore the directory structure.
-- Read the relevant source code files in `khala/`.
-- Check existing tests in `tests/`.
+**Goal**: To implement the remaining strategies from the [159-Strategy Master List](docs/06-strategies-master.md), creating the ultimate reference implementation for an AI memory system.
 
-## 3. Repository Hygiene
+---
 
-**CRITICAL:** You must **NEVER** include binary files, `__pycache__` directories, or `*.pyc` files in your commits.
-- Ensure your `.gitignore` is correctly configured.
-- Before submitting any changes, verify that no `__pycache__` directories or binary files are present in the file list.
-- Use `git status` or `ls -R` to double-check before requesting review.
+## 2. Documentation Map
 
-## 4. Project Documentation
+You **MUST** consult the following documents before starting work. They are the source of truth.
 
-The project documentation is located in the `docs/` folder. Below is a brief description of each document:
+### 🔴 Critical Task Lists (Start Here)
+- **[02-tasks-implementation.md](docs/02-tasks-implementation.md)**: The **active backlog**. Top sections list PENDING tasks (Modules 11 & 12). Bottom sections list COMPLETED tasks. **Update this file as you complete work.**
+- **[06-strategies-master.md](docs/06-strategies-master.md)**: The "Bible" of project strategies. If you need to understand *what* a feature is (e.g., "Vector Attention"), look here.
 
-### Core Documentation
-- **[00-index.md](docs/00-index.md)**: The master index and navigation guide for the documentation.
-- **[01-plan-overview.md](docs/01-plan-overview.md)**: The high-level project plan, vision, scope, and implementation strategy.
-- **[02-tasks-implementation.md](docs/02-tasks-implementation.md)**: A detailed breakdown of tasks, tracking, and dependencies.
-- **[03-architecture-technical.md](docs/03-architecture-technical.md)**: Explains the system architecture, component interaction, and data flow.
-- **[04-database-schema.md](docs/04-database-schema.md)**: Defines the database schema, tables, indexes, and custom functions for SurrealDB.
-- **[05-api-integration.md](docs/05-api-integration.md)**: Specifications for APIs, MCP integration, and multi-agent protocols.
+### 🔵 Architecture & Specifications
+- **[03-architecture-technical.md](docs/03-architecture-technical.md)**: System design and data flow.
+- **[04-database-schema.md](docs/04-database-schema.md)**: SurrealDB schema reference. Note: `khala/infrastructure/surrealdb/schema.py` is the code implementation and must stay synced.
+- **[11-surrealdb-optimization.md](docs/11-surrealdb-optimization.md)**: Detailed specs for the active optimization tasks.
+- **[12-novel-experimental.md](docs/12-novel-experimental.md)**: Detailed specs for experimental features.
 
-### Strategies & Features
-- **[06-strategies-master.md](docs/06-strategies-master.md)**: A comprehensive list of all strategies (Core, Advanced, Novel, etc.) implemented or planned.
+### ⚪ Archive
+- **[docs/_archive/](docs/_archive/)**: Old analysis reports, audit logs, and previous implementation plans. Do not rely on these for current task status; use `02-tasks-implementation.md` instead.
 
-### Operations & Maintenance
-- **[07-deployment.md](docs/07-deployment.md)**: Guides for deploying the system to development, staging, and production environments.
-- **[08-testing.md](docs/08-testing.md)**: The testing strategy, coverage requirements, and quality gates.
-- **[09-security.md](docs/09-security.md)**: Security architecture, compliance standards, and best practices.
-- **[10-monitoring.md](docs/10-monitoring.md)**: Details on monitoring, observability, logging, and dashboards.
-- **[11-troubleshooting.md](docs/11-troubleshooting.md)**: Common issues, debugging procedures, and FAQs.
+---
 
-### Community & Future
-- **[12-roadmap.md](docs/12-roadmap.md)**: Future plans, version history, and long-term vision.
-- **[13-contributing.md](docs/13-contributing.md)**: Guidelines for contributing to the project.
+## 3. Where to Work Next
 
-### Analysis & Planning
-- **[000-AGENT-ANALYSIS-PLAN.md](docs/000-AGENT-ANALYSIS-PLAN.md)**: An analysis of the current codebase state and a plan for implementation steps.
+1.  **Check `docs/02-tasks-implementation.md`**: Look for unchecked boxes `[ ]` in the top section ("PENDING TASKS").
+2.  **Focus Areas**:
+    - **Module 11 (Optimization)**: Improving database performance and structure (e.g., computed fields, graph traversal optimizations).
+    - **Module 12 (Novelty)**: Implementing experimental agent patterns (e.g., episodic memory, crew patterns).
+3.  **Refactoring**: If you see code that doesn't align with the completed modules (e.g., missing audit logging in a new service), fix it.
 
-Please ensure you adhere to the guidelines and standards outlined in these documents.
+---
+
+## 4. Coding Standards & Rules
+
+### Repository Hygiene
+- **NO Binary Files**: Never commit `__pycache__`, `*.pyc`, `.DS_Store`, or compiled binaries.
+- **Dependencies**: If you add a library, update `requirements.txt`.
+- **Testing**: We lack a full integration test suite due to environment limits (no running DB). Write **Unit Tests** or **Verification Scripts** (`verify_xyz.py`) to prove your code runs/imports correctly, then delete them before submitting.
+
+### Architecture Style
+- **Domain-Driven Design (DDD)**:
+    - `khala/domain/`: Entities and Interfaces (Pure Python, no DB code).
+    - `khala/infrastructure/`: Database clients, API clients (SurrealDB, Gemini).
+    - `khala/application/`: Business logic, services, orchestration.
+    - `khala/interface/`: REST API, CLI, MCP tools.
+- **Do NOT Mix Layers**: Do not put SQL queries in the Domain layer. Do not put HTTP handlers in the Application layer.
+
+### Implementation Protocol
+1.  **Read Docs**: Understand the strategy from `06-strategies-master.md`.
+2.  **Plan**: Create a plan using `set_plan`.
+3.  **Implement**: Write code.
+4.  **Verify**: Run a script to ensure it imports and behaves as expected (mocking DB if needed).
+5.  **Update Docs**: Mark the task as `[x]` in `02-tasks-implementation.md`.
+
+---
+
+## 5. Quick Start for Agents
+
+1.  **Explore**: `ls -R khala/` to see the structure.
+2.  **Read**: `cat docs/02-tasks-implementation.md` to see what's left.
+3.  **Action**: Pick a task from Module 11, implement it, verify it, submit.
+
+**Welcome to the team.**
