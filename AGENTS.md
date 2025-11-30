@@ -1,52 +1,65 @@
-# AGENTS.md
+# AGENTS.md: AI Developer Guide
 
-Welcome to the KHALA Project. This file provides instructions for AI agents working on this codebase.
+**Project**: KHALA (Knowledge Hierarchical Adaptive Long-term Agent)
+**Version**: 2.0
+**Status**: Advanced Implementation Phase (Modules 1-10 Complete)
 
-## 1. Mandatory Documentation Reading
+---
 
-Before starting any task, you **MUST** read the documentation located in the `docs/` folder. This documentation provides the context, architecture, and standards required for contributing to this project.
+## 1. Documentation Map (Refactored Structure)
 
-## 2. Codebase Examination
+You **MUST** consult the following documents before starting work. They are the source of truth.
 
-After reading the documentation, you should examine the codebase, focusing on the areas related to your specific task.
-- Explore the directory structure.
-- Read the relevant source code files in `khala/`.
-- Check existing tests in `tests/`.
+### 🔴 Critical Task Lists (Start Here)
+- **[001-project-plan-and-tasks.md](docs/001-project-plan-and-tasks.md)**: The **Master Plan** and **Active Backlog**. Contains the Overview, Roadmap, Task List (Pending & Completed), and Contributing Guidelines.
+- **[002-strategy-master.md](docs/002-strategy-master.md)**: The **Strategy Bible**. Contains detailed descriptions of all 159 strategies (Core, Advanced, Optimization, Experimental).
 
-## 3. Repository Hygiene
+### 🔵 Architecture & Specifications
+- **[003-tech-architecture.md](docs/003-tech-architecture.md)**: Technical specifications, System Overview, Database Schema, and API references.
+- **[004-ops-manual.md](docs/004-ops-manual.md)**: Operations guide covering Deployment, Testing, Security, Monitoring, and Troubleshooting.
 
-**CRITICAL:** You must **NEVER** include binary files, `__pycache__` directories, or `*.pyc` files in your commits.
-- Ensure your `.gitignore` is correctly configured.
-- Before submitting any changes, verify that no `__pycache__` directories or binary files are present in the file list.
-- Use `git status` or `ls -R` to double-check before requesting review.
+### ⚪ Archive
+- **[docs/_archive/](docs/_archive/)**: Legacy reports and previous document versions. **Do NOT modify or delete files here.**
 
-## 4. Project Documentation
+---
 
-The project documentation is located in the `docs/` folder. Below is a brief description of each document:
+## 2. Rules for Documentation
 
-### Core Documentation
-- **[00-index.md](docs/00-index.md)**: The master index and navigation guide for the documentation.
-- **[01-plan-overview.md](docs/01-plan-overview.md)**: The high-level project plan, vision, scope, and implementation strategy.
-- **[02-tasks-implementation.md](docs/02-tasks-implementation.md)**: A detailed breakdown of tasks, tracking, and dependencies.
-- **[03-architecture-technical.md](docs/03-architecture-technical.md)**: Explains the system architecture, component interaction, and data flow.
-- **[04-database-schema.md](docs/04-database-schema.md)**: Defines the database schema, tables, indexes, and custom functions for SurrealDB.
-- **[05-api-integration.md](docs/05-api-integration.md)**: Specifications for APIs, MCP integration, and multi-agent protocols.
+1.  **No Deletion**: Never delete a documentation file. If a file is obsolete or needs >10% refactoring, **move the original to `docs/_archive/`** first, then create the new/updated file in `docs/`.
+2.  **Naming Convention**: Use `NNN-type-name.md` (e.g., `005-specs-newfeature.md`) for new files.
+3.  **Size Limits**: Keep files between 300 and 1500 lines. Split if too large; merge if too small.
+4.  **Granularity**: Maintain high detail. Do not summarize away implementation specifics.
 
-### Strategies & Features
-- **[06-strategies-master.md](docs/06-strategies-master.md)**: A comprehensive list of all strategies (Core, Advanced, Novel, etc.) implemented or planned.
+---
 
-### Operations & Maintenance
-- **[07-deployment.md](docs/07-deployment.md)**: Guides for deploying the system to development, staging, and production environments.
-- **[08-testing.md](docs/08-testing.md)**: The testing strategy, coverage requirements, and quality gates.
-- **[09-security.md](docs/09-security.md)**: Security architecture, compliance standards, and best practices.
-- **[10-monitoring.md](docs/10-monitoring.md)**: Details on monitoring, observability, logging, and dashboards.
-- **[11-troubleshooting.md](docs/11-troubleshooting.md)**: Common issues, debugging procedures, and FAQs.
+## 3. Where to Work Next
 
-### Community & Future
-- **[12-roadmap.md](docs/12-roadmap.md)**: Future plans, version history, and long-term vision.
-- **[13-contributing.md](docs/13-contributing.md)**: Guidelines for contributing to the project.
+1.  **Check `docs/001-project-plan-and-tasks.md`**: Look for unchecked boxes `[ ]` in the "PENDING TASKS" section.
+2.  **Focus Areas**:
+    - **Module 11 (SurrealDB Optimization)**: Implement computed properties, nested documents, and graph optimizations.
+    - **Module 12 (Novelty)**: Implement experimental patterns like "Flows vs Crews".
+3.  **Reference**: Use `docs/002-strategy-master.md` to understand the *requirements* of the task you picked.
 
-### Analysis & Planning
-- **[000-AGENT-ANALYSIS-PLAN.md](docs/000-AGENT-ANALYSIS-PLAN.md)**: An analysis of the current codebase state and a plan for implementation steps.
+---
 
-Please ensure you adhere to the guidelines and standards outlined in these documents.
+## 4. Coding Standards
+
+### Repository Hygiene
+- **NO Binary Files**: Never commit `__pycache__`, `*.pyc`, `.DS_Store`, or compiled binaries.
+- **Dependencies**: If you add a library, update `requirements.txt`.
+- **Testing**: Write Unit Tests or Verification Scripts to prove your code works.
+
+### Architecture Style (DDD)
+- `khala/domain/`: Entities and Interfaces.
+- `khala/infrastructure/`: Database and API clients.
+- `khala/application/`: Business logic and services.
+- `khala/interface/`: REST API, CLI, MCP.
+
+### Implementation Protocol
+1.  **Read Docs**: `001` (Tasks) -> `002` (Strategy) -> `003` (Tech).
+2.  **Plan**: Create a plan using `set_plan`.
+3.  **Implement**: Write code.
+4.  **Verify**: Run scripts.
+5.  **Update Docs**: Mark the task as `[x]` in `001-project-plan-and-tasks.md`.
+
+**Welcome to the team.**

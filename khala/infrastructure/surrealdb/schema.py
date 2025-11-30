@@ -33,6 +33,7 @@ class DatabaseSchema:
         DEFINE FIELD importance ON memory TYPE float;
         DEFINE FIELD tags ON memory TYPE array<string>;
         DEFINE FIELD category ON memory TYPE string;
+        DEFINE FIELD summary ON memory TYPE string;
         DEFINE FIELD metadata ON memory TYPE object FLEXIBLE;
         
         -- Timestamps

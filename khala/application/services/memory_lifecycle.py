@@ -18,6 +18,7 @@ from khala.domain.memory.services import (
 )
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
+from khala.infrastructure.gemini.models import ModelRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,25 @@ class MemoryLifecycleService:
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
+
+    async def ingest_memory(self, memory: Memory) -> str:
+        """Ingest a new memory, performing auto-summarization if needed."""
+
+        # Auto-summarize if content is long (> 500 chars) and summary is missing
+        if len(memory.content) > 500 and not memory.summary:
+            try:
+                # Use Gemini Flash for fast summarization
+                prompt = f"Summarize the following content in under 50 words:\n\n{memory.content}"
+                response = await self.gemini_client.generate_text(
+                    prompt=prompt,
+                    task_type="generation",
+                    model_id=ModelRegistry.get_model("gemini-2.0-flash").model_id
+                )
+                memory.summary = response.get("content", "").strip()
+            except Exception as e:
+                logger.warning(f"Failed to auto-summarize memory: {e}")
+
+        return await self.repository.create(memory)
 
     async def run_lifecycle_job(self, user_id: str) -> Dict[str, int]:
         """Run all lifecycle tasks for a user.
