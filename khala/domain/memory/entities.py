@@ -66,6 +66,9 @@ class Memory:
     episode_id: Optional[str] = None
     confidence: float = 1.0  # Strategy 135: Metacognitive Indexing
     source_reliability: float = 1.0  # Strategy 136: Source Reliability Scoring
+    is_anchor: bool = False  # Strategy 151: Anchor Point Navigation
+    bias_score: Optional[float] = None  # Strategy 152: Bias Detection (score)
+    bias_analysis: Optional[str] = None  # Strategy 152: Bias Detection (details)
     # Module 11: Optimization Fields
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)

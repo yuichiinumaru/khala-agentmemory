@@ -66,6 +66,9 @@ class DatabaseSchema:
         DEFINE FIELD episode_id ON memory TYPE option<string>;
         DEFINE FIELD confidence ON memory TYPE float;
         DEFINE FIELD source_reliability ON memory TYPE float;
+        DEFINE FIELD is_anchor ON memory TYPE bool DEFAULT false;
+        DEFINE FIELD bias_score ON memory TYPE option<float>;
+        DEFINE FIELD bias_analysis ON memory TYPE option<string>;
         -- Module 11: Optimized Fields
         DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
@@ -95,6 +98,7 @@ class DatabaseSchema:
         
         -- Tag prefix search
         DEFINE INDEX tag_search ON memory FIELDS tags SEARCH ANALYZER ascii BM25;
+        DEFINE INDEX anchor_index ON memory FIELDS is_anchor;
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
