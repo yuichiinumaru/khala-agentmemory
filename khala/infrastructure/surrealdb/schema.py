@@ -53,6 +53,11 @@ class DatabaseSchema:
         -- Tier 6: Advanced Metadata
         DEFINE FIELD source ON memory TYPE object FLEXIBLE;
         DEFINE FIELD sentiment ON memory TYPE object FLEXIBLE;
+
+        -- Module 12: Experimental Fields
+        DEFINE FIELD episode_id ON memory TYPE string;
+        DEFINE FIELD confidence ON memory TYPE float;
+        DEFINE FIELD source_reliability ON memory TYPE float;
         """,
         
         # Memory indexes
@@ -87,8 +92,34 @@ class DatabaseSchema:
         
         -- Tag prefix search
         DEFINE INDEX tag_search ON memory FIELDS tags FULLTEXT;
+
+        -- Module 12 indexes
+        DEFINE INDEX episode_index ON memory FIELDS episode_id;
         """,
         
+        # Episode table
+        "episode_table": """
+        DEFINE TABLE episode SCHEMAFULL;
+
+        DEFINE FIELD id ON episode TYPE string;
+        DEFINE FIELD user_id ON episode TYPE string;
+        DEFINE FIELD title ON episode TYPE string;
+        DEFINE FIELD description ON episode TYPE string;
+        DEFINE FIELD status ON episode TYPE string;
+        DEFINE FIELD started_at ON episode TYPE datetime;
+        DEFINE FIELD ended_at ON episode TYPE datetime;
+        DEFINE FIELD summary ON episode TYPE string;
+        DEFINE FIELD metadata ON episode TYPE object FLEXIBLE;
+        DEFINE FIELD tags ON episode TYPE array<string>;
+        DEFINE FIELD memory_ids ON episode TYPE array<string>;
+        DEFINE FIELD parent_episode_id ON episode TYPE string;
+
+        -- Indexes
+        DEFINE INDEX episode_user_index ON episode FIELDS user_id;
+        DEFINE INDEX episode_status_index ON episode FIELDS status;
+        DEFINE INDEX episode_time_index ON episode FIELDS started_at DESC;
+        """,
+
         # Entity table
         "entity_table": """
         DEFINE TABLE entity SCHEMAFULL;
@@ -277,6 +308,7 @@ class DatabaseSchema:
             "database", 
             "memory_table",
             "memory_indexes",
+            "episode_table",
             "entity_table",
             "relationship_table",
             "audit_log_table",
@@ -326,6 +358,7 @@ class DatabaseSchema:
         # Test that tables exist
         table_checks = [
             ("memory", "SELECT count() FROM memory;"),
+            ("episode", "SELECT count() FROM episode;"),
             ("entity", "SELECT count() FROM entity;"),
             ("relationship", "SELECT count() FROM relationship;"),
             ("audit_log", "SELECT count() FROM audit_log;"),

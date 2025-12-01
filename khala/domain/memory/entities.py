@@ -59,6 +59,11 @@ class Memory:
     source: Optional[MemorySource] = field(default=None)  # Task 28: Traceability
     sentiment: Optional[Sentiment] = field(default=None)  # Task 37: Emotion
     
+    # Module 12: Experimental
+    episode_id: Optional[str] = None
+    confidence: float = 1.0  # Strategy 135: Metacognitive Indexing
+    source_reliability: float = 1.0  # Strategy 136: Source Reliability Scoring
+
     @property
     def importance_score(self) -> ImportanceScore:
         """Alias for importance to support legacy code."""
