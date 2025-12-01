@@ -1,4 +1,4 @@
-# Khala Memory System v2.0
+# KHALA Memory System v2.0
 
 Khala is a high-performance, graph-based memory system for AI agents, built on SurrealDB. It provides long-term memory, semantic search, and advanced reasoning capabilities.
 
@@ -7,24 +7,34 @@ Khala is a high-performance, graph-based memory system for AI agents, built on S
 - **Vector Storage**: HNSW-based similarity search.
 - **Graph Memory**: Entity-relationship modeling with graph traversal.
 - **3-Tier Hierarchy**: Working, Short-term, and Long-term memory with auto-promotion.
-- **Hybrid Search**: Vector + Keyword (BM25) + Metadata.
+- **Hybrid Search**: Vector + Keyword (BM25) + Metadata + Graph Reranking.
 - **Advanced Reasoning**: Mixture of Thought, Multi-Perspective Questions, and Hypothesis Testing.
 - **Skill Library**: Storage and execution of executable skills.
+- **Module 13**: PromptWizard, ARM, LatentMAS, and MarsRL support.
 
 ## Prerequisites
 
-- Python 3.10+
-- SurrealDB (latest version)
+- Python 3.11+
+- SurrealDB (v1.0.0+)
 - Google Gemini API Key (for LLM features)
 
 ## Installation
 
-1.  **Clone or copy this repository.**
-2.  **Install dependencies:**
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/void-ecosystem/khala.git
+    cd khala
+    ```
+
+2.  **Install the package:**
+    You can install the package in editable mode:
+    ```bash
+    pip install -e .
+    ```
+    Or install dependencies directly:
     ```bash
     pip install -r requirements.txt
     ```
-    *(Note: You may need to create a `requirements.txt` based on the imports if not provided. Key dependencies: `surrealdb`, `google-generativeai`, `pydantic`, `numpy`)*
 
 3.  **Configure Environment:**
     Create a `.env` file in the root directory:
@@ -33,7 +43,7 @@ Khala is a high-performance, graph-based memory system for AI agents, built on S
     SURREALDB_USER=root
     SURREALDB_PASS=root
     SURREALDB_NAMESPACE=khala
-    SURREALDB_DATABASE=memory
+    SURREALDB_DATABASE=memories
     GOOGLE_API_KEY=your_gemini_api_key
     ```
 
@@ -42,26 +52,27 @@ Khala is a high-performance, graph-based memory system for AI agents, built on S
 ```python
 import asyncio
 from khala.infrastructure.surrealdb.client import SurrealDBClient
-from khala.domain.memory.entities import Memory
+from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
 
 async def main():
     # Initialize Client
     client = SurrealDBClient()
-    await client.connect()
+    await client.initialize()
     
     # Create a Memory
-    memory = await client.create_memory(
-        content="The user prefers dark mode.",
+    mem = Memory(
         user_id="user_123",
+        content="The user prefers dark mode.",
+        tier=MemoryTier.WORKING,
+        importance=ImportanceScore(0.8),
         tags=["preference", "ui"]
     )
-    print(f"Created memory: {memory['id']}")
     
-    # Search
-    results = await client.search_memories_by_vector(
-        embedding=..., # Generate embedding first
-        user_id="user_123"
-    )
+    memory_id = await client.create_memory(mem)
+    print(f"Created memory: {memory_id}")
+
+    # Search (assuming embeddings are generated)
+    # results = await client.search_memories_by_vector(...)
     
     await client.close()
 
@@ -75,7 +86,15 @@ if __name__ == "__main__":
 - `khala/infrastructure`: Database clients, external APIs, and repositories.
 - `khala/application`: Use cases and orchestration services.
 - `tests`: Unit and integration tests.
+- `docs`: Comprehensive documentation.
+
+## Documentation
+
+See the `docs/` directory for detailed documentation:
+- [Implementation Tasks](docs/02-tasks-implementation.md)
+- [Master Strategy List](docs/06-strategies-master.md)
+- [SurrealDB Optimization](docs/11-surrealdb-optimization.md)
 
 ## License
 
-Proprietary - VOID Ecosystem.
+MIT License.
