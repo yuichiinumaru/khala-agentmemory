@@ -215,6 +215,7 @@ class JobProcessor:
             "consolidation": "ConsolidationJob", 
             "deduplication": "DeduplicationJob",
             "consistency_check": "ConsistencyJob",
+            "self_healing_index": "SelfHealingIndexJob"
             "vector_drift": "VectorDriftJob"
         }
     
@@ -412,6 +413,8 @@ class JobProcessor:
                 return await self._execute_deduplication(job)
             elif job.job_type == "consistency_check":
                 return await self._execute_consistency_check(job)
+            elif job.job_type == "self_healing_index":
+                return await self._execute_self_healing_index(job)
             elif job.job_type == "vector_drift":
                 return await self._execute_vector_drift(job)
             else:
@@ -566,6 +569,37 @@ class JobProcessor:
                 worker_id=job.worker_id
             )
             
+        except Exception as e:
+            execution_time = (time.time() - start_time) * 1000
+            return JobResult(
+                job_id=job.job_id,
+                success=False,
+                result=None,
+                execution_time_ms=execution_time,
+                error=str(e),
+                worker_id=job.worker_id
+            )
+
+    async def _execute_self_healing_index(self, job: JobDefinition) -> JobResult:
+        """Execute self-healing index job."""
+        start_time = time.time()
+
+        try:
+            from .self_healing_index_job import SelfHealingIndexJob
+
+            healing_job = SelfHealingIndexJob(self.db_client)
+            result_data = await healing_job.execute(job.payload)
+
+            execution_time = (time.time() - start_time) * 1000
+
+            return JobResult(
+                job_id=job.job_id,
+                success=True,
+                result=result_data,
+                execution_time_ms=execution_time,
+                worker_id=job.worker_id
+            )
+
         except Exception as e:
             execution_time = (time.time() - start_time) * 1000
             return JobResult(

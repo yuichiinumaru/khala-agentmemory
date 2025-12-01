@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from khala.domain.memory.entities import Entity, Relationship, EntityType
 from khala.domain.memory.repository import MemoryRepository
+from khala.domain.graph.hyperedge import Hyperedge
 from khala.infrastructure.cache.cache_manager import CacheManager
 
 logger = logging.getLogger(__name__)
@@ -26,16 +27,12 @@ class GraphService:
         """
         Create a hyperedge connecting multiple entities.
         """
-        # 1. Create the HyperNode
-        hyper_node = Entity(
+        # 1. Create the HyperNode using Hyperedge domain entity
+        hyper_node = Hyperedge.create(
             text=f"Hyperedge: {edge_type}",
-            entity_type=EntityType.EVENT,
-            confidence=1.0,
-            metadata={
-                "is_hyperedge": True,
-                "hyperedge_type": edge_type,
-                **(metadata or {})
-            }
+            participants=entities,
+            hyperedge_type=edge_type,
+            metadata=metadata
         )
 
         # Access client to save entity
