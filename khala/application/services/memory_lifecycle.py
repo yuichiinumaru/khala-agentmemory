@@ -5,6 +5,7 @@ promotion, decay, consolidation, deduplication, and archival.
 """
 
 import logging
+import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
@@ -16,6 +17,7 @@ from khala.domain.memory.services import (
     DeduplicationService,
     ConsolidationService
 )
+from khala.application.services.significance_scorer import SignificanceScorer
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
@@ -41,7 +43,8 @@ class MemoryLifecycleService:
         memory_service: Optional[MemoryService] = None,
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
-        consolidation_service: Optional[ConsolidationService] = None
+        consolidation_service: Optional[ConsolidationService] = None,
+        significance_scorer: Optional[SignificanceScorer] = None
     ):
         self.repository = repository
         self.gemini_client = gemini_client or GeminiClient()
@@ -49,10 +52,45 @@ class MemoryLifecycleService:
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
+        self.significance_scorer = significance_scorer or SignificanceScorer(self.gemini_client)
 
     async def ingest_memory(self, memory: Memory) -> str:
         """Ingest a new memory, performing auto-summarization and tagging if needed."""
 
+        """Ingest a new memory, performing auto-summarization and sentiment analysis if needed."""
+
+        # Task 63: Conditional Content Fields (Snippet, Summary, Full)
+        # Generate snippet if missing
+        if not memory.metadata.get("snippet"):
+             memory.metadata["snippet"] = memory.content[:100] + "..." if len(memory.content) > 100 else memory.content
+
+        # Auto-summarize if content is long (> 1000 chars as per Strategy 63) and summary is missing
+        # Strategy 63: Tiny (Snippet), Small (Summary), Full (Content)
+        if len(memory.content) > 1000 and not memory.summary:
+        """Ingest a new memory, performing auto-summarization and significance scoring."""
+
+        # 1. Natural Triggers & Significance Scoring
+        # Check for natural triggers
+        triggers = [
+            r"remember that", r"don'?t forget", r"remind me",
+            r"keep in mind", r"important:", r"note that"
+        ]
+        has_trigger = any(re.search(t, memory.content, re.IGNORECASE) for t in triggers)
+
+        # Calculate base score
+        score = await self.significance_scorer.score_memory(memory.content, memory.metadata)
+
+        # Apply trigger boost
+        if has_trigger:
+            score = max(score, 0.9)  # Boost to high importance
+            if memory.metadata is None:
+                memory.metadata = {}
+            memory.metadata["trigger_detected"] = True
+
+        # Update memory importance
+        memory.importance = score
+
+        # 2. Auto-summarization
         # Auto-summarize if content is long (> 500 chars) and summary is missing
         if len(memory.content) > 500 and not memory.summary:
             try:
@@ -80,6 +118,31 @@ class MemoryLifecycleService:
                             current_tags.add(tag)
             except Exception as e:
                 logger.warning(f"Failed to extract keywords: {e}")
+        # Task 37: Emotion-Driven Memory
+        # Analyze sentiment if not provided in metadata
+        if "sentiment" not in memory.metadata:
+            try:
+                sentiment_data = await self.gemini_client.analyze_sentiment(memory.content)
+
+                # Store in metadata as requested
+                memory.metadata["sentiment"] = {
+                    "score": sentiment_data.get("score", 0.0),
+                    "label": sentiment_data.get("label", "neutral"),
+                    "emotions": sentiment_data.get("emotions", {})
+                }
+
+                # Strategy 37 also implies prioritizing emotionally resonant memories.
+                # We can boost importance if sentiment is strong (e.g. |score| > 0.8)
+                score = memory.metadata["sentiment"]["score"]
+                if abs(score) > 0.8:
+                    # Boost importance slightly, but clamp to 1.0
+                    new_importance = min(1.0, memory.importance.value + 0.1)
+                    # We need to recreate ImportanceScore as it is frozen
+                    from khala.domain.memory.value_objects import ImportanceScore
+                    memory.importance = ImportanceScore(new_importance)
+
+            except Exception as e:
+                logger.warning(f"Failed to analyze sentiment for memory: {e}")
 
         return await self.repository.create(memory)
 
@@ -254,16 +317,37 @@ class MemoryLifecycleService:
                 )
 
                 # 2. Semantic duplicates (if embeddings exist)
+                # Strategy 90: Aggressive semantic deduplication check (>0.98)
+                # We can perform a standard check and then refine, or just use one check.
+                # Here we use the standard threshold but we could make it configurable.
                 semantic_dupes = []
+                aggressive_dupes = []
+
                 if memory.embedding:
+                    # Standard check (0.95)
                     semantic_dupes = self.deduplication_service.find_semantic_duplicates(
-                        memory, candidates
+                        memory, candidates, threshold=0.95
+                    )
+
+                    # Aggressive check (0.98) - subset of standard check
+                    aggressive_dupes = self.deduplication_service.find_semantic_duplicates(
+                        memory, semantic_dupes, threshold=0.98
                     )
 
                 all_dupes = set(exact_dupes + semantic_dupes)
 
+                # Identify aggressive dupes for merging
+                aggressive_ids = {d.id for d in aggressive_dupes}
+                aggressive_ids.update({d.id for d in exact_dupes}) # Treat exact dupes as aggressive too
+
                 for dupe in all_dupes:
                     if dupe.id not in processed_ids:
+                        # Strategy 90: Merge logic for aggressive duplicates
+                        if dupe.id in aggressive_ids:
+                             self.deduplication_service.merge_memories(target=memory, source=dupe)
+                             # Save the updated target (memory)
+                             await self.repository.update(memory)
+
                         # Simple strategy: Archive the duplicate
                         if not dupe.is_archived:
                             # Force archive for duplicates

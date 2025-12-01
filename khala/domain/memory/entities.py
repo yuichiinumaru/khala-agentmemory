@@ -16,7 +16,8 @@ from .value_objects import (
     DecayScore, 
     MemoryTier,
     MemorySource,
-    Sentiment
+    Sentiment,
+    MemoryType
 )
 
 
@@ -32,6 +33,7 @@ class Memory:
     
     # Optional attributes with defaults
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    memory_type: MemoryType = MemoryType.FACT  # Task 59: Polymorphic Memory
     embedding: Optional[EmbeddingVector] = field(default=None)
     # Strategy 78: Multi-Vector
     embedding_visual: Optional[EmbeddingVector] = field(default=None)
@@ -41,6 +43,9 @@ class Memory:
     summary: Optional[str] = field(default=None)
     metadata: Dict[str, Any] = field(default_factory=dict)
     
+    # Strategy 94: Linguistic Analysis
+    pos_tags: Optional[List[Dict[str, str]]] = field(default=None)
+
     # Timestamps
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -272,6 +277,7 @@ class Relationship:
     to_entity_id: str
     relation_type: str
     strength: float
+    weight: float = 1.0  # Strategy 68: Weighted Directed Multigraph
     valid_from: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     valid_to: Optional[datetime] = field(default=None)
     transaction_time_start: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

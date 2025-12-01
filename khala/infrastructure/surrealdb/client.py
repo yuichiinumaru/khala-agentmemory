@@ -230,6 +230,7 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "pos_tags": memory.pos_tags,
         }
         
         async with self.get_connection() as conn:
@@ -357,12 +358,82 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "pos_tags": memory.pos_tags,
         }
         
         async with self.get_connection() as conn:
             response = await conn.query(query, params)
             if isinstance(response, str):
                  raise RuntimeError(f"Failed to update memory: {response}")
+
+    async def update_memory_transactional(
+        self,
+        memory: Memory,
+        updates: Dict[str, Any],
+        event: Dict[str, Any]
+    ) -> None:
+        """Update memory with history and events atomically (Task 65).
+
+        Wraps update, history appending, and event logging in a single transaction.
+
+        Args:
+            memory: The memory object to update.
+            updates: Dictionary of fields to update.
+            event: Event object to append to the events list.
+        """
+        # Prepare updates
+        set_clauses = []
+
+        # Handle ID prefix
+        memory_id = memory.id
+        if ":" in memory_id:
+            memory_id = memory_id.split(":")[1]
+
+        params = {"id": memory_id, "event": event}
+
+        # Serialize updates and build SET clauses
+        for key, value in updates.items():
+            if key == "metadata":
+                # Merge metadata instead of replacing
+                set_clauses.append(f"metadata = metadata || ${key}")
+                params[key] = value
+            else:
+                set_clauses.append(f"{key} = ${key}")
+                params[key] = value
+
+        # Always update updated_at
+        set_clauses.append("updated_at = time::now()")
+
+        # Build the transactional query
+        # 1. Capture current version for history (Strategy 60: Document Versioning)
+        #    Use [0] to get the object from the list result
+        # 2. Update the fields
+        # 3. Append to events (Strategy 61: Array-Based Accumulation)
+        query = f"""
+        BEGIN TRANSACTION;
+
+        LET $current_doc = (SELECT * FROM type::thing('memory', $id))[0];
+
+        UPDATE type::thing('memory', $id) SET
+            {', '.join(set_clauses)},
+            versions = array::append(versions ?? [], {{
+                timestamp: time::now(),
+                diff: $current_doc
+            }}),
+            events = array::append(events ?? [], $event);
+
+        COMMIT TRANSACTION;
+        """
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+
+            # Check for errors in transaction
+            if isinstance(response, list):
+                for item in response:
+                    if isinstance(item, dict) and item.get('status') == 'ERR':
+                        logger.error(f"Transaction failed: {item}")
+                        raise RuntimeError(f"Transaction failed: {item.get('detail')}")
     
     async def delete_memory(self, memory_id: str) -> None:
         """Delete a memory by ID."""
@@ -423,6 +494,7 @@ class SurrealDBClient:
             to_entity_id: $to_entity_id,
             relation_type: $relation_type,
             strength: $strength,
+            weight: $weight,
             valid_from: $valid_from,
             valid_to: $valid_to,
             transaction_time_start: $transaction_time_start,
@@ -438,6 +510,7 @@ class SurrealDBClient:
             "to_entity_id": relationship.to_entity_id,
             "relation_type": relationship.relation_type,
             "strength": relationship.strength,
+            "weight": relationship.weight,
             "valid_from": relationship.valid_from,
             "valid_to": relationship.valid_to,
             "transaction_time_start": relationship.transaction_time_start,
@@ -781,7 +854,8 @@ class SurrealDBClient:
             sentiment=sentiment,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
-            source_reliability=data.get("source_reliability", 1.0)
+            source_reliability=data.get("source_reliability", 1.0),
+            pos_tags=data.get("pos_tags")
         )
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:
@@ -841,6 +915,44 @@ class SurrealDBClient:
             if response and isinstance(response, list):
                 return response
             return []
+
+    async def get_search_suggestions(self, prefix: str, limit: int = 10) -> List[str]:
+        """Get search suggestions based on past successful queries (Strategy 101)."""
+        # We search for queries starting with the prefix
+        # and we aggregate to get unique queries, perhaps sorting by frequency (count)
+        # SurrealDB doesn't have a simple GROUP BY COUNT on the fly easily without defining a view mostly.
+        # But we can select distinct queries.
+
+        # Using a simple SELECT DISTINCT with basic filtering
+        # Note: 'string::starts_with' is useful here.
+
+        query = """
+        SELECT query, count() as frequency FROM search_session
+        WHERE string::starts_with(string::lowercase(query), string::lowercase($prefix))
+        GROUP BY query
+        ORDER BY frequency DESC
+        LIMIT $limit;
+        """
+
+        params = {
+            "prefix": prefix,
+            "limit": limit
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+
+            suggestions = []
+            if response and isinstance(response, list):
+                items = response
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                    items = response[0]['result']
+
+                for item in items:
+                    if isinstance(item, dict) and 'query' in item:
+                        suggestions.append(item['query'])
+
+            return suggestions
 
     async def create_skill(self, skill: Skill) -> str:
         """Create a new skill in the database."""
@@ -982,6 +1094,26 @@ class SurrealDBClient:
         query = "DELETE type::thing('skill', $id);"
         params = {"id": skill_id}
         
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+
+    async def update_relationship_weight(self, relationship_id: str, new_weight: float) -> None:
+        """Update the weight of a relationship (Task 68).
+
+        Args:
+            relationship_id: The ID of the relationship to update.
+            new_weight: The new weight value.
+        """
+        if ":" in relationship_id:
+            relationship_id = relationship_id.split(":")[1]
+
+        query = """
+        UPDATE type::thing('relationship', $id)
+        SET weight = $weight,
+            updated_at = time::now();
+        """
+        params = {"id": relationship_id, "weight": new_weight}
+
         async with self.get_connection() as conn:
             await conn.query(query, params)
 
