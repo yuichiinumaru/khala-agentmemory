@@ -21,7 +21,7 @@ class KhalaTool:
             user_id=self.user_id,
             content=content,
             tier=MemoryTier.WORKING,
-            importance=ImportanceScore(0.9),
+            importance=ImportanceScore.very_high(),
             tags=["learned_fact"]
         )
         await self.client.create_memory(mem)
@@ -51,7 +51,20 @@ async def test_agent_learning_loop():
     """Run the Asker/Answerer cycle using Agno Agents."""
 
     # 1. Setup Infrastructure
-    client = SurrealDBClient()
+    # Use the same SurrealDB configuration as other tests
+    SURREALDB_URL = "ws://localhost:8001/rpc"
+    SURREAL_USER = "root"
+    SURREAL_PASS = "surrealdb_secret_password"
+    SURREAL_NS = "test_ns_agent"
+    SURREAL_DB = "test_db_agent"
+
+    client = SurrealDBClient(
+        url=SURREALDB_URL,
+        username=SURREAL_USER,
+        password=SURREAL_PASS,
+        namespace=SURREAL_NS,
+        database=SURREAL_DB
+    )
     await client.initialize()
 
     truth_db = {

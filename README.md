@@ -58,26 +58,14 @@ The grid is active. Construction of the memory core is **86% Complete**.
 
 ### Installation
 
-1.  **Clone the Repository:**
-1.  **Clone the repository:**
+1.  **Install via pip:**
     ```bash
-    git clone https://github.com/void-ecosystem/khala.git
-    cd khala
+    pip install khala-memory
     ```
+    *Note: Ensure you have a running SurrealDB instance.*
 
-2.  **Initialize the Link:**
-2.  **Install the package:**
-    You can install the package in editable mode:
-    ```bash
-    pip install -e .
-    ```
-    Or install dependencies directly:
-    ```bash
-    pip install -e .
-    ```
-
-3.  **Configure the Matrix:**
-    Create a `.env` file in the root directory:
+2.  **Configure Environment:**
+    Create a `.env` file or set environment variables:
     ```env
     SURREALDB_URL=ws://localhost:8000/rpc
     SURREALDB_USER=root
@@ -90,6 +78,8 @@ The grid is active. Construction of the memory core is **86% Complete**.
 ---
 
 ## ⚔️ Usage (Commanding the Fleet)
+
+### Basic Usage (Python Library)
 
 ```python
 import asyncio
@@ -106,7 +96,7 @@ async def main():
         user_id="executor_001",
         content="We must construct additional pylons.",
         tier=MemoryTier.WORKING,
-        importance=ImportanceScore(1.0),
+        importance=ImportanceScore.very_high(),
         tags=["strategy", "economy"]
     )
     
@@ -117,25 +107,40 @@ async def main():
     results = await client.search_memories_by_bm25("pylons", user_id="executor_001")
     for r in results:
         print(f"Recalled: {r['content']}")
-    # Create a Memory
-    mem = Memory(
-        user_id="user_123",
-        content="The user prefers dark mode.",
-        tier=MemoryTier.WORKING,
-        importance=ImportanceScore(0.8),
-        tags=["preference", "ui"]
-    )
-    
-    memory_id = await client.create_memory(mem)
-    print(f"Created memory: {memory_id}")
-
-    # Search (assuming embeddings are generated)
-    # results = await client.search_memories_by_vector(...)
     
     await client.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
+```
+
+### Agno Integration
+
+Khala seamlessly integrates with the **Agno** agent framework, providing your agents with persistent long-term memory.
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from khala.interface.agno.memory_provider import KhalaMemory
+
+# Initialize Khala Memory Provider
+memory_provider = KhalaMemory(
+    user_id="agent_007",
+    connection_string="ws://localhost:8000/rpc",
+    username="root",
+    password="root"
+)
+
+# Create an Agno Agent with Khala Memory
+agent = Agent(
+    model=OpenAIChat(id="gpt-4o"),
+    memory=memory_provider,
+    description="I am an agent with persistent memory."
+)
+
+# The agent can now save and recall information across sessions
+agent.print_response("My name is Bond. James Bond. Remember that.")
+agent.print_response("What is my name?") 
 ```
 
 ---
