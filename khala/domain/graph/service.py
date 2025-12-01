@@ -147,6 +147,47 @@ class GraphService:
 
         return direct_rels + inherited_rels
 
+    async def get_entity_descendants(
+        self,
+        entity_id: str,
+        relation_type: str = "PARTICIPANT",
+        max_depth: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all descendants of an entity using recursive graph traversal.
+
+        Strategy 71: Recursive Graph Patterns.
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+            logger.error("Repository does not have client access")
+            return []
+
+        # Use the custom SurrealDB function defined in schema
+        # fn::get_descendants(start_node string, relation_type string, max_depth int)
+        query = "RETURN fn::get_descendants($start_node, $relation_type, $max_depth);"
+        params = {
+            "start_node": entity_id,
+            "relation_type": relation_type,
+            "max_depth": max_depth
+        }
+
+        try:
+            async with client.get_connection() as conn:
+                response = await conn.query(query, params)
+                # Parse response
+                if response and isinstance(response, list):
+                     if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                        # The function returns a specific structure, we might need to flatten it
+                        # depending on how fn::get_descendants is implemented in schema.
+                        # Schema: RETURN SELECT *, (SELECT * FROM relationship...) AS children
+                        return response[0]['result']
+                     return response
+        except Exception as e:
+            logger.error(f"Recursive graph traversal failed: {e}")
+
+        return []
+
     def _deserialize_relationship(self, data: Dict[str, Any]) -> Relationship:
         """Helper to deserialize relationship data."""
         def parse_dt(dt_val: Any) -> Optional[datetime]:
