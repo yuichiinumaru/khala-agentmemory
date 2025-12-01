@@ -102,6 +102,52 @@ class DatabaseSchema:
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
         """,
         
+        # LGKGR Tables (Module 13.2.1)
+        "lgkgr_tables": """
+        -- Reasoning Paths Trace
+        DEFINE TABLE reasoning_paths SCHEMAFULL;
+        DEFINE FIELD query_entity ON reasoning_paths TYPE string;
+        DEFINE FIELD target_entity ON reasoning_paths TYPE string;
+        DEFINE FIELD path ON reasoning_paths TYPE array<object>;
+        DEFINE FIELD llm_explanation ON reasoning_paths TYPE string;
+        DEFINE FIELD confidence ON reasoning_paths TYPE float;
+        DEFINE FIELD final_rank ON reasoning_paths TYPE int;
+        DEFINE FIELD created_at ON reasoning_paths TYPE datetime;
+
+        -- Graph Token Injection (Module 13.2.2)
+        DEFINE TABLE kge_configs SCHEMAFULL;
+        DEFINE FIELD model_name ON kge_configs TYPE string;
+        DEFINE FIELD dimension ON kge_configs TYPE int;
+        DEFINE FIELD created_at ON kge_configs TYPE datetime;
+
+        DEFINE TABLE kg_embeddings SCHEMAFULL;
+        DEFINE FIELD entity_id ON kg_embeddings TYPE string;
+        DEFINE FIELD embedding ON kg_embeddings TYPE array<float>;
+        DEFINE FIELD task_context ON kg_embeddings TYPE string;
+        DEFINE FIELD representation_timestamp ON kg_embeddings TYPE datetime;
+
+        DEFINE INDEX kge_vector_index ON kg_embeddings FIELDS embedding HNSW
+          PARAMETERS { M: 16, ef_construction: 200, ef_runtime: 50, dimensions: 768, distance_metric: "cosine" };
+        """,
+
+        # LatentMAS & FULORA Tables (Module 13.3)
+        "latent_mas_tables": """
+        -- Latent States
+        DEFINE TABLE latent_states SCHEMAFULL;
+        DEFINE FIELD agent_id ON latent_states TYPE string;
+        DEFINE FIELD iteration ON latent_states TYPE int;
+        DEFINE FIELD state_embedding ON latent_states TYPE array<float>;
+        DEFINE FIELD decision_made ON latent_states TYPE string;
+        DEFINE FIELD created_at ON latent_states TYPE datetime;
+
+        -- Hierarchical Coordination
+        DEFINE TABLE hierarchical_coordination SCHEMAFULL;
+        DEFINE FIELD from_decision ON hierarchical_coordination TYPE string;
+        DEFINE FIELD to_action ON hierarchical_coordination TYPE string;
+        DEFINE FIELD guidance_type ON hierarchical_coordination TYPE string;
+        DEFINE FIELD created_at ON hierarchical_coordination TYPE datetime;
+        """,
+
         # Episode table
         "episode_table": """
         DEFINE TABLE episode SCHEMAFULL;
@@ -327,6 +373,8 @@ class DatabaseSchema:
             "audit_log_table",
             "search_session_table",
             "skill_table",
+            "lgkgr_tables",
+            "latent_mas_tables",
             "functions",
             "rbac_permissions",
         ]
