@@ -154,6 +154,31 @@ class DatabaseSchema:
         DEFINE FIELD created_at ON training_curves TYPE datetime;
         """,
 
+        # Analytics Tables (Strategies 109, 110)
+        "metrics_tables": """
+        -- Importance Distribution Metrics
+        DEFINE TABLE metrics_importance SCHEMAFULL;
+        DEFINE FIELD user_id ON metrics_importance TYPE string;
+        DEFINE FIELD timestamp ON metrics_importance TYPE datetime DEFAULT time::now();
+        DEFINE FIELD distribution ON metrics_importance TYPE object;
+        DEFINE FIELD total_count ON metrics_importance TYPE int;
+        DEFINE FIELD avg_importance ON metrics_importance TYPE float;
+
+        DEFINE INDEX metrics_imp_user_time ON metrics_importance FIELDS user_id, timestamp;
+
+        -- Graph Evolution Metrics
+        DEFINE TABLE metrics_graph SCHEMAFULL;
+        DEFINE FIELD user_id ON metrics_graph TYPE string;
+        DEFINE FIELD timestamp ON metrics_graph TYPE datetime DEFAULT time::now();
+        DEFINE FIELD node_count ON metrics_graph TYPE int;
+        DEFINE FIELD edge_count ON metrics_graph TYPE int;
+        DEFINE FIELD avg_degree ON metrics_graph TYPE float;
+        DEFINE FIELD entity_counts ON metrics_graph TYPE object;
+        DEFINE FIELD relation_counts ON metrics_graph TYPE object;
+
+        DEFINE INDEX metrics_graph_user_time ON metrics_graph FIELDS user_id, timestamp;
+        """,
+
         # Episode table
         "episode_table": """
         DEFINE TABLE episode SCHEMAFULL;
@@ -378,6 +403,7 @@ class DatabaseSchema:
             "skill_table",
             "lgkgr_tables",
             "latent_mas_tables",
+            "metrics_tables",
             # MarsRL table
             # "rbac_permissions",
         ]
