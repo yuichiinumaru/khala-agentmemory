@@ -109,3 +109,7 @@ class SurrealDBMemoryRepository(MemoryRepository):
             tier=tier,
             limit=limit
         )
+
+    async def get_memory_facets(self, user_id: str) -> Dict[str, Any]:
+        """Get faceted counts for memories."""
+        return await self.client.get_memory_facets(user_id)
