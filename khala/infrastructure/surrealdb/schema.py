@@ -33,6 +33,7 @@ class DatabaseSchema:
         DEFINE FIELD user_id ON memory TYPE string;
         DEFINE FIELD content ON memory TYPE string;
         DEFINE FIELD content_hash ON memory TYPE string;
+        DEFINE FIELD memory_type ON memory TYPE string ASSERT $value INSIDE ['fact', 'code', 'decision', 'reflection', 'conversation'];
         DEFINE FIELD embedding ON memory TYPE option<array<float>>;
         -- Strategy 78: Multi-Vector
         DEFINE FIELD embedding_visual ON memory TYPE option<array<float>>;
@@ -88,6 +89,7 @@ class DatabaseSchema:
         
         -- Performance indexes
         DEFINE INDEX tier_index ON memory FIELDS tier;
+        DEFINE INDEX type_index ON memory FIELDS memory_type;
         DEFINE INDEX importance_index ON memory FIELDS importance;
         DEFINE INDEX created_index ON memory FIELDS created_at;
         DEFINE INDEX accessed_index ON memory FIELDS accessed_at;

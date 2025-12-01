@@ -16,7 +16,8 @@ from .value_objects import (
     DecayScore, 
     MemoryTier,
     MemorySource,
-    Sentiment
+    Sentiment,
+    MemoryType
 )
 
 
@@ -32,6 +33,7 @@ class Memory:
     
     # Optional attributes with defaults
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    memory_type: MemoryType = MemoryType.FACT  # Task 59: Polymorphic Memory
     embedding: Optional[EmbeddingVector] = field(default=None)
     # Strategy 78: Multi-Vector
     embedding_visual: Optional[EmbeddingVector] = field(default=None)
