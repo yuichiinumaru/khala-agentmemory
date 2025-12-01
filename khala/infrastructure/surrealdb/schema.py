@@ -279,6 +279,21 @@ class DatabaseSchema:
         DEFINE FIELD version ON skill TYPE string;
         DEFINE FIELD is_active ON skill TYPE bool;
         """,
+
+        # User Profile table (Task 154)
+        "user_profile_table": """
+        DEFINE TABLE user_profile SCHEMAFULL;
+
+        DEFINE FIELD user_id ON user_profile TYPE string;
+        DEFINE FIELD preferences ON user_profile TYPE object FLEXIBLE;
+        DEFINE FIELD context ON user_profile TYPE object FLEXIBLE;
+        DEFINE FIELD traits ON user_profile TYPE array<string>;
+        DEFINE FIELD created_at ON user_profile TYPE datetime DEFAULT time::now();
+        DEFINE FIELD updated_at ON user_profile TYPE datetime DEFAULT time::now();
+
+        -- Indexes
+        DEFINE INDEX profile_user_index ON user_profile FIELDS user_id UNIQUE;
+        """,
         
         # Custom functions
         "functions": """
@@ -376,6 +391,7 @@ class DatabaseSchema:
             "audit_log_table",
             "search_session_table",
             "skill_table",
+            "user_profile_table",
             "lgkgr_tables",
             "latent_mas_tables",
             # MarsRL table
@@ -428,6 +444,7 @@ class DatabaseSchema:
             ("audit_log", "SELECT count() FROM audit_log;"),
             ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
+            ("user_profile", "SELECT count() FROM user_profile;"),
         ]
         
         for table_name, query in table_checks:
