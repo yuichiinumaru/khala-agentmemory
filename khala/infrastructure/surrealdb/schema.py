@@ -280,6 +280,40 @@ class DatabaseSchema:
         DEFINE FIELD is_active ON skill TYPE bool;
         """,
         
+        # Instruction tables
+        "instruction_table": """
+        DEFINE TABLE instruction SCHEMAFULL;
+        DEFINE FIELD id ON instruction TYPE string;
+        DEFINE FIELD name ON instruction TYPE string;
+        DEFINE FIELD content ON instruction TYPE string;
+        DEFINE FIELD instruction_type ON instruction TYPE string;
+        DEFINE FIELD version ON instruction TYPE string;
+        DEFINE FIELD variables ON instruction TYPE array<string>;
+        DEFINE FIELD tags ON instruction TYPE array<string>;
+        DEFINE FIELD metadata ON instruction TYPE object FLEXIBLE;
+        DEFINE FIELD created_at ON instruction TYPE datetime;
+        DEFINE FIELD updated_at ON instruction TYPE datetime;
+        DEFINE FIELD is_active ON instruction TYPE bool;
+
+        -- Indexes
+        DEFINE INDEX instruction_name_index ON instruction FIELDS name;
+        DEFINE INDEX instruction_type_index ON instruction FIELDS instruction_type;
+        """,
+
+        "instruction_set_table": """
+        DEFINE TABLE instruction_set SCHEMAFULL;
+        DEFINE FIELD id ON instruction_set TYPE string;
+        DEFINE FIELD name ON instruction_set TYPE string;
+        DEFINE FIELD description ON instruction_set TYPE string;
+        DEFINE FIELD instructions ON instruction_set TYPE array<record<instruction>>;
+        DEFINE FIELD target_agent_role ON instruction_set TYPE option<string>;
+        DEFINE FIELD created_at ON instruction_set TYPE datetime;
+        DEFINE FIELD updated_at ON instruction_set TYPE datetime;
+
+        -- Indexes
+        DEFINE INDEX set_name_index ON instruction_set FIELDS name;
+        """,
+
         # Custom functions
         "functions": """
         -- Decay score calculation function
@@ -376,6 +410,8 @@ class DatabaseSchema:
             "audit_log_table",
             "search_session_table",
             "skill_table",
+            "instruction_table",
+            "instruction_set_table",
             "lgkgr_tables",
             "latent_mas_tables",
             # MarsRL table
@@ -428,6 +464,8 @@ class DatabaseSchema:
             ("audit_log", "SELECT count() FROM audit_log;"),
             ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
+            ("instruction", "SELECT count() FROM instruction;"),
+            ("instruction_set", "SELECT count() FROM instruction_set;"),
         ]
         
         for table_name, query in table_checks:
