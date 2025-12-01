@@ -157,12 +157,7 @@ Consult the archives for deeper knowledge:
 - `tests`: Unit and integration tests.
 - `docs`: Comprehensive documentation.
 
-## Documentation
 
-See the `docs/` directory for detailed documentation:
-- [Implementation Tasks](docs/02-tasks-implementation.md)
-- [Master Strategy List](docs/06-strategies-master.md)
-- [SurrealDB Optimization](docs/11-surrealdb-optimization.md)
 
 ---
 
