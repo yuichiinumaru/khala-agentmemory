@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 class HealthMonitor:
     """Monitor system health and component status."""
     
+    def __init__(
+        self,
+        db_client: SurrealDBClient,
+        gemini_client: GeminiClient,
+        job_processor: Optional[JobProcessor] = None
+    ):
     def __init__(self, db_client: SurrealDBClient, gemini_client: GeminiClient, job_processor: Optional[JobProcessor] = None):
         self.db_client = db_client
         self.gemini_client = gemini_client
@@ -52,6 +58,22 @@ class HealthMonitor:
         except Exception as e:
             status["components"]["llm"] = {"status": "down", "error": str(e)}
             status["status"] = "degraded"
+
+        # Check Job Queue (Task 106: System Load)
+        if self.job_processor:
+            try:
+                stats = await self.job_processor.get_queue_stats()
+                pending = stats.get("pending_jobs", 0)
+                running = stats.get("running_jobs", 0)
+
+                # Simple load heuristic: if queue > 100, consider degraded/busy
+                if pending > 100:
+                    status["components"]["queue"] = {"status": "busy", "pending": pending}
+                    status["status"] = "degraded"
+                else:
+                    status["components"]["queue"] = {"status": "ok", "pending": pending, "running": running}
+            except Exception as e:
+                status["components"]["queue"] = {"status": "unknown", "error": str(e)}
             
         # Check Job Queue
         if self.job_processor:
