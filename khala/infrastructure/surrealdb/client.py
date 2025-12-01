@@ -19,6 +19,7 @@ except ImportError as e:
     ) from e
 
 from khala.domain.memory.entities import Memory, Entity, Relationship
+from khala.domain.memory.clustering import VectorCentroid
 from khala.domain.memory.value_objects import EmbeddingVector, MemorySource, Sentiment
 from khala.domain.skills.entities import Skill
 from khala.domain.skills.value_objects import SkillType, SkillLanguage, SkillParameter
@@ -206,6 +207,8 @@ class SurrealDBClient:
             "embedding": memory.embedding.values if memory.embedding else None,
             "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
             "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
+            "embedding_small": memory.embedding_small.values if memory.embedding_small else None,
+            "cluster_id": memory.cluster_id,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
             "tags": memory.tags,
@@ -336,6 +339,8 @@ class SurrealDBClient:
             "content": memory.content,
             "content_hash": content_hash,
             "embedding": memory.embedding.values if memory.embedding else None,
+            "embedding_small": memory.embedding_small.values if memory.embedding_small else None,
+            "cluster_id": memory.cluster_id,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
             "tags": memory.tags,
@@ -900,6 +905,10 @@ class SurrealDBClient:
         if data.get("embedding_code"):
             embedding_code = EmbeddingVector(data["embedding_code"])
 
+        embedding_small = None
+        if data.get("embedding_small"):
+            embedding_small = EmbeddingVector(data["embedding_small"])
+
         # Reconstruct MemorySource
         source = None
         if data.get("source"):
@@ -936,6 +945,8 @@ class SurrealDBClient:
             embedding=embedding,
             embedding_visual=embedding_visual,
             embedding_code=embedding_code,
+            embedding_small=embedding_small,
+            cluster_id=data.get("cluster_id"),
             tags=data.get("tags", []),
             category=data.get("category"),
             summary=data.get("summary"),
@@ -959,6 +970,88 @@ class SurrealDBClient:
             confidence=data.get("confidence", 1.0),
             source_reliability=data.get("source_reliability", 1.0),
             pos_tags=data.get("pos_tags")
+        )
+
+    async def save_centroid(self, centroid: VectorCentroid) -> str:
+        """Save a vector centroid."""
+        query = """
+        CREATE type::thing('vector_centroid', $id) CONTENT {
+            cluster_id: $cluster_id,
+            embedding: $embedding,
+            member_count: $member_count,
+            radius: $radius,
+            metadata: $metadata,
+            created_at: $created_at,
+            updated_at: $updated_at
+        };
+        """
+        params = {
+            "id": centroid.cluster_id,
+            "cluster_id": centroid.cluster_id,
+            "embedding": centroid.embedding.values,
+            "member_count": centroid.member_count,
+            "radius": centroid.radius,
+            "metadata": centroid.metadata,
+            "created_at": centroid.created_at.isoformat(),
+            "updated_at": centroid.updated_at.isoformat(),
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if isinstance(response, str):
+                 raise RuntimeError(f"Failed to save centroid: {response}")
+            return centroid.cluster_id
+
+    async def get_all_centroids(self) -> List[VectorCentroid]:
+        """Get all vector centroids."""
+        query = "SELECT * FROM vector_centroid;"
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query)
+            if response and isinstance(response, list):
+                return [self._deserialize_centroid(data) for data in response]
+            return []
+
+    async def update_memory_cluster(self, memory_id: str, cluster_id: str) -> None:
+        """Efficiently update only the cluster_id of a memory."""
+        # Handle memory ID format
+        if memory_id.startswith("memory:"):
+            memory_id = memory_id.split(":", 1)[1]
+
+        query = "UPDATE type::thing('memory', $id) SET cluster_id = $cluster_id, updated_at = time::now();"
+        params = {
+            "id": memory_id,
+            "cluster_id": cluster_id
+        }
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+
+    def _deserialize_centroid(self, data: Dict[str, Any]) -> VectorCentroid:
+        """Deserialize database record to VectorCentroid object."""
+        from datetime import datetime, timezone
+
+        def parse_dt(dt_val: Any) -> datetime:
+            if not dt_val:
+                return datetime.now(timezone.utc)
+            if isinstance(dt_val, str):
+                if dt_val.endswith('Z'):
+                    dt_val = dt_val[:-1]
+                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+            return dt_val
+
+        embedding = None
+        if data.get("embedding"):
+            embedding = EmbeddingVector(data["embedding"])
+
+        return VectorCentroid(
+            embedding=embedding,
+            cluster_id=data.get("cluster_id"),
+            member_count=data.get("member_count", 0),
+            radius=data.get("radius", 0.0),
+            metadata=data.get("metadata", {}),
+            created_at=parse_dt(data.get("created_at")),
+            updated_at=parse_dt(data.get("updated_at"))
         )
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:
