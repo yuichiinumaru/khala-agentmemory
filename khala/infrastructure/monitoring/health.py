@@ -5,17 +5,20 @@ import asyncio
 from typing import Dict, Any
 from datetime import datetime, timezone
 
+from typing import Optional
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 from khala.infrastructure.gemini.client import GeminiClient
+from khala.infrastructure.background.jobs.job_processor import JobProcessor
 
 logger = logging.getLogger(__name__)
 
 class HealthMonitor:
     """Monitor system health and component status."""
     
-    def __init__(self, db_client: SurrealDBClient, gemini_client: GeminiClient):
+    def __init__(self, db_client: SurrealDBClient, gemini_client: GeminiClient, job_processor: Optional[JobProcessor] = None):
         self.db_client = db_client
         self.gemini_client = gemini_client
+        self.job_processor = job_processor
         
     async def check_health(self) -> Dict[str, Any]:
         """Perform a full system health check."""
@@ -39,11 +42,27 @@ class HealthMonitor:
         try:
             # Check if models are initialized
             if self.gemini_client._models:
-                status["components"]["llm"] = {"status": "up", "models": list(self.gemini_client._models.keys())}
+                status["components"]["llm"] = {
+                    "status": "up",
+                    "models": list(self.gemini_client._models.keys()),
+                    "cache": self.gemini_client.get_cache_stats()
+                }
             else:
                 status["components"]["llm"] = {"status": "unknown", "details": "No models initialized"}
         except Exception as e:
             status["components"]["llm"] = {"status": "down", "error": str(e)}
             status["status"] = "degraded"
             
+        # Check Job Queue
+        if self.job_processor:
+            try:
+                queue_stats = await self.job_processor.get_queue_stats()
+                status["components"]["queue"] = {
+                    "status": "up",
+                    "stats": queue_stats
+                }
+            except Exception as e:
+                status["components"]["queue"] = {"status": "down", "error": str(e)}
+                status["status"] = "degraded"
+
         return status
