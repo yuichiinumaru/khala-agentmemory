@@ -51,6 +51,13 @@ Create one **functional reference agent** ("Khala") with:
 - Multimodal Support (Image/Code/Table) *excluding GPU processing*
 - Advanced Reasoning (Mixture of Thought, Hypothesis Testing)
 
+**Phase 3: Advanced Intelligence & Reasoning (Research)**
+- **Automated Prompt Optimization** (PromptWizard)
+- **Homogeneous Reasoning Modules** (ARM)
+- **Knowledge Graph Reasoning** (LGKGR + GraphToken)
+- **Latent State Collaboration** (LatentMAS)
+- **Multi-Agent Reinforcement Learning** (MarsRL + FULORA)
+
 ### Out of Scope
 - Multiple agent templates (only 1 reference agent).
 - Custom UI/UX beyond admin dashboard (UI handled in `Supernova.JS`).
@@ -76,6 +83,9 @@ Create one **functional reference agent** ("Khala") with:
 *   **Module 8: Advanced Search**: Scoring, Topics, Patterns.
 *   **Module 9: Production Features**: Audit, Distributed, SOPs.
 *   **Module 10: Advanced Capabilities**: Multimodal, Reasoning, Dashboards.
+*   **Module 11: Optimization**: SurrealDB Tuning, Troubleshooting.
+*   **Module 12: Novel/Experimental**: Initial research ideas.
+*   **Module 13: Advanced Papers Integration**: ARM, MarsRL, LatentMAS Implementation.
 
 ---
 
