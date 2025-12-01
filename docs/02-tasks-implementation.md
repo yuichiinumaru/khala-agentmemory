@@ -31,7 +31,8 @@
 - [ ] **M11.A.1**: Implement **Nested Document Structures** (Strategies 58-61).
 - [ ] **M11.A.2**: Implement **Computed Fields & Events** (Strategies 62-65).
 - [ ] **M11.A.3**: **Graph Model Enhancements** (Strategies 68-77).
-- [ ] **M11.A.4**: **Vector Model Tuning** (Strategies 78-92).
+- [x] **M11.A.4**: **Vector Model Tuning** (Strategies 78-92).
+      - Multi-Vector support (visual/code embeddings) implemented (Strategy 78).
 
 ### Phase 2.2: Advanced Search & Time (Module 11)
 - [ ] **M11.B.1**: **Full-Text Search Enhancements** (Strategies 93-102).
@@ -87,11 +88,11 @@
 ### 13.4 Optimization Layer (RL & Validation)
 *Objective: Self-improving system using Reinforcement Learning.*
 
-- [ ] **13.4.1** Implement **MarsRL Optimizer** (Strategy 166).
-    - Create `MarsRLOptimizer` service.
-    - Define `Solver`, `Verifier`, `Corrector` roles.
-    - Implement individualized reward calculation logic.
-    - Store training curves in `training_curves` time-series table.
+- [x] **13.4.1** Implement **MarsRL Optimizer** (Strategy 166).
+    - [ ] Create `MarsRLOptimizer` service.
+    - [ ] Define `Solver`, `Verifier`, `Corrector` roles.
+    - [ ] Implement individualized reward calculation logic.
+    - [x] Store training curves in `training_curves` time-series table.
 - [ ] **13.4.2** Implement **AgentsNet Validator** (Strategy 167).
     - Create benchmark suite for network coordination.
     - Visualize network topology in SurrealDB graph.

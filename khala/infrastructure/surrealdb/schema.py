@@ -29,6 +29,9 @@ class DatabaseSchema:
         DEFINE FIELD content ON memory TYPE string;
         DEFINE FIELD content_hash ON memory TYPE string;
         DEFINE FIELD embedding ON memory TYPE array<float> FLEXIBLE;
+        -- Strategy 78: Multi-Vector
+        DEFINE FIELD embedding_visual ON memory TYPE array<float> FLEXIBLE;
+        DEFINE FIELD embedding_code ON memory TYPE array<float> FLEXIBLE;
         DEFINE FIELD tier ON memory TYPE enum<working,short_term,long_term>;
         DEFINE FIELD importance ON memory TYPE float;
         DEFINE FIELD tags ON memory TYPE array<string>;
@@ -146,6 +149,15 @@ class DatabaseSchema:
         DEFINE FIELD to_action ON hierarchical_coordination TYPE string;
         DEFINE FIELD guidance_type ON hierarchical_coordination TYPE string;
         DEFINE FIELD created_at ON hierarchical_coordination TYPE datetime;
+
+        -- MarsRL (Module 13.4 - Strategy 166)
+        DEFINE TABLE training_curves SCHEMAFULL;
+        DEFINE FIELD model_id ON training_curves TYPE string;
+        DEFINE FIELD epoch ON training_curves TYPE int;
+        DEFINE FIELD loss ON training_curves TYPE float;
+        DEFINE FIELD accuracy ON training_curves TYPE float;
+        DEFINE FIELD reward_mean ON training_curves TYPE float;
+        DEFINE FIELD created_at ON training_curves TYPE datetime;
         """,
 
         # Episode table
@@ -375,6 +387,7 @@ class DatabaseSchema:
             "skill_table",
             "lgkgr_tables",
             "latent_mas_tables",
+            # MarsRL table
             "functions",
             "rbac_permissions",
         ]
