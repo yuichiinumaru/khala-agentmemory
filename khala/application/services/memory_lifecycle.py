@@ -20,6 +20,15 @@ from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
 
+# Task 141: Keyword Extraction Tagging
+try:
+    import yake
+    YAKE_AVAILABLE = True
+except ImportError:
+    YAKE_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("YAKE not installed. Falling back to LLM for keyword extraction.")
+
 logger = logging.getLogger(__name__)
 
 class MemoryLifecycleService:
@@ -42,7 +51,7 @@ class MemoryLifecycleService:
         self.consolidation_service = consolidation_service or ConsolidationService()
 
     async def ingest_memory(self, memory: Memory) -> str:
-        """Ingest a new memory, performing auto-summarization if needed."""
+        """Ingest a new memory, performing auto-summarization and tagging if needed."""
 
         # Auto-summarize if content is long (> 500 chars) and summary is missing
         if len(memory.content) > 500 and not memory.summary:
@@ -58,7 +67,72 @@ class MemoryLifecycleService:
             except Exception as e:
                 logger.warning(f"Failed to auto-summarize memory: {e}")
 
+        # Task 141: Keyword Extraction Tagging
+        if not memory.tags:
+            try:
+                extracted_tags = await self._extract_keywords(memory.content)
+                if extracted_tags:
+                    # Deduplicate and add to memory
+                    current_tags = set(memory.tags)
+                    for tag in extracted_tags:
+                        if tag not in current_tags:
+                            memory.tags.append(tag)
+                            current_tags.add(tag)
+            except Exception as e:
+                logger.warning(f"Failed to extract keywords: {e}")
+
         return await self.repository.create(memory)
+
+    async def _extract_keywords(self, text: str, max_keywords: int = 5) -> List[str]:
+        """Extract keywords from text using YAKE or LLM."""
+        if not text or len(text.strip()) < 10:
+            return []
+
+        # 1. Try YAKE first (Fast, Local)
+        if YAKE_AVAILABLE:
+            try:
+                # Initialize YAKE keyword extractor
+                kw_extractor = yake.KeywordExtractor(
+                    lan="en",
+                    n=2,  # Max ngram size
+                    dedupLim=0.9,
+                    top=max_keywords,
+                    features=None
+                )
+                keywords = kw_extractor.extract_keywords(text)
+                # YAKE returns (keyword, score) tuples. Lower score is better.
+                return [kw for kw, score in keywords]
+            except Exception as e:
+                logger.warning(f"YAKE extraction failed: {e}")
+
+        # 2. Fallback to LLM (Slower, Costlier, but Smarter)
+        try:
+            prompt = f"""
+            Extract exactly {max_keywords} relevant keywords or short key-phrases from the text below.
+            Return them as a comma-separated list.
+
+            Text:
+            {text}
+
+            Keywords:
+            """
+
+            response = await self.gemini_client.generate_text(
+                prompt=prompt,
+                task_type="generation",
+                model_id=ModelRegistry.get_model("gemini-2.0-flash").model_id
+            )
+
+            content = response.get("content", "").strip()
+            if content:
+                # Split by comma and clean
+                keywords = [k.strip() for k in content.split(",") if k.strip()]
+                return keywords[:max_keywords]
+
+        except Exception as e:
+            logger.error(f"LLM keyword extraction failed: {e}")
+
+        return []
 
     async def run_lifecycle_job(self, user_id: str) -> Dict[str, int]:
         """Run all lifecycle tasks for a user.

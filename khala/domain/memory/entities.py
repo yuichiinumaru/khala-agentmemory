@@ -244,6 +244,20 @@ class Entity:
         
         if not (0.0 <= self.confidence <= 1.0):
             raise ValueError("Confidence must be in [0.0, 1.0]")
+
+        # Strategy 120: Custom Pydantic Entity Types
+        # Validate metadata if schema exists
+        from khala.domain.memory.schemas import ENTITY_SCHEMAS
+        schema_cls = ENTITY_SCHEMAS.get(self.entity_type.value)
+        if schema_cls and self.metadata:
+            try:
+                # Validate and potentially coerce types
+                validated_model = schema_cls(**self.metadata)
+                # Update metadata with validated values (excluding unset to keep it clean)
+                self.metadata.update(validated_model.model_dump(exclude_unset=True))
+            except Exception as e:
+                # "Enforce strict typing" - we raise ValueError
+                raise ValueError(f"Invalid metadata for entity type {self.entity_type.value}: {e}")
     
     def is_high_confidence(self, threshold: float = 0.8) -> bool:
         """Check if entity has high confidence."""
