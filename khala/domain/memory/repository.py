@@ -80,4 +80,6 @@ class MemoryRepository(ABC):
     @abstractmethod
     async def get_branch_by_name(self, name: str) -> Optional[Branch]:
         """Retrieve a branch by name."""
+    async def get_memory_facets(self, user_id: str) -> Dict[str, Any]:
+        """Get faceted counts for memories (Tier, Category, Agent)."""
         pass

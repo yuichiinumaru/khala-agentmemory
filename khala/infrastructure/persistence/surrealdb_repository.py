@@ -197,3 +197,6 @@ class SurrealDBMemoryRepository(MemoryRepository):
             # Assuming client returns ISO string or datetime
             # If it's a string, parse it.
         )
+    async def get_memory_facets(self, user_id: str) -> Dict[str, Any]:
+        """Get faceted counts for memories."""
+        return await self.client.get_memory_facets(user_id)
