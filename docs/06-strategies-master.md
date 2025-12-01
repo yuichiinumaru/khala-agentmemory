@@ -2,7 +2,7 @@
 
 **Project**: KHALA v2.0
 **Status**: Comprehensive List of All Integrated Strategies
-**Total Count**: 159 Strategies (57 Core/Advanced + 23 Novel + 58 SurrealDB Optimization + 21 Experimental)
+**Total Count**: 170 Strategies (57 Core/Advanced + 23 Novel + 58 SurrealDB Optimization + 21 Experimental + 11 Advanced Research)
 
 ---
 
@@ -201,3 +201,21 @@ Cutting-edge ideas from recent agent research.
 157. **Forking Capabilities**: Branching memory states.
 158. **Merge Conflict Resolution**: UI for memory clashes.
 159. **Self-Healing Index**: Auto-repairing vectors.
+
+---
+
+## 5. Advanced Research Integration (Papers)
+
+Strategies derived from 2024-2025 research papers (PromptWizard, ARM, LatentMAS).
+
+160. **Automated Prompt Optimization**: Using genetic algorithms to evolve prompts (PromptWizard).
+161. **Homogeneous Reasoning Modules**: Decomposing agents into specialized reasoning units (ARM).
+162. **Knowledge Graph Reasoning (GNN)**: Pruning reasoning paths using Graph Neural Networks (LGKGR).
+163. **Knowledge Injection (GraphToken)**: Injecting KG embeddings directly into LLM context.
+164. **Latent State Collaboration**: Agents sharing internal state/embeddings instead of text (LatentMAS).
+165. **Hierarchical RL Teams**: Dual-agent setup for high-level guidance and low-level action (FULORA).
+166. **Multi-Agent RL Optimization**: Solver/Verifier/Corrector loop with individualized rewards (MarsRL).
+167. **Network Topology Validation**: Benchmarking coordination in complex agent networks (AgentsNet).
+168. **Meta-Reasoning**: Alternating between goal setting and execution (Dr.MAMR).
+169. **Reasoning Trace Storage**: Persisting full CoT traces in Time-Series for analysis.
+170. **Prompt Genealogy Tracking**: Storing the evolutionary tree of prompt optimizations.
