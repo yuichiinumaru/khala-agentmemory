@@ -182,7 +182,10 @@ class SurrealDBClient:
             sentiment: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            branch: $branch,
+            parent_memory: $parent_memory,
+            version: $version
         };
         """
         
@@ -230,6 +233,9 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "branch": f"branch:{memory.branch_id}" if memory.branch_id else None,
+            "parent_memory": f"memory:{memory.parent_memory_id}" if memory.parent_memory_id else None,
+            "version": memory.version,
         }
         
         async with self.get_connection() as conn:
@@ -313,7 +319,10 @@ class SurrealDBClient:
             sentiment: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            branch: $branch,
+            parent_memory: $parent_memory,
+            version: $version
         };
         """
         
@@ -357,6 +366,9 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "branch": f"branch:{memory.branch_id}" if memory.branch_id else None,
+            "parent_memory": f"memory:{memory.parent_memory_id}" if memory.parent_memory_id else None,
+            "version": memory.version,
         }
         
         async with self.get_connection() as conn:
@@ -733,7 +745,10 @@ class SurrealDBClient:
             sentiment=sentiment,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
-            source_reliability=data.get("source_reliability", 1.0)
+            source_reliability=data.get("source_reliability", 1.0),
+            branch_id=data.get("branch").split(":")[-1] if data.get("branch") and isinstance(data.get("branch"), str) and ":" in data.get("branch") else (data.get("branch") if isinstance(data.get("branch"), str) else None),
+            parent_memory_id=data.get("parent_memory").split(":")[-1] if data.get("parent_memory") and isinstance(data.get("parent_memory"), str) and ":" in data.get("parent_memory") else (data.get("parent_memory") if isinstance(data.get("parent_memory"), str) else None),
+            version=data.get("version", 1)
         )
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:
