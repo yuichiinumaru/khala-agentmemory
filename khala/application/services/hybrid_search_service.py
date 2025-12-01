@@ -179,7 +179,8 @@ class HybridSearchService:
 
                 query_graph = """
                 SELECT from_entity_id, to_entity_id FROM relationship
-                WHERE from_entity_id = $anchor OR to_entity_id = $anchor
+                WHERE (from_entity_id = $anchor OR to_entity_id = $anchor)
+                AND (valid_to IS NONE OR valid_to > time::now())
                 LIMIT 50;
                 """
 

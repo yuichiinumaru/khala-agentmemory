@@ -68,7 +68,7 @@ class GraphService:
             return []
 
         # 1. Get direct relationships (where entity is source)
-        query = "SELECT * FROM relationship WHERE from_entity_id = $id;"
+        query = "SELECT * FROM relationship WHERE from_entity_id = $id AND (valid_to IS NONE OR valid_to > time::now());"
         params = {"id": entity_id}
 
         direct_rels = []
@@ -93,7 +93,8 @@ class GraphService:
         SELECT to_entity_id
         FROM relationship
         WHERE from_entity_id = $id
-        AND (relation_type = 'is_a' OR relation_type = 'subclass_of');
+        AND (relation_type = 'is_a' OR relation_type = 'subclass_of')
+        AND (valid_to IS NONE OR valid_to > time::now());
         """
 
         parents = []
@@ -113,7 +114,7 @@ class GraphService:
         inherited_rels = []
         for parent_id in parents:
             # Get parent's relationships
-            query_parent_rels = "SELECT * FROM relationship WHERE from_entity_id = $id;"
+            query_parent_rels = "SELECT * FROM relationship WHERE from_entity_id = $id AND (valid_to IS NONE OR valid_to > time::now());"
             parent_params = {"id": parent_id}
 
             async with client.get_connection() as conn:

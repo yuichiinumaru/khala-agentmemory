@@ -639,7 +639,51 @@ class SurrealDBClient:
                     logger.error(f"Error closing connection: {e}")
             self._connection_pool.clear()
             self._initialized = False
-    
+
+    async def get_memory_creation_stats(
+        self,
+        start_time: "datetime",
+        end_time: "datetime",
+        granularity: str = "day"
+    ) -> List[Dict[str, Any]]:
+        """Get memory creation statistics for heatmaps.
+
+        Strategy 140: Temporal Heatmaps.
+
+        Args:
+            start_time: Start of the period
+            end_time: End of the period
+            granularity: 'hour', 'day', 'week'
+        """
+        duration_map = {
+            "hour": "1h",
+            "day": "1d",
+            "week": "1w"
+        }
+        duration = duration_map.get(granularity, "1d")
+
+        query = """
+        SELECT count() AS count, time::floor(created_at, $duration) AS time_bucket
+        FROM memory
+        WHERE created_at >= $start AND created_at <= $end
+        GROUP BY time_bucket
+        ORDER BY time_bucket ASC;
+        """
+
+        params = {
+            "start": start_time.isoformat(),
+            "end": end_time.isoformat(),
+            "duration": duration
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list):
+                 if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                     return response[0]['result']
+                 return response
+            return []
+
     def _deserialize_memory(self, data: Dict[str, Any]) -> Memory:
         """Deserialize database record to Memory object."""
         # Convert timestamp strings back to datetime objects
