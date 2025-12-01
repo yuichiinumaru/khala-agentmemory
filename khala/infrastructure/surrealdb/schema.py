@@ -22,6 +22,7 @@ class DatabaseSchema:
         # Analyzers
         "analyzers": """
         DEFINE ANALYZER ascii TOKENIZERS class FILTERS ascii;
+        DEFINE ANALYZER fuzzy_analyzer TOKENIZERS class, edgengram(2, 10) FILTERS ascii, lowercase;
         """,
         
         # Memory table with all fields
@@ -33,10 +34,17 @@ class DatabaseSchema:
         DEFINE FIELD user_id ON memory TYPE string;
         DEFINE FIELD content ON memory TYPE string;
         DEFINE FIELD content_hash ON memory TYPE string;
+        DEFINE FIELD memory_type ON memory TYPE string ASSERT $value INSIDE ['fact', 'code', 'decision', 'reflection', 'conversation'];
         DEFINE FIELD embedding ON memory TYPE option<array<float>>;
         -- Strategy 78: Multi-Vector
         DEFINE FIELD embedding_visual ON memory TYPE option<array<float>>;
         DEFINE FIELD embedding_code ON memory TYPE option<array<float>>;
+        -- Strategy 89: Vector Ensemble
+        DEFINE FIELD embedding_secondary ON memory TYPE option<array<float>>;
+        -- Strategy 82: Adaptive Vector Dimensions
+        DEFINE FIELD embedding_small ON memory TYPE option<array<float>>;
+        -- Strategy 81: Vector Clustering
+        DEFINE FIELD cluster_id ON memory TYPE option<string>;
         DEFINE FIELD tier ON memory TYPE string ASSERT $value INSIDE ['working', 'short_term', 'long_term'];
         DEFINE FIELD importance ON memory TYPE float;
         DEFINE FIELD tags ON memory TYPE array<string>;
@@ -44,6 +52,9 @@ class DatabaseSchema:
         DEFINE FIELD summary ON memory TYPE option<string>;
         DEFINE FIELD metadata ON memory TYPE object FLEXIBLE;
         
+        -- Strategy 94: Linguistic Analysis
+        DEFINE FIELD pos_tags ON memory TYPE option<array<object>> FLEXIBLE;
+
         -- Timestamps
         DEFINE FIELD created_at ON memory TYPE datetime;
         DEFINE FIELD updated_at ON memory TYPE datetime;
@@ -66,6 +77,7 @@ class DatabaseSchema:
         DEFINE FIELD episode_id ON memory TYPE option<string>;
         DEFINE FIELD confidence ON memory TYPE float;
         DEFINE FIELD source_reliability ON memory TYPE float;
+        DEFINE FIELD complexity ON memory TYPE float;
         -- Module 11: Optimized Fields
         DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
@@ -83,11 +95,16 @@ class DatabaseSchema:
 
         -- Search indexes
         DEFINE INDEX vector_search ON memory FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
+        -- Strategy 89: Vector Ensemble Index
+        DEFINE INDEX vector_search_secondary ON memory FIELDS embedding_secondary HNSW DIMENSION 768 DIST COSINE M 16;
+        DEFINE INDEX vector_small_search ON memory FIELDS embedding_small HNSW DIMENSION 256 DIST COSINE M 16;
         
-        DEFINE INDEX bm25_search ON memory FIELDS content SEARCH ANALYZER ascii BM25;
+        -- Strategy 96: Typo Tolerance (Fuzzy Analyzer)
+        DEFINE INDEX bm25_search ON memory FIELDS content SEARCH ANALYZER fuzzy_analyzer BM25;
         
         -- Performance indexes
         DEFINE INDEX tier_index ON memory FIELDS tier;
+        DEFINE INDEX type_index ON memory FIELDS memory_type;
         DEFINE INDEX importance_index ON memory FIELDS importance;
         DEFINE INDEX created_index ON memory FIELDS created_at;
         DEFINE INDEX accessed_index ON memory FIELDS accessed_at;
@@ -96,8 +113,29 @@ class DatabaseSchema:
         -- Tag prefix search
         DEFINE INDEX tag_search ON memory FIELDS tags SEARCH ANALYZER ascii BM25;
 
+        -- Multi-Index Strategy (Task 38)
+        DEFINE INDEX idx_memory_tags_created ON memory FIELDS tags, created_at;
+        DEFINE INDEX idx_memory_tags_tier ON memory FIELDS tags, tier;
+
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
+        DEFINE INDEX complexity_index ON memory FIELDS complexity;
+        DEFINE INDEX cluster_index ON memory FIELDS cluster_id;
+        """,
+
+        # Vector Centroids (Strategy 81)
+        "vector_centroid_table": """
+        DEFINE TABLE vector_centroid SCHEMAFULL;
+        DEFINE FIELD cluster_id ON vector_centroid TYPE string;
+        DEFINE FIELD embedding ON vector_centroid TYPE array<float>;
+        DEFINE FIELD member_count ON vector_centroid TYPE int DEFAULT 0;
+        DEFINE FIELD radius ON vector_centroid TYPE float DEFAULT 0.0;
+        DEFINE FIELD metadata ON vector_centroid TYPE object FLEXIBLE;
+        DEFINE FIELD created_at ON vector_centroid TYPE datetime;
+        DEFINE FIELD updated_at ON vector_centroid TYPE datetime;
+
+        DEFINE INDEX centroid_vector_index ON vector_centroid FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
+        DEFINE INDEX centroid_id_index ON vector_centroid FIELDS cluster_id;
         """,
         
         # LGKGR Tables (Module 13.2.1)
@@ -154,6 +192,31 @@ class DatabaseSchema:
         DEFINE FIELD created_at ON training_curves TYPE datetime;
         """,
 
+        # Analytics Tables (Strategies 109, 110)
+        "metrics_tables": """
+        -- Importance Distribution Metrics
+        DEFINE TABLE metrics_importance SCHEMAFULL;
+        DEFINE FIELD user_id ON metrics_importance TYPE string;
+        DEFINE FIELD timestamp ON metrics_importance TYPE datetime DEFAULT time::now();
+        DEFINE FIELD distribution ON metrics_importance TYPE object;
+        DEFINE FIELD total_count ON metrics_importance TYPE int;
+        DEFINE FIELD avg_importance ON metrics_importance TYPE float;
+
+        DEFINE INDEX metrics_imp_user_time ON metrics_importance FIELDS user_id, timestamp;
+
+        -- Graph Evolution Metrics
+        DEFINE TABLE metrics_graph SCHEMAFULL;
+        DEFINE FIELD user_id ON metrics_graph TYPE string;
+        DEFINE FIELD timestamp ON metrics_graph TYPE datetime DEFAULT time::now();
+        DEFINE FIELD node_count ON metrics_graph TYPE int;
+        DEFINE FIELD edge_count ON metrics_graph TYPE int;
+        DEFINE FIELD avg_degree ON metrics_graph TYPE float;
+        DEFINE FIELD entity_counts ON metrics_graph TYPE object;
+        DEFINE FIELD relation_counts ON metrics_graph TYPE object;
+
+        DEFINE INDEX metrics_graph_user_time ON metrics_graph FIELDS user_id, timestamp;
+        """,
+
         # Episode table
         "episode_table": """
         DEFINE TABLE episode SCHEMAFULL;
@@ -188,12 +251,18 @@ class DatabaseSchema:
         DEFINE FIELD embedding ON entity TYPE option<array<float>> FLEXIBLE;
         DEFINE FIELD metadata ON entity TYPE object FLEXIBLE;
         DEFINE FIELD created_at ON entity TYPE datetime;
+        DEFINE FIELD last_seen ON entity TYPE datetime;
         
         -- Indexes
         DEFINE INDEX entity_text_index ON entity FIELDS text;
         DEFINE INDEX entity_type_index ON entity FIELDS entity_type;
+        DEFINE INDEX entity_unique_text_type ON entity FIELDS text, entity_type UNIQUE;
         DEFINE INDEX entity_confidence_index ON entity FIELDS confidence;
         DEFINE INDEX entity_vector_index ON entity FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
+
+        -- Hyperedge support (Strategy 42 & 66)
+        DEFINE INDEX hyperedge_index ON entity FIELDS metadata.is_hyperedge;
+        DEFINE INDEX hyperedge_type_index ON entity FIELDS metadata.hyperedge_type;
         """,
         
         # Relationship table (graph edge)
@@ -206,6 +275,7 @@ class DatabaseSchema:
         DEFINE FIELD to_entity_id ON relationship TYPE string;
         DEFINE FIELD relation_type ON relationship TYPE string;
         DEFINE FIELD strength ON relationship TYPE float;
+        DEFINE FIELD weight ON relationship TYPE float; -- Strategy 68: Weighted Directed Multigraph
         DEFINE FIELD valid_from ON relationship TYPE datetime;
         DEFINE FIELD valid_to ON relationship TYPE option<datetime>;
         DEFINE FIELD transaction_time_start ON relationship TYPE datetime;
@@ -228,6 +298,8 @@ class DatabaseSchema:
         DEFINE FIELD user_id ON audit_log TYPE string;
         DEFINE FIELD action ON audit_log TYPE object FLEXIBLE;
         DEFINE FIELD memory_id ON audit_log TYPE string;
+        DEFINE FIELD target_id ON audit_log TYPE string;
+        DEFINE FIELD target_type ON audit_log TYPE string;
         DEFINE FIELD agent_id ON audit_log TYPE string;
         DEFINE FIELD operation ON audit_log TYPE string;
         DEFINE FIELD reason ON audit_log TYPE string;
@@ -238,6 +310,31 @@ class DatabaseSchema:
         DEFINE INDEX audit_time_index ON audit_log FIELDS timestamp;
         DEFINE INDEX audit_user_index ON audit_log FIELDS user_id;
         DEFINE INDEX audit_memory_index ON audit_log FIELDS memory_id;
+        DEFINE INDEX audit_agent_index ON audit_log FIELDS agent_id;
+        """,
+
+        # Graph Snapshot (Strategy 75)
+        "graph_snapshot_table": """
+        DEFINE TABLE graph_snapshot SCHEMAFULL;
+        DEFINE FIELD timestamp ON graph_snapshot TYPE datetime DEFAULT time::now();
+        DEFINE FIELD node_count ON graph_snapshot TYPE int;
+        DEFINE FIELD edge_count ON graph_snapshot TYPE int;
+        DEFINE FIELD avg_degree ON graph_snapshot TYPE float;
+        DEFINE FIELD density ON graph_snapshot TYPE float;
+        DEFINE FIELD metadata ON graph_snapshot TYPE object FLEXIBLE;
+
+        DEFINE INDEX snapshot_time_index ON graph_snapshot FIELDS timestamp;
+        """,
+
+        # System Metrics (Strategy 105)
+        "system_metric_table": """
+        DEFINE TABLE system_metric SCHEMAFULL;
+        DEFINE FIELD timestamp ON system_metric TYPE datetime DEFAULT time::now();
+        DEFINE FIELD metric_name ON system_metric TYPE string;
+        DEFINE FIELD value ON system_metric TYPE float;
+        DEFINE FIELD labels ON system_metric TYPE object FLEXIBLE;
+
+        DEFINE INDEX metric_name_time_index ON system_metric FIELDS metric_name, timestamp;
         """,
 
         # Search Session table
@@ -256,6 +353,22 @@ class DatabaseSchema:
         -- Indexes
         DEFINE INDEX session_user_index ON search_session FIELDS user_id;
         DEFINE INDEX session_time_index ON search_session FIELDS timestamp;
+        -- Strategy 101: Autocomplete
+        DEFINE INDEX session_query_index ON search_session FIELDS query;
+        """,
+
+        # Strategy 88: Feedback-Loop Vectors
+        "search_feedback_table": """
+        DEFINE TABLE search_feedback SCHEMAFULL;
+        DEFINE FIELD session_id ON search_feedback TYPE string;
+        DEFINE FIELD memory_id ON search_feedback TYPE string;
+        DEFINE FIELD query ON search_feedback TYPE string;
+        DEFINE FIELD score ON search_feedback TYPE float; -- 1.0 for click, -1.0 for negative
+        DEFINE FIELD created_at ON search_feedback TYPE datetime DEFAULT time::now();
+
+        DEFINE INDEX feedback_session ON search_feedback FIELDS session_id;
+        DEFINE INDEX feedback_memory ON search_feedback FIELDS memory_id;
+        DEFINE INDEX feedback_query ON search_feedback FIELDS query;
         """,
 
         # Skill table
@@ -280,6 +393,40 @@ class DatabaseSchema:
         DEFINE FIELD is_active ON skill TYPE bool;
         """,
         
+        # Instruction tables
+        "instruction_table": """
+        DEFINE TABLE instruction SCHEMAFULL;
+        DEFINE FIELD id ON instruction TYPE string;
+        DEFINE FIELD name ON instruction TYPE string;
+        DEFINE FIELD content ON instruction TYPE string;
+        DEFINE FIELD instruction_type ON instruction TYPE string;
+        DEFINE FIELD version ON instruction TYPE string;
+        DEFINE FIELD variables ON instruction TYPE array<string>;
+        DEFINE FIELD tags ON instruction TYPE array<string>;
+        DEFINE FIELD metadata ON instruction TYPE object FLEXIBLE;
+        DEFINE FIELD created_at ON instruction TYPE datetime;
+        DEFINE FIELD updated_at ON instruction TYPE datetime;
+        DEFINE FIELD is_active ON instruction TYPE bool;
+
+        -- Indexes
+        DEFINE INDEX instruction_name_index ON instruction FIELDS name;
+        DEFINE INDEX instruction_type_index ON instruction FIELDS instruction_type;
+        """,
+
+        "instruction_set_table": """
+        DEFINE TABLE instruction_set SCHEMAFULL;
+        DEFINE FIELD id ON instruction_set TYPE string;
+        DEFINE FIELD name ON instruction_set TYPE string;
+        DEFINE FIELD description ON instruction_set TYPE string;
+        DEFINE FIELD instructions ON instruction_set TYPE array<record<instruction>>;
+        DEFINE FIELD target_agent_role ON instruction_set TYPE option<string>;
+        DEFINE FIELD created_at ON instruction_set TYPE datetime;
+        DEFINE FIELD updated_at ON instruction_set TYPE datetime;
+
+        -- Indexes
+        DEFINE INDEX set_name_index ON instruction_set FIELDS name;
+        """,
+
         # Custom functions
         "functions": """
         -- Decay score calculation function
@@ -290,7 +437,7 @@ class DatabaseSchema:
         -- Recursive graph traversal function (Module 11)
         DEFINE FUNCTION fn::get_descendants($start_node: string, $relation_type: string, $max_depth: int) {
             RETURN SELECT *,
-                (SELECT * FROM relationship WHERE from_entity_id = $parent.id AND relation_type = $relation_type) AS children
+                (SELECT * FROM relationship WHERE from_entity_id = $parent.id AND relation_type = $relation_type AND (valid_to IS NONE OR valid_to > time::now())) AS children
             FROM entity
             WHERE id = $start_node;
         };
@@ -370,14 +517,21 @@ class DatabaseSchema:
             "functions",
             "memory_table",
             "memory_indexes",
+            "vector_centroid_table",
             "episode_table",
             "entity_table",
             "relationship_table",
             "audit_log_table",
+            "graph_snapshot_table",
+            "system_metric_table",
             "search_session_table",
+            "search_feedback_table",
             "skill_table",
+            "instruction_table",
+            "instruction_set_table",
             "lgkgr_tables",
             "latent_mas_tables",
+            "metrics_tables",
             # MarsRL table
             # "rbac_permissions",
         ]
@@ -401,8 +555,12 @@ class DatabaseSchema:
             "REMOVE TABLE entity", 
             "REMOVE TABLE relationship",
             "REMOVE TABLE audit_log",
+            "REMOVE TABLE graph_snapshot",
+            "REMOVE TABLE system_metric",
             "REMOVE TABLE search_session",
+            "REMOVE TABLE search_feedback",
             "REMOVE TABLE skill",
+            "REMOVE TABLE vector_centroid",
             "REMOVE FUNCTION fn::decay_score",
             "REMOVE FUNCTION fn::should_promote",
             "REMOVE FUNCTION fn::should_archive",
@@ -426,8 +584,14 @@ class DatabaseSchema:
             ("entity", "SELECT count() FROM entity;"),
             ("relationship", "SELECT count() FROM relationship;"),
             ("audit_log", "SELECT count() FROM audit_log;"),
+            ("graph_snapshot", "SELECT count() FROM graph_snapshot;"),
+            ("system_metric", "SELECT count() FROM system_metric;"),
             ("search_session", "SELECT count() FROM search_session;"),
+            ("search_feedback", "SELECT count() FROM search_feedback;"),
             ("skill", "SELECT count() FROM skill;"),
+            ("vector_centroid", "SELECT count() FROM vector_centroid;"),
+            ("instruction", "SELECT count() FROM instruction;"),
+            ("instruction_set", "SELECT count() FROM instruction_set;"),
         ]
         
         for table_name, query in table_checks:
