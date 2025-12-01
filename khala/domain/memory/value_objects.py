@@ -179,6 +179,15 @@ class MemoryTier(Enum):
         return promotion_map[self]
 
 
+class MemoryType(Enum):
+    """Memory type for polymorphic documents (Task 59)."""
+
+    FACT = "fact"         # Standard declarative memory
+    CODE = "code"         # Code snippets or functions
+    DECISION = "decision" # Recorded decisions with rationale
+    REFLECTION = "reflection" # Meta-analysis or summary
+    CONVERSATION = "conversation" # Dialogue or chat log
+
 @dataclass(frozen=True)
 class MemorySource:
     """Immutable source information for memory traceability (Task 28)."""

@@ -894,6 +894,52 @@ class GeminiClient:
             }
         }
 
+    async def analyze_sentiment(
+        self,
+        text: str,
+        model_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Analyze sentiment of text.
+
+        Args:
+            text: Text to analyze
+            model_id: Optional model ID
+
+        Returns:
+            Dictionary with score (-1.0 to 1.0), label, and emotions dict.
+        """
+        prompt = f"""
+        Analyze the sentiment of the following text.
+        Return a JSON object with:
+        - score: a float between -1.0 (negative) and 1.0 (positive)
+        - label: one of "positive", "negative", "neutral", "joy", "anger", "sadness", "fear", "surprise"
+        - emotions: a dictionary of specific emotions and their intensity (0.0 to 1.0), e.g., {{"joy": 0.8, "anticipation": 0.2}}
+
+        Text:
+        {text}
+        """
+
+        response = await self.generate_text(
+            prompt=prompt,
+            model_id=model_id or "gemini-2.0-flash", # Flash is sufficient for sentiment
+            task_type="classification",
+            temperature=0.1 # Low temperature for consistent output
+        )
+
+        # Parse JSON from response
+        try:
+            content = response["content"]
+            # basic cleanup if markdown code blocks are used
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            return json.loads(content.strip())
+        except Exception as e:
+            logger.error(f"Failed to parse sentiment analysis response: {e}")
+            # Fallback
+            return {"score": 0.0, "label": "neutral", "emotions": {}}
     async def generate_structured(
         self,
         prompt: str,

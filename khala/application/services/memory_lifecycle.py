@@ -46,6 +46,16 @@ class MemoryLifecycleService:
         self.significance_scorer = significance_scorer or SignificanceScorer(self.gemini_client)
 
     async def ingest_memory(self, memory: Memory) -> str:
+        """Ingest a new memory, performing auto-summarization and sentiment analysis if needed."""
+
+        # Task 63: Conditional Content Fields (Snippet, Summary, Full)
+        # Generate snippet if missing
+        if not memory.metadata.get("snippet"):
+             memory.metadata["snippet"] = memory.content[:100] + "..." if len(memory.content) > 100 else memory.content
+
+        # Auto-summarize if content is long (> 1000 chars as per Strategy 63) and summary is missing
+        # Strategy 63: Tiny (Snippet), Small (Summary), Full (Content)
+        if len(memory.content) > 1000 and not memory.summary:
         """Ingest a new memory, performing auto-summarization and significance scoring."""
 
         # 1. Natural Triggers & Significance Scoring
@@ -83,6 +93,32 @@ class MemoryLifecycleService:
                 memory.summary = response.get("content", "").strip()
             except Exception as e:
                 logger.warning(f"Failed to auto-summarize memory: {e}")
+
+        # Task 37: Emotion-Driven Memory
+        # Analyze sentiment if not provided in metadata
+        if "sentiment" not in memory.metadata:
+            try:
+                sentiment_data = await self.gemini_client.analyze_sentiment(memory.content)
+
+                # Store in metadata as requested
+                memory.metadata["sentiment"] = {
+                    "score": sentiment_data.get("score", 0.0),
+                    "label": sentiment_data.get("label", "neutral"),
+                    "emotions": sentiment_data.get("emotions", {})
+                }
+
+                # Strategy 37 also implies prioritizing emotionally resonant memories.
+                # We can boost importance if sentiment is strong (e.g. |score| > 0.8)
+                score = memory.metadata["sentiment"]["score"]
+                if abs(score) > 0.8:
+                    # Boost importance slightly, but clamp to 1.0
+                    new_importance = min(1.0, memory.importance.value + 0.1)
+                    # We need to recreate ImportanceScore as it is frozen
+                    from khala.domain.memory.value_objects import ImportanceScore
+                    memory.importance = ImportanceScore(new_importance)
+
+            except Exception as e:
+                logger.warning(f"Failed to analyze sentiment for memory: {e}")
 
         return await self.repository.create(memory)
 
