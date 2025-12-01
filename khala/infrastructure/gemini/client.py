@@ -9,9 +9,17 @@ import json
 import time
 import hashlib
 from decimal import Decimal
-from typing import Dict, List, Optional, Any, Union, Tuple
+from typing import Dict, List, Optional, Any, Union, Tuple, Type, TypeVar
 from datetime import datetime, timezone, timedelta
 import logging
+
+try:
+    from pydantic import BaseModel
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    # Define a dummy BaseModel for type hinting if pydantic is missing
+    class BaseModel: pass
 
 try:
     import google.generativeai as genai
@@ -70,6 +78,8 @@ class GeminiClient:
         # Metrics
         self._prompt_classification_cache: Dict[str, str] = {}  # Cache prompt classifications
         self._complexity_cache: Dict[str, float] = {}  # Cache complexity scores
+
+        self.T = TypeVar("T", bound=BaseModel)
     
         # Initialize models if cascading is enabled
         if self.enable_cascading:
@@ -837,6 +847,75 @@ class GeminiClient:
                 "total_time_ms": total_time
             }
         }
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        response_model: Type['T'],
+        model_id: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None
+    ) -> 'T':
+        """Generate structured JSON output validated against a Pydantic model.
+
+        Args:
+            prompt: Text prompt
+            response_model: Pydantic model class to enforce structure
+            model_id: Optional model ID
+            temperature: Generation temperature
+            max_tokens: Max output tokens
+
+        Returns:
+            Instance of response_model populated with generated data
+        """
+        if not PYDANTIC_AVAILABLE:
+            raise ImportError("Pydantic is required for structured output generation")
+
+        # Get JSON schema from Pydantic model
+        schema = response_model.model_json_schema()
+
+        # Append instructions to prompt
+        structured_prompt = (
+            f"{prompt}\n\n"
+            f"You must output valid JSON that strictly follows this schema:\n"
+            f"```json\n{json.dumps(schema, indent=2)}\n```\n"
+            f"Do not include any markdown formatting (like ```json ... ```) in your response, just the raw JSON string."
+        )
+
+        # Force lower temperature for deterministic structure
+        temp = temperature if temperature is not None else 0.1
+
+        # Call generate_text
+        # We assume the model is capable of JSON generation (Gemini Pro/Flash are)
+        response = await self.generate_text(
+            prompt=structured_prompt,
+            model_id=model_id,
+            temperature=temp,
+            max_tokens=max_tokens,
+            task_type="generation",
+            use_cascading=True
+        )
+
+        content = response["content"].strip()
+
+        # Clean up markdown if present (despite instructions)
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+
+        try:
+            json_data = json.loads(content)
+            return response_model.model_validate(json_data)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {content[:100]}... Error: {e}")
+            raise ValueError(f"LLM failed to generate valid JSON: {e}")
+        except Exception as e:
+            logger.error(f"Failed to validate response against model: {e}")
+            raise ValueError(f"Response validation failed: {e}")
 
 
 # Example usage helper
