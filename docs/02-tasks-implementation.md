@@ -51,6 +51,8 @@
 ### Phase 2.3: Experimental Architectures (Module 12)
 *Code exists, Tests Pass (Low Coverage)*
 - [ ] **M12.C.1**: **Agent Cognitive Patterns** (Strategies 116-128).
+    - [x] 116. Flows vs Crews Pattern
+    - [x] 117. Hierarchical Agent Delegation
 - [ ] **M12.C.2**: **Advanced Learning & Adaptation** (Strategies 129-140).
     - [x] **130. Counterfactual Simulation**: "What if" scenario generation.
     - [x] **133. Surprise-Based Learning**: Boosting weights for unexpected data.
