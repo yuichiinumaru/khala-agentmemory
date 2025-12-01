@@ -9,9 +9,11 @@ import json
 import time
 import hashlib
 from decimal import Decimal
-from typing import Dict, List, Optional, Any, Union, Tuple
+from typing import Dict, List, Optional, Any, Union, Tuple, Type
 from datetime import datetime, timezone, timedelta
 import logging
+
+from pydantic import BaseModel
 
 try:
     import google.generativeai as genai
@@ -398,7 +400,110 @@ class GeminiClient:
             "cost_usd": float(cost_record.cost_usd),
             "model_name": model.name
         }
-    
+
+    async def generate_object(
+        self,
+        prompt: str,
+        response_schema: Type[BaseModel],
+        images: Optional[List[Any]] = None,
+        model_id: Optional[str] = None,
+        temperature: Optional[float] = None,
+        task_type: str = "generation"
+    ) -> BaseModel:
+        """Generate structured object matching the Pydantic schema.
+
+        Args:
+            prompt: Text prompt for generation
+            response_schema: Pydantic model class to enforce structure
+            images: Optional list of images
+            model_id: Specific model to use
+            temperature: Override model temperature
+            task_type: Type of task
+
+        Returns:
+            Instance of response_schema populated with generated data
+        """
+        start_time = time.time()
+
+        # Select model - prefer Pro/Smart models for structured output
+        if not model_id:
+            model = self.select_model(prompt, task_type)
+            # Ensure we use a model capable of reliable JSON generation
+            if model.tier == ModelTier.FAST:
+                model = ModelRegistry.get_model("gemini-2.5-pro")
+        else:
+            model = ModelRegistry.get_model(model_id)
+
+        # Configure generation with schema
+        if model.model_id not in self._models:
+             # Initialize if missing
+             try:
+                 self._models[model.model_id] = genai.GenerativeModel(
+                    model_name=model.model_id
+                 )
+             except Exception:
+                 # Fallback/Retry logic handled in generate_text usually, here we ensure it exists
+                 pass
+
+        model_instance = self._models.get(model.model_id)
+        if not model_instance:
+             # Re-init attempt
+             model_instance = genai.GenerativeModel(model_name=model.model_id)
+             self._models[model.model_id] = model_instance
+
+        # Prepare content
+        content_parts = [prompt]
+        if images:
+            content_parts.extend(images)
+
+        generation_config = genai.types.GenerationConfig(
+            temperature=temperature or model.temperature,
+            response_mime_type="application/json",
+            response_schema=response_schema
+        )
+
+        # Execute generation
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = model_instance.generate_content(
+                    content_parts,
+                    generation_config=generation_config,
+                    request_options={"timeout": self.timeout_seconds}
+                )
+                break
+            except Exception as e:
+                if attempt == self.max_retries:
+                    logger.error(f"Failed structured gen after {self.max_retries} attempts: {e}")
+                    raise
+                await asyncio.sleep(2 ** attempt)
+
+        # Parse response
+        try:
+            # Google GenAI returns JSON text which automatically matches the schema
+            result = response.text
+            # Use pydantic model to validate and parse
+            parsed_object = response_schema.model_validate_json(result)
+
+            # Record metrics
+            response_time_ms = (time.time() - start_time) * 1000
+            input_tokens = len(prompt.split()) * 1.3
+            output_tokens = len(result.split()) * 1.3 # Rough estimate
+
+            self.cost_tracker.record_call(
+                model=model,
+                input_tokens=int(input_tokens),
+                output_tokens=int(output_tokens),
+                response_time_ms=response_time_ms,
+                task_type=task_type,
+                success=True
+            )
+
+            return parsed_object
+
+        except Exception as e:
+            logger.error(f"Failed to parse structured output: {e}")
+            raise ValueError(f"Model failed to generate valid JSON matching schema: {e}")
+
     async def generate_embeddings(
         self,
         texts: List[str],
