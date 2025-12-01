@@ -135,12 +135,25 @@ class DeduplicationService:
         candidates: List[Memory],
         threshold: float = 0.95
     ) -> List[Memory]:
-        """Find memories with high semantic similarity."""
+        """Find memories with high semantic similarity.
+
+        Args:
+            target: The memory to check against.
+            candidates: List of candidate memories.
+            threshold: Cosine similarity threshold (default 0.95).
+                       Use 0.98 for aggressive deduplication (Strategy 90).
+        """
         if not target.embedding:
             return []
 
         duplicates = []
         target_vec = target.embedding.to_numpy()
+
+        # Pre-calculate target norm to speed up loop
+        target_norm = sum(target_vec**2)**0.5
+
+        if target_norm == 0:
+             return []
 
         for candidate in candidates:
             if candidate.id == target.id or not candidate.embedding:
@@ -148,15 +161,56 @@ class DeduplicationService:
 
             # Calculate cosine similarity
             candidate_vec = candidate.embedding.to_numpy()
+            candidate_norm = sum(candidate_vec**2)**0.5
+
+            if candidate_norm == 0:
+                continue
+
             similarity = (
                 target_vec @ candidate_vec /
-                (sum(target_vec**2)**0.5 * sum(candidate_vec**2)**0.5)
+                (target_norm * candidate_norm)
             )
 
             if similarity >= threshold:
                 duplicates.append(candidate)
 
         return duplicates
+
+    def merge_memories(self, target: Memory, source: Memory) -> Memory:
+        """Merge source memory metadata/stats into target memory.
+
+        This handles Strategy 90 (Vector Deduplication) where memories
+        are merged based on extreme similarity.
+
+        Args:
+            target: The memory that will survive.
+            source: The duplicate memory that will be archived.
+
+        Returns:
+            The updated target memory.
+        """
+        # Merge access counts
+        target.access_count += source.access_count
+
+        # Merge tags (union)
+        for tag in source.tags:
+            target.add_keyword_tag(tag)
+
+        # Merge metadata
+        if source.metadata:
+            if "merged_from" not in target.metadata:
+                target.metadata["merged_from"] = []
+            target.metadata["merged_from"].append(source.id)
+
+            # Merge other metadata keys if not present
+            for k, v in source.metadata.items():
+                if k not in target.metadata and k != "merged_from":
+                    target.metadata[k] = v
+
+        # Update timestamp to reflect activity
+        target.updated_at = source.updated_at if source.updated_at > target.updated_at else target.updated_at
+
+        return target
 
 
 class ConsolidationService:
@@ -208,3 +262,53 @@ class EntityService:
         """Find duplicate entities based on text similarity."""
         # TODO: Implement entity deduplication logic
         return []
+
+
+class VectorAttentionService:
+    """Domain service for vector attention operations (Strategy 92)."""
+
+    def generate_focus_mask(self, dimensions: int, focus_indices: List[int], weight: float = 2.0) -> List[float]:
+        """Generate a mask that focuses on specific dimensions.
+
+        Args:
+            dimensions: Size of the vector.
+            focus_indices: Indices to weight higher.
+            weight: The multiplier for focused indices (default 2.0).
+
+        Returns:
+            A list of weights where focused indices have `weight` and others have 1.0.
+        """
+        mask = [1.0] * dimensions
+        for idx in focus_indices:
+            if 0 <= idx < dimensions:
+                mask[idx] = weight
+        return mask
+
+    def generate_segment_mask(self, dimensions: int, segment_start: int, segment_end: int, weight: float = 2.0) -> List[float]:
+        """Generate a mask that weights a contiguous segment higher.
+
+        Args:
+            dimensions: Size of the vector.
+            segment_start: Start index (inclusive).
+            segment_end: End index (exclusive).
+            weight: The multiplier.
+        """
+        mask = [1.0] * dimensions
+        for i in range(max(0, segment_start), min(dimensions, segment_end)):
+            mask[i] = weight
+        return mask
+
+    def apply_attention_to_memory(self, memory: Memory, mask: List[float]) -> Memory:
+        """Apply an attention mask to a memory's embedding.
+
+        Note: This creates a NEW memory object (or modifies it if mutable,
+        but EmbeddingVector is frozen so we replace it).
+        """
+        if not memory.embedding:
+            return memory
+
+        new_embedding = memory.embedding.apply_attention(mask)
+        # We need to update the memory with the new embedding.
+        # Since Memory is a dataclass, we can modify the field.
+        memory.embedding = new_embedding
+        return memory

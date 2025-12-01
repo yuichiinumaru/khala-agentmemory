@@ -5,6 +5,7 @@ from khala.domain.memory.repository import MemoryRepository
 from khala.domain.ports.embedding_service import EmbeddingService
 from khala.domain.memory.entities import Memory, EmbeddingVector
 from khala.application.services.query_expansion_service import QueryExpansionService
+from khala.application.services.intent_classifier import IntentClassifier
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 
 logger = logging.getLogger(__name__)
@@ -18,12 +19,18 @@ class HybridSearchService:
         memory_repository: MemoryRepository,
         embedding_service: EmbeddingService,
         query_expansion_service: Optional[QueryExpansionService] = None,
-        db_client: Optional[SurrealDBClient] = None
+        db_client: Optional[SurrealDBClient] = None,
+        intent_classifier: Optional[IntentClassifier] = None
     ):
         self.memory_repo = memory_repository
         self.embedding_service = embedding_service
         self.query_expansion_service = query_expansion_service
         self.db_client = db_client
+        self.intent_classifier = intent_classifier
+
+        # Try to initialize intent classifier if not provided but query expansion service is available
+        if not self.intent_classifier and self.query_expansion_service and hasattr(self.query_expansion_service, 'gemini_client'):
+            self.intent_classifier = IntentClassifier(self.query_expansion_service.gemini_client)
 
     async def search(
         self,
@@ -35,7 +42,9 @@ class HybridSearchService:
         vector_weight: float = 1.0,
         bm25_weight: float = 1.0,
         expand_query: bool = False,
-        enable_graph_reranking: bool = False
+        enable_graph_reranking: bool = False,
+        language: str = "en",
+        proximity_search: Optional[Dict[str, Any]] = None
     ) -> List[Memory]:
         """
         Perform hybrid search using Reciprocal Rank Fusion (RRF).
@@ -49,14 +58,58 @@ class HybridSearchService:
             vector_weight: Weight for vector search results (default 1.0).
             bm25_weight: Weight for BM25 search results (default 1.0).
             enable_graph_reranking: Whether to apply graph distance reranking (Strategy 121).
+            language: The language of the query (default "en"). Strategy 95.
+            proximity_search: Optional config for proximity search (Strategy 97).
+                              Format: {"terms": ["term1", "term2"], "window": 5}
 
         Returns:
             List of unique Memory objects sorted by RRF score.
         """
+        # 0. Intent Classification (Task 30)
+        intent = "Analysis" # Default
+        if self.intent_classifier:
+            intent = await self.intent_classifier.classify(query)
+            logger.debug(f"Query intent classified as: {intent}")
+
         # 0. Query Expansion
         expanded_queries = [query]
+        # Strategy 95: Multilingual Search - Translation Layer
+        # If language is not English, translate query before vector embedding.
+        # We assume content is predominantly English or mapped to English embedding space.
+
+        queries_for_vector = [query]
+        queries_for_bm25 = [query]
+
+        if language and language.lower() not in ["en", "english"]:
+            # Check if embedding service or gemini client is available for translation
+            # We need access to GeminiClient.
+            # Ideally EmbeddingService might have it, or we use a separate translator service.
+            # But here we only have embedding_service.
+            # We can try to cast embedding_service.client if it exists, or check self.query_expansion_service.gemini_client
+
+            gemini_client = None
+            if self.query_expansion_service and hasattr(self.query_expansion_service, 'gemini_client'):
+                gemini_client = self.query_expansion_service.gemini_client
+
+            # If we found a client, translate
+            if gemini_client and hasattr(gemini_client, 'translate_text'):
+                try:
+                    translated_query = await gemini_client.translate_text(query, target_language="English")
+                    logger.info(f"Translated query '{query}' to '{translated_query}' for search")
+                    queries_for_vector = [translated_query]
+                    # We might want to keep original for BM25 if content is mixed language
+                    queries_for_bm25.append(translated_query)
+                except Exception as e:
+                    logger.warning(f"Translation failed: {e}")
+
+        # 0. Query Expansion (on the English/Vector query)
+        expanded_queries = queries_for_vector
         if expand_query and self.query_expansion_service:
-            expanded_queries = await self.query_expansion_service.expand_query(query)
+            # We expand the primary vector query
+            expanded = await self.query_expansion_service.expand_query(queries_for_vector[0])
+            expanded_queries.extend(expanded)
+            # Ensure uniqueness
+            expanded_queries = list(set(expanded_queries))
 
         # 1. Fetch candidates in parallel for all queries
         # We fetch top_k * 2 candidates from each source to ensure good fusion overlap
@@ -91,19 +144,34 @@ class HybridSearchService:
                 logger.error(f"BM25 search failed for query '{q_text}': {e}")
                 return []
 
-        # Gather all tasks: 2 tasks per query (Vector + BM25)
+        # Gather all tasks
         tasks = []
+        # Vector search uses expanded_queries (which includes translated query)
         for q in expanded_queries:
             tasks.append(_fetch_vector(q))
+
+        # BM25 uses queries_for_bm25 (original + translated)
+        # We don't necessarily want to run BM25 on all expanded queries as they might be synonyms
+        # and BM25 is better with exact terms. But if expansion adds keywords, it's good.
+        # For simplicity, let's use expanded_queries for BM25 too, plus original if not in it.
+
+        bm25_queries = list(set(queries_for_bm25 + expanded_queries))
+        for q in bm25_queries:
             tasks.append(_fetch_bm25(q))
 
         results = await asyncio.gather(*tasks)
 
         # Separate results back into vector and bm25 lists
-        # Order is [V1, B1, V2, B2, ...]
-        for i in range(0, len(results), 2):
-            all_vector_results.extend(results[i])
-            all_bm25_results.extend(results[i+1])
+        # Order is:
+        # [V_1, V_2, ..., V_n, B_1, B_2, ..., B_m]
+
+        num_vector_queries = len(expanded_queries)
+
+        for i, res in enumerate(results):
+            if i < num_vector_queries:
+                all_vector_results.extend(res)
+            else:
+                all_bm25_results.extend(res)
 
         if not all_vector_results and not all_bm25_results:
             return []
@@ -143,13 +211,86 @@ class HybridSearchService:
         # 3. Sort by Score
         sorted_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
 
-        # 4. Graph Distance Reranking (Strategy 121)
+        # 4. Contextual Search (Proximity) - Strategy 97
+        # Filter/Rerank based on proximity of terms
+        # This acts as a filter on the sorted candidates
+
+        candidates = [memories[mid] for mid in sorted_ids]
+
+        if proximity_search:
+            terms = proximity_search.get("terms", [])
+            window = proximity_search.get("window", 10)
+
+            if terms and len(terms) >= 2:
+                proximity_filtered = []
+                for m in candidates:
+                    content_lower = m.content.lower()
+                    words = content_lower.split()
+
+                    # Check if all terms are present
+                    term_indices = []
+                    all_present = True
+                    for term in terms:
+                        term_lower = term.lower()
+                        if term_lower not in content_lower: # Fast check
+                            all_present = False
+                            break
+                        # Get all indices of term
+                        indices = [i for i, w in enumerate(words) if term_lower in w]
+                        if not indices:
+                            all_present = False
+                            break
+                        term_indices.append(indices)
+
+                    if not all_present:
+                        continue
+
+                    # Check distance between any pair of different terms
+                    # We need to find if there exists a set of indices (one for each term)
+                    # such that max(indices) - min(indices) <= window
+
+                    # Simplified check for 2 terms:
+                    if len(terms) == 2:
+                        found_proximity = False
+                        for i1 in term_indices[0]:
+                            for i2 in term_indices[1]:
+                                if abs(i1 - i2) <= window:
+                                    found_proximity = True
+                                    break
+                            if found_proximity: break
+                        if found_proximity:
+                            proximity_filtered.append(m)
+                    else:
+                        # For > 2 terms, it's more complex (smallest window containing all)
+                        # We'll just check if they are all within window range of the first term occurrence
+                        # This is a basic approximation
+                        found_proximity = False
+                        # Flatten all indices
+                        all_idxs = sorted([idx for sublist in term_indices for idx in sublist])
+
+                        # Sliding window over indices
+                        for i in range(len(all_idxs) - len(terms) + 1):
+                            subset = all_idxs[i:i+len(terms)]
+                            if subset[-1] - subset[0] <= window:
+                                # Check if this subset covers all terms? Not necessarily unique terms
+                                # But it's a good heuristic for "dense cluster of terms"
+                                found_proximity = True
+                                break
+
+                        if found_proximity:
+                            proximity_filtered.append(m)
+
+                # Replace candidates with filtered list
+                # We might want to just boost them instead of hard filter, but "Search" usually implies filtering
+                candidates = proximity_filtered
+
+        # 5. Graph Distance Reranking (Strategy 121)
         # If enabled, we boost results that are 1-hop connected to the top result (anchor)
         # or connected to an "active" concept in the query (if we had entity linking).
         # For now, we'll implement a simple "Anchor Point" boost:
         # If result B is connected to result A (where A is high ranking), boost B.
 
-        final_results = [memories[mid] for mid in sorted_ids]
+        final_results = candidates
 
         # Access client safely (prefer self.memory_repo.client if db_client not set)
         client_to_use = self.db_client
@@ -179,7 +320,8 @@ class HybridSearchService:
 
                 query_graph = """
                 SELECT from_entity_id, to_entity_id FROM relationship
-                WHERE from_entity_id = $anchor OR to_entity_id = $anchor
+                WHERE (from_entity_id = $anchor OR to_entity_id = $anchor)
+                AND (valid_to IS NONE OR valid_to > time::now())
                 LIMIT 50;
                 """
 
@@ -255,7 +397,8 @@ class HybridSearchService:
                     "results_count": len(final_results),
                     "metadata": {
                         "rrf_k": rrf_k,
-                        "graph_reranking": enable_graph_reranking
+                        "graph_reranking": enable_graph_reranking,
+                        "intent": intent  # Log intent
                     }
                 })
             except Exception as e:
