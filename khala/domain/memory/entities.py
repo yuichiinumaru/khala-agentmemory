@@ -247,6 +247,7 @@ class Entity:
     metadata: Dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_seen: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def __post_init__(self) -> None:
         """Validate entity after creation."""

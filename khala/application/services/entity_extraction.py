@@ -530,6 +530,14 @@ Return only the JSON object, no explanation.
         return relationships
     
     async def process_memory_entities(self, memory: Memory) -> Tuple[List[Entity], List[Relationship]]:
+        """Extract entities from memory and update in database with disambiguation."""
+        if not self.db_client:
+            self.db_client = SurrealDBClient()
+
+        # Extract entities
+        extracted_entities = await self.extract_entities_from_memory(memory)
+        
+        # Resolve entities (Disambiguation)
         """Extract entities from memory and update in database."""
         # Extract entities and POS tags
         extracted_data = await self.extract_data_from_memory(memory)
@@ -561,7 +569,31 @@ Return only the JSON object, no explanation.
         
         # Convert to KHALA entities
         domain_entities = []
+        text_to_entity_map = {}
+
         for extracted in extracted_entities:
+            # Check if entity already exists in DB
+            existing_entity = await self.db_client.get_entity_by_text_and_type(
+                extracted.text,
+                extracted.entity_type.value
+            )
+
+            if existing_entity:
+                # Update existing entity
+                await self.db_client.update_entity_last_seen(existing_entity.id)
+                domain_entity = existing_entity
+                # Merge metadata if needed (optional optimization)
+            else:
+                # Create new entity
+                domain_entity = Entity(
+                    text=extracted.text,
+                    entity_type=extracted.entity_type.value,
+                    confidence=extracted.confidence,
+                    # source=memory.id, # Entity doesn't have source field in dataclass, metadata does
+                    metadata={**extracted.metadata, "source_memory_id": memory.id}
+                )
+                await self.db_client.create_entity(domain_entity)
+
             domain_entity = Entity(
                 text=extracted.text,
                 entity_type=extracted.entity_type.value,
@@ -576,12 +608,16 @@ Return only the JSON object, no explanation.
             # The Entity class: text, entity_type, confidence, embedding, metadata, id, created_at. NO source field.
             # So I was right to remove it.
             domain_entities.append(domain_entity)
+            text_to_entity_map[domain_entity.text] = domain_entity
+
+        # Detect relationships (using extracted entities structure)
+        relationships = self.detect_entity_relationships(extracted_entities, memory.content)
         
-        # Convert relationships
+        # Convert relationships using resolved entity IDs
         domain_relationships = []
         for rel in relationships:
-            source = next((e for e in domain_entities if e.text == rel.source_entity.text), None)
-            target = next((e for e in domain_entities if e.text == rel.target_entity.text), None)
+            source = text_to_entity_map.get(rel.source_entity.text)
+            target = text_to_entity_map.get(rel.target_entity.text)
             
             if source and target:
                 domain_rel = Relationship(
@@ -590,12 +626,10 @@ Return only the JSON object, no explanation.
                     relation_type=rel.relationship_type.value,
                     strength=rel.confidence,
                     valid_from=datetime.now(timezone.utc),
-                    metadata={"extraction_method": "gemini_llm"}
+                    # metadata={"extraction_method": "gemini_llm"} # Relationship dataclass doesn't have metadata field
                 )
+                await self.db_client.create_relationship(domain_rel)
                 domain_relationships.append(domain_rel)
-        
-        # Store in database
-        await self._store_entities_and_relationships(domain_entities, domain_relationships, memory.id)
         
         return domain_entities, domain_relationships
     
@@ -605,6 +639,8 @@ Return only the JSON object, no explanation.
         relationships: List[Relationship], 
         memory_id: str
     ) -> None:
+        """Deprecated: Use process_memory_entities direct storage."""
+        pass
         """Store entities and relationships in database."""
         if not self.db_client:
             self.db_client = SurrealDBClient()

@@ -89,25 +89,32 @@ class TestSurrealDBClient:
         # Mock database connection
         with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
             mock_conn = AsyncMock()
-            mock_conn.query.return_value = [{"id": memory.id}]
-            mock_surreal.return_value = mock_conn
+            # Side effect needs to account for schema initialization queries first
+            # Schema initialization queries happen in client.initialize() called by get_connection()
+            # But here we assume initialize() might be mocked or we provide enough side effects
             
-            async with client.get_connection() as conn:
-                result = await client.create_memory(memory)
+            # Since client.initialize() calls DatabaseSchema.create_schema() which makes many calls,
+            # we should mock DatabaseSchema to avoid that complexity in this unit test.
+            with patch('khala.infrastructure.surrealdb.client.DatabaseSchema') as MockSchema:
+                mock_schema_instance = MockSchema.return_value
+                mock_schema_instance.create_schema = AsyncMock()
+
+                # Now side effects only apply to logic inside create_memory
+                mock_conn.query.side_effect = [
+                    [],  # First call: Check for duplicate (return empty)
+                    [{"id": memory.id}] # Second call: Create (return new ID)
+                ]
+                mock_surreal.return_value = mock_conn
+
+                async with client.get_connection() as conn:
+                    result = await client.create_memory(memory)
             
             assert result == memory.id
-            # mock_conn.query.assert_called_once() # Called multiple times due to init
-            
-            # Verify the query parameters - last call should be create
-            call_args = mock_conn.query.call_args
-            query = call_args[0][0]
-            params = call_args[1]
             
             # Find the create call
             create_call = None
             for call in mock_conn.query.call_args_list:
                 args = call[0]
-                kwargs = call[1] # or call[1] for kwargs, but AsyncMock uses args, kwargs tuple
                 # call is (args, kwargs)
                 q = args[0]
                 p = args[1] if len(args) > 1 else {}

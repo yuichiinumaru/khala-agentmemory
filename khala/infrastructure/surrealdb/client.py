@@ -457,7 +457,8 @@ class SurrealDBClient:
             confidence: $confidence,
             embedding: $embedding,
             metadata: $metadata,
-            created_at: $created_at
+            created_at: $created_at,
+            last_seen: $last_seen
         };
         """
 
@@ -469,12 +470,86 @@ class SurrealDBClient:
             "embedding": entity.embedding.values if entity.embedding else None,
             "metadata": entity.metadata,
             "created_at": entity.created_at,
+            "last_seen": entity.last_seen,
         }
 
         async with self.get_connection() as conn:
             await conn.query(query, params)
             return entity.id
 
+    async def update_entity_last_seen(self, entity_id: str, last_seen: Any = None) -> None:
+        """Update the last_seen timestamp of an entity."""
+        if ":" in entity_id:
+            entity_id = entity_id.split(":")[1]
+
+        if last_seen is None:
+            query = "UPDATE type::thing('entity', $id) SET last_seen = time::now();"
+            params = {"id": entity_id}
+        else:
+            query = "UPDATE type::thing('entity', $id) SET last_seen = $last_seen;"
+            params = {"id": entity_id, "last_seen": last_seen}
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+
+    async def get_entity_by_text_and_type(self, text: str, entity_type: str) -> Optional[Entity]:
+        """Get an entity by text and type (unique constraint)."""
+        query = """
+        SELECT * FROM entity
+        WHERE text = $text
+        AND entity_type = $entity_type
+        LIMIT 1;
+        """
+        params = {"text": text, "entity_type": entity_type}
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list) and len(response) > 0:
+                item = response[0]
+                if isinstance(item, dict):
+                    if 'status' in item and 'result' in item:
+                        if item['status'] == 'OK' and item['result']:
+                            return self._deserialize_entity(item['result'][0])
+                    else:
+                        return self._deserialize_entity(item)
+            return None
+
+    def _deserialize_entity(self, data: Dict[str, Any]) -> Entity:
+        """Deserialize database record to Entity object."""
+        from datetime import datetime, timezone
+        from khala.domain.memory.entities import EntityType
+
+        def parse_dt(dt_val: Any) -> datetime:
+            if not dt_val: return datetime.now(timezone.utc)
+            if isinstance(dt_val, str):
+                if dt_val.endswith('Z'): dt_val = dt_val[:-1]
+                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+            return dt_val
+
+        entity_id = str(data["id"])
+        if entity_id.startswith("entity:"):
+            entity_id = entity_id.split(":", 1)[1]
+
+        embedding = None
+        if data.get("embedding"):
+            embedding = EmbeddingVector(data["embedding"])
+
+        entity = Entity(
+            id=entity_id,
+            text=data["text"],
+            entity_type=EntityType(data["entity_type"]),
+            confidence=data.get("confidence", 1.0),
+            embedding=embedding,
+            metadata=data.get("metadata", {}),
+            created_at=parse_dt(data.get("created_at"))
+        )
+        if data.get("last_seen"):
+            entity.last_seen = parse_dt(data.get("last_seen"))
+
+        return entity
+
+    async def create_relationship(self, relationship: Relationship) -> str:
+        """Create a new relationship in the database."""
     async def create_relationship(self, relationship: Relationship, bidirectional: bool = False) -> str:
         """Create a new relationship in the database.
 
@@ -503,7 +578,7 @@ class SurrealDBClient:
             valid_from: $valid_from,
             valid_to: $valid_to,
             transaction_time_start: $transaction_time_start,
-            transaction_time_end: $transaction_time_end,
+            transaction_time_end: $transaction_time_end
         };
         """
 
@@ -575,6 +650,35 @@ class SurrealDBClient:
                 await conn.query(inverse_query, inverse_params)
                     
             return relationship.id
+
+    async def update_relationship_validity(
+        self,
+        relationship_id: str,
+        valid_from: Optional[Any] = None,
+        valid_to: Optional[Any] = None
+    ) -> None:
+        """Update the validity period of a relationship (Bi-temporal correction)."""
+        if ":" in relationship_id:
+            relationship_id = relationship_id.split(":")[1]
+
+        updates = []
+        params = {"id": relationship_id}
+
+        if valid_from:
+            updates.append("valid_from = $valid_from")
+            params["valid_from"] = valid_from
+
+        if valid_to:
+            updates.append("valid_to = $valid_to")
+            params["valid_to"] = valid_to
+
+        if not updates:
+            return
+
+        query = f"UPDATE type::thing('relationship', $id) SET {', '.join(updates)};"
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
 
     def _build_filter_query(self, filters: Dict[str, Any], params: Dict[str, Any]) -> str:
         """Build WHERE clause segment from filters and update params."""

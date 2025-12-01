@@ -108,6 +108,10 @@ class DatabaseSchema:
         -- Tag prefix search
         DEFINE INDEX tag_search ON memory FIELDS tags SEARCH ANALYZER ascii BM25;
 
+        -- Multi-Index Strategy (Task 38)
+        DEFINE INDEX idx_memory_tags_created ON memory FIELDS tags, created_at;
+        DEFINE INDEX idx_memory_tags_tier ON memory FIELDS tags, tier;
+
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
         DEFINE INDEX cluster_index ON memory FIELDS cluster_id;
@@ -241,10 +245,12 @@ class DatabaseSchema:
         DEFINE FIELD embedding ON entity TYPE option<array<float>> FLEXIBLE;
         DEFINE FIELD metadata ON entity TYPE object FLEXIBLE;
         DEFINE FIELD created_at ON entity TYPE datetime;
+        DEFINE FIELD last_seen ON entity TYPE datetime;
         
         -- Indexes
         DEFINE INDEX entity_text_index ON entity FIELDS text;
         DEFINE INDEX entity_type_index ON entity FIELDS entity_type;
+        DEFINE INDEX entity_unique_text_type ON entity FIELDS text, entity_type UNIQUE;
         DEFINE INDEX entity_confidence_index ON entity FIELDS confidence;
         DEFINE INDEX entity_vector_index ON entity FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
 
