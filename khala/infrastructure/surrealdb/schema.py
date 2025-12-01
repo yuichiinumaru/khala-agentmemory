@@ -22,6 +22,7 @@ class DatabaseSchema:
         # Analyzers
         "analyzers": """
         DEFINE ANALYZER ascii TOKENIZERS class FILTERS ascii;
+        DEFINE ANALYZER fuzzy_analyzer TOKENIZERS class, edgengram(2, 10) FILTERS ascii, lowercase;
         """,
         
         # Memory table with all fields
@@ -44,6 +45,9 @@ class DatabaseSchema:
         DEFINE FIELD summary ON memory TYPE option<string>;
         DEFINE FIELD metadata ON memory TYPE object FLEXIBLE;
         
+        -- Strategy 94: Linguistic Analysis
+        DEFINE FIELD pos_tags ON memory TYPE option<array<object>> FLEXIBLE;
+
         -- Timestamps
         DEFINE FIELD created_at ON memory TYPE datetime;
         DEFINE FIELD updated_at ON memory TYPE datetime;
@@ -84,7 +88,8 @@ class DatabaseSchema:
         -- Search indexes
         DEFINE INDEX vector_search ON memory FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
         
-        DEFINE INDEX bm25_search ON memory FIELDS content SEARCH ANALYZER ascii BM25;
+        -- Strategy 96: Typo Tolerance (Fuzzy Analyzer)
+        DEFINE INDEX bm25_search ON memory FIELDS content SEARCH ANALYZER fuzzy_analyzer BM25;
         
         -- Performance indexes
         DEFINE INDEX tier_index ON memory FIELDS tier;
@@ -308,6 +313,8 @@ class DatabaseSchema:
         -- Indexes
         DEFINE INDEX session_user_index ON search_session FIELDS user_id;
         DEFINE INDEX session_time_index ON search_session FIELDS timestamp;
+        -- Strategy 101: Autocomplete
+        DEFINE INDEX session_query_index ON search_session FIELDS query;
         """,
 
         # Skill table
