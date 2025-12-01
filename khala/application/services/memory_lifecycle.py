@@ -18,6 +18,7 @@ from khala.domain.memory.services import (
     DeduplicationService,
     ConsolidationService
 )
+from khala.application.services.surprise_service import SurpriseService
 from khala.domain.ports.embedding_service import EmbeddingService
 from khala.application.services.text_analytics_service import TextAnalyticsService
 from khala.application.services.significance_scorer import SignificanceScorer
@@ -48,6 +49,7 @@ class MemoryLifecycleService:
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
         consolidation_service: Optional[ConsolidationService] = None,
+        surprise_service: Optional[SurpriseService] = None
         text_analytics_service: Optional[TextAnalyticsService] = None
         significance_scorer: Optional[SignificanceScorer] = None
     ):
@@ -58,6 +60,7 @@ class MemoryLifecycleService:
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
+        self.surprise_service = surprise_service or SurpriseService(self.gemini_client)
         self.text_analytics_service = text_analytics_service or TextAnalyticsService()
 
     async def ingest_memory(self, memory: Memory) -> str:
@@ -120,6 +123,24 @@ class MemoryLifecycleService:
             except Exception as e:
                 logger.warning(f"Failed to auto-summarize memory: {e}")
 
+        # Strategy 133: Surprise-Based Learning
+        # Only calculate if we have an embedding to find context
+        if memory.embedding:
+            try:
+                # Fetch context (top 5 similar memories)
+                # Note: Assuming repository returns List[Memory] as per interface
+                context_results = await self.repository.search_by_vector(
+                    embedding=memory.embedding,
+                    user_id=memory.user_id,
+                    top_k=5,
+                    min_similarity=0.6
+                )
+
+                score, reason = await self.surprise_service.calculate_surprise(memory, context_results)
+                self.surprise_service.apply_surprise_boost(memory, score, reason)
+
+            except Exception as e:
+                logger.warning(f"Failed to calculate surprise score: {e}")
         # Generate Primary Embedding if missing
         if not memory.embedding and self.embedding_service:
             try:
