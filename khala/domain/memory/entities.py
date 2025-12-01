@@ -16,7 +16,8 @@ from .value_objects import (
     DecayScore, 
     MemoryTier,
     MemorySource,
-    Sentiment
+    Sentiment,
+    MemoryType
 )
 
 
@@ -32,6 +33,7 @@ class Memory:
     
     # Optional attributes with defaults
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    memory_type: MemoryType = MemoryType.FACT  # Task 59: Polymorphic Memory
     embedding: Optional[EmbeddingVector] = field(default=None)
     # Strategy 78: Multi-Vector
     embedding_visual: Optional[EmbeddingVector] = field(default=None)
@@ -41,6 +43,9 @@ class Memory:
     summary: Optional[str] = field(default=None)
     metadata: Dict[str, Any] = field(default_factory=dict)
     
+    # Strategy 94: Linguistic Analysis
+    pos_tags: Optional[List[Dict[str, str]]] = field(default=None)
+
     # Timestamps
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -244,6 +249,20 @@ class Entity:
         
         if not (0.0 <= self.confidence <= 1.0):
             raise ValueError("Confidence must be in [0.0, 1.0]")
+
+        # Strategy 120: Custom Pydantic Entity Types
+        # Validate metadata if schema exists
+        from khala.domain.memory.schemas import ENTITY_SCHEMAS
+        schema_cls = ENTITY_SCHEMAS.get(self.entity_type.value)
+        if schema_cls and self.metadata:
+            try:
+                # Validate and potentially coerce types
+                validated_model = schema_cls(**self.metadata)
+                # Update metadata with validated values (excluding unset to keep it clean)
+                self.metadata.update(validated_model.model_dump(exclude_unset=True))
+            except Exception as e:
+                # "Enforce strict typing" - we raise ValueError
+                raise ValueError(f"Invalid metadata for entity type {self.entity_type.value}: {e}")
     
     def is_high_confidence(self, threshold: float = 0.8) -> bool:
         """Check if entity has high confidence."""
@@ -258,6 +277,7 @@ class Relationship:
     to_entity_id: str
     relation_type: str
     strength: float
+    weight: float = 1.0  # Strategy 68: Weighted Directed Multigraph
     valid_from: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     valid_to: Optional[datetime] = field(default=None)
     transaction_time_start: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
