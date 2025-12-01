@@ -9,6 +9,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
 from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
+from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore, EmbeddingVector
 from khala.domain.memory.repository import MemoryRepository
 from khala.domain.memory.services import (
     MemoryService,
@@ -16,6 +17,7 @@ from khala.domain.memory.services import (
     DeduplicationService,
     ConsolidationService
 )
+from khala.domain.ports.embedding_service import EmbeddingService
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
@@ -29,6 +31,7 @@ class MemoryLifecycleService:
         self,
         repository: MemoryRepository,
         gemini_client: Optional[GeminiClient] = None,
+        embedding_service: Optional[EmbeddingService] = None,
         memory_service: Optional[MemoryService] = None,
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
@@ -36,13 +39,14 @@ class MemoryLifecycleService:
     ):
         self.repository = repository
         self.gemini_client = gemini_client or GeminiClient()
+        self.embedding_service = embedding_service or self.gemini_client
         self.memory_service = memory_service or MemoryService()
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
 
     async def ingest_memory(self, memory: Memory) -> str:
-        """Ingest a new memory, performing auto-summarization if needed."""
+        """Ingest a new memory, performing auto-summarization and embedding generation."""
 
         # Auto-summarize if content is long (> 500 chars) and summary is missing
         if len(memory.content) > 500 and not memory.summary:
@@ -57,6 +61,32 @@ class MemoryLifecycleService:
                 memory.summary = response.get("content", "").strip()
             except Exception as e:
                 logger.warning(f"Failed to auto-summarize memory: {e}")
+
+        # Generate Primary Embedding if missing
+        if not memory.embedding and self.embedding_service:
+            try:
+                emb = await self.embedding_service.get_embedding(memory.content)
+                if emb:
+                    memory.embedding = EmbeddingVector(values=emb)
+            except Exception as e:
+                logger.error(f"Failed to generate primary embedding: {e}")
+
+        # Generate Secondary Embedding (Vector Ensemble) if missing
+        if not memory.embedding_secondary and self.embedding_service:
+            try:
+                # Assuming embedding_service is GeminiClient or has similar interface capability
+                # We cast to GeminiClient to access specific model support if possible
+                # Or just use a generic way if we added it to interface.
+                # For now, relying on GeminiClient specific method as it is default.
+                if isinstance(self.embedding_service, GeminiClient):
+                    emb = await self.embedding_service.generate_embeddings(
+                        [memory.content],
+                        model_id="text-embedding-004"
+                    )
+                    if emb:
+                         memory.embedding_secondary = EmbeddingVector(values=emb[0])
+            except Exception as e:
+                logger.error(f"Failed to generate secondary embedding: {e}")
 
         return await self.repository.create(memory)
 

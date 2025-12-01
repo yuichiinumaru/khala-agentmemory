@@ -36,6 +36,8 @@ class Memory:
     # Strategy 78: Multi-Vector
     embedding_visual: Optional[EmbeddingVector] = field(default=None)
     embedding_code: Optional[EmbeddingVector] = field(default=None)
+    # Strategy 89: Vector Ensemble
+    embedding_secondary: Optional[EmbeddingVector] = field(default=None)
     tags: List[str] = field(default_factory=list)
     category: Optional[str] = field(default=None)
     summary: Optional[str] = field(default=None)

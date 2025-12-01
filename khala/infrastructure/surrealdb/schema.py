@@ -37,6 +37,8 @@ class DatabaseSchema:
         -- Strategy 78: Multi-Vector
         DEFINE FIELD embedding_visual ON memory TYPE option<array<float>>;
         DEFINE FIELD embedding_code ON memory TYPE option<array<float>>;
+        -- Strategy 89: Vector Ensemble
+        DEFINE FIELD embedding_secondary ON memory TYPE option<array<float>>;
         DEFINE FIELD tier ON memory TYPE string ASSERT $value INSIDE ['working', 'short_term', 'long_term'];
         DEFINE FIELD importance ON memory TYPE float;
         DEFINE FIELD tags ON memory TYPE array<string>;
@@ -83,6 +85,8 @@ class DatabaseSchema:
 
         -- Search indexes
         DEFINE INDEX vector_search ON memory FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
+        -- Strategy 89: Vector Ensemble Index
+        DEFINE INDEX vector_search_secondary ON memory FIELDS embedding_secondary HNSW DIMENSION 768 DIST COSINE M 16;
         
         DEFINE INDEX bm25_search ON memory FIELDS content SEARCH ANALYZER ascii BM25;
         
@@ -258,6 +262,20 @@ class DatabaseSchema:
         DEFINE INDEX session_time_index ON search_session FIELDS timestamp;
         """,
 
+        # Strategy 88: Feedback-Loop Vectors
+        "search_feedback_table": """
+        DEFINE TABLE search_feedback SCHEMAFULL;
+        DEFINE FIELD session_id ON search_feedback TYPE string;
+        DEFINE FIELD memory_id ON search_feedback TYPE string;
+        DEFINE FIELD query ON search_feedback TYPE string;
+        DEFINE FIELD score ON search_feedback TYPE float; -- 1.0 for click, -1.0 for negative
+        DEFINE FIELD created_at ON search_feedback TYPE datetime DEFAULT time::now();
+
+        DEFINE INDEX feedback_session ON search_feedback FIELDS session_id;
+        DEFINE INDEX feedback_memory ON search_feedback FIELDS memory_id;
+        DEFINE INDEX feedback_query ON search_feedback FIELDS query;
+        """,
+
         # Skill table
         "skill_table": """
         DEFINE TABLE skill SCHEMAFULL;
@@ -375,6 +393,7 @@ class DatabaseSchema:
             "relationship_table",
             "audit_log_table",
             "search_session_table",
+            "search_feedback_table",
             "skill_table",
             "lgkgr_tables",
             "latent_mas_tables",
@@ -402,6 +421,7 @@ class DatabaseSchema:
             "REMOVE TABLE relationship",
             "REMOVE TABLE audit_log",
             "REMOVE TABLE search_session",
+            "REMOVE TABLE search_feedback",
             "REMOVE TABLE skill",
             "REMOVE FUNCTION fn::decay_score",
             "REMOVE FUNCTION fn::should_promote",
@@ -427,6 +447,7 @@ class DatabaseSchema:
             ("relationship", "SELECT count() FROM relationship;"),
             ("audit_log", "SELECT count() FROM audit_log;"),
             ("search_session", "SELECT count() FROM search_session;"),
+            ("search_feedback", "SELECT count() FROM search_feedback;"),
             ("skill", "SELECT count() FROM skill;"),
         ]
         
