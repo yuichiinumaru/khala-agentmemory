@@ -5,6 +5,7 @@ promotion, decay, consolidation, deduplication, and archival.
 """
 
 import logging
+import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
@@ -16,6 +17,7 @@ from khala.domain.memory.services import (
     DeduplicationService,
     ConsolidationService
 )
+from khala.application.services.significance_scorer import SignificanceScorer
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
@@ -32,7 +34,8 @@ class MemoryLifecycleService:
         memory_service: Optional[MemoryService] = None,
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
-        consolidation_service: Optional[ConsolidationService] = None
+        consolidation_service: Optional[ConsolidationService] = None,
+        significance_scorer: Optional[SignificanceScorer] = None
     ):
         self.repository = repository
         self.gemini_client = gemini_client or GeminiClient()
@@ -40,10 +43,33 @@ class MemoryLifecycleService:
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
+        self.significance_scorer = significance_scorer or SignificanceScorer(self.gemini_client)
 
     async def ingest_memory(self, memory: Memory) -> str:
-        """Ingest a new memory, performing auto-summarization if needed."""
+        """Ingest a new memory, performing auto-summarization and significance scoring."""
 
+        # 1. Natural Triggers & Significance Scoring
+        # Check for natural triggers
+        triggers = [
+            r"remember that", r"don'?t forget", r"remind me",
+            r"keep in mind", r"important:", r"note that"
+        ]
+        has_trigger = any(re.search(t, memory.content, re.IGNORECASE) for t in triggers)
+
+        # Calculate base score
+        score = await self.significance_scorer.score_memory(memory.content, memory.metadata)
+
+        # Apply trigger boost
+        if has_trigger:
+            score = max(score, 0.9)  # Boost to high importance
+            if memory.metadata is None:
+                memory.metadata = {}
+            memory.metadata["trigger_detected"] = True
+
+        # Update memory importance
+        memory.importance = score
+
+        # 2. Auto-summarization
         # Auto-summarize if content is long (> 500 chars) and summary is missing
         if len(memory.content) > 500 and not memory.summary:
             try:
