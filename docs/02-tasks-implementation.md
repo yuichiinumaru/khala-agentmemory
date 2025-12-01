@@ -40,11 +40,13 @@
 - [ ] **M11.A.1**: Verify **Nested Document Structures** (Strategies 58-61).
 - [ ] **M11.A.2**: Verify **Computed Fields & Events** (Strategies 62-65).
 - [ ] **M11.A.3**: Verify **Graph Model Enhancements** (Strategies 68-77).
+    - [x] **Strategy 74**: Pattern Discovery (Algorithmic detection of motifs).
 - [x] **M11.A.4**: **Vector Model Tuning** (Strategies 78-92).
 
 ### Phase 2.2: Advanced Search & Time (Module 11)
 - [ ] **M11.B.1**: **Full-Text Search Enhancements** (Strategies 93-102).
 - [ ] **M11.B.2**: **Time-Series & Geospatial** (Strategies 103-115).
+    - [x] **Strategy 111**: Agent Location Context (Geo-tagging memories).
 
 ### Phase 2.3: Experimental Architectures (Module 12)
 *Code exists, Tests Pass (Low Coverage)*

@@ -70,6 +70,8 @@ class DatabaseSchema:
         DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD location ON memory TYPE option<object> FLEXIBLE;
+        -- Task 111: GeoLocation
+        DEFINE FIELD geo_location ON memory TYPE option<geometry<point>>;
         DEFINE FIELD freshness ON memory VALUE time::now() - updated_at;
         """,
         
