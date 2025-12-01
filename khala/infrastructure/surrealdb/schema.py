@@ -75,6 +75,7 @@ class DatabaseSchema:
         DEFINE FIELD episode_id ON memory TYPE option<string>;
         DEFINE FIELD confidence ON memory TYPE float;
         DEFINE FIELD source_reliability ON memory TYPE float;
+        DEFINE FIELD complexity ON memory TYPE float;
         -- Module 11: Optimized Fields
         DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
@@ -114,6 +115,7 @@ class DatabaseSchema:
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
+        DEFINE INDEX complexity_index ON memory FIELDS complexity;
         DEFINE INDEX cluster_index ON memory FIELDS cluster_id;
         """,
 

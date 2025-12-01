@@ -17,6 +17,7 @@ from khala.domain.memory.services import (
     DeduplicationService,
     ConsolidationService
 )
+from khala.application.services.text_analytics_service import TextAnalyticsService
 from khala.application.services.significance_scorer import SignificanceScorer
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
@@ -44,6 +45,7 @@ class MemoryLifecycleService:
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
         consolidation_service: Optional[ConsolidationService] = None,
+        text_analytics_service: Optional[TextAnalyticsService] = None
         significance_scorer: Optional[SignificanceScorer] = None
     ):
         self.repository = repository
@@ -52,6 +54,15 @@ class MemoryLifecycleService:
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
+        self.text_analytics_service = text_analytics_service or TextAnalyticsService()
+
+    async def ingest_memory(self, memory: Memory) -> str:
+        """Ingest a new memory, performing auto-summarization if needed."""
+
+        # Calculate complexity if missing
+        if not memory.complexity:
+            memory.complexity = self.text_analytics_service.calculate_complexity(memory.content)
+
         self.significance_scorer = significance_scorer or SignificanceScorer(self.gemini_client)
 
     async def ingest_memory(self, memory: Memory) -> str:

@@ -77,6 +77,7 @@ class Memory:
     episode_id: Optional[str] = None
     confidence: float = 1.0  # Strategy 135: Metacognitive Indexing
     source_reliability: float = 1.0  # Strategy 136: Source Reliability Scoring
+    complexity: float = 0.0  # Task 99: Text Analytics
     # Module 11: Optimization Fields
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)
