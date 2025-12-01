@@ -17,6 +17,10 @@
 
 ## 🔴 CRITICAL ATTENTION (Failing / Incomplete)
 
+### Newly Implemented Tasks (Ready for Review)
+- [x] **146. Subgraph Isomorphism**: Implemented in `khala/application/services/graph_reasoning.py` with bulk edge fetching optimization.
+- [x] **48. Dynamic Context Window**: Implemented in `khala/domain/search/services.py` with complexity-based resizing.
+
 ### Module 03: Memory Lifecycle (Automation)
 *Tests Failing: `test_memory_lifecycle.py`*
 - [x] **M03.A.1**: Fix **Automatic Consolidation**. Scheduler is not triggering consolidation jobs correctly.
