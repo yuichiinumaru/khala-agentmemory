@@ -51,6 +51,8 @@
 - [ ] **M12.C.1**: **Agent Cognitive Patterns** (Strategies 116-128).
 - [ ] **M12.C.2**: **Advanced Learning & Adaptation** (Strategies 129-140).
 - [ ] **M12.C.3**: **Meta-Cognition & Self-Correction** (Strategies 141-159).
+- [x] **148. Scoped Memories**: Project/Tenant isolation logic.
+- [x] **150. Recursive Summarization**: Hierarchical summary generation.
 
 ### Phase 3: Advanced Intelligence & Reasoning (Module 13)
 *Code exists, Tests Pass (Low Coverage)*

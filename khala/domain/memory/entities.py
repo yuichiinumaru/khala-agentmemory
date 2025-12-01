@@ -32,6 +32,9 @@ class Memory:
     
     # Optional attributes with defaults
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    # Task 148: Scoped Memories
+    project_id: Optional[str] = field(default=None)
+    tenant_id: Optional[str] = field(default=None)
     embedding: Optional[EmbeddingVector] = field(default=None)
     # Strategy 78: Multi-Vector
     embedding_visual: Optional[EmbeddingVector] = field(default=None)
@@ -66,6 +69,12 @@ class Memory:
     episode_id: Optional[str] = None
     confidence: float = 1.0  # Strategy 135: Metacognitive Indexing
     source_reliability: float = 1.0  # Strategy 136: Source Reliability Scoring
+
+    # Task 150: Recursive Summarization
+    summary_level: int = 0
+    parent_summary_id: Optional[str] = None
+    child_memory_ids: List[str] = field(default_factory=list)
+
     # Module 11: Optimization Fields
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)

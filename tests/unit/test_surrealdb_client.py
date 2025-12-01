@@ -89,7 +89,15 @@ class TestSurrealDBClient:
         # Mock database connection
         with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
             mock_conn = AsyncMock()
-            mock_conn.query.return_value = [{"id": memory.id}]
+
+            def query_side_effect(query, params=None):
+                if "SELECT id FROM memory" in query:
+                    return []
+                if "CREATE" in query and "memory" in query:
+                    return [{"id": memory.id}]
+                return []
+
+            mock_conn.query.side_effect = query_side_effect
             mock_surreal.return_value = mock_conn
             
             async with client.get_connection() as conn:

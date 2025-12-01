@@ -182,7 +182,12 @@ class SurrealDBClient:
             sentiment: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            project_id: $project_id,
+            tenant_id: $tenant_id,
+            summary_level: $summary_level,
+            parent_summary_id: $parent_summary_id,
+            child_memory_ids: $child_memory_ids
         };
         """
         
@@ -230,6 +235,11 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "project_id": memory.project_id,
+            "tenant_id": memory.tenant_id,
+            "summary_level": memory.summary_level,
+            "parent_summary_id": memory.parent_summary_id,
+            "child_memory_ids": memory.child_memory_ids,
         }
         
         async with self.get_connection() as conn:
@@ -313,7 +323,12 @@ class SurrealDBClient:
             sentiment: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            project_id: $project_id,
+            tenant_id: $tenant_id,
+            summary_level: $summary_level,
+            parent_summary_id: $parent_summary_id,
+            child_memory_ids: $child_memory_ids
         };
         """
         
@@ -357,6 +372,11 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "project_id": memory.project_id,
+            "tenant_id": memory.tenant_id,
+            "summary_level": memory.summary_level,
+            "parent_summary_id": memory.parent_summary_id,
+            "child_memory_ids": memory.child_memory_ids,
         }
         
         async with self.get_connection() as conn:
@@ -733,7 +753,12 @@ class SurrealDBClient:
             sentiment=sentiment,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
-            source_reliability=data.get("source_reliability", 1.0)
+            source_reliability=data.get("source_reliability", 1.0),
+            project_id=data.get("project_id"),
+            tenant_id=data.get("tenant_id"),
+            summary_level=data.get("summary_level", 0),
+            parent_summary_id=data.get("parent_summary_id"),
+            child_memory_ids=data.get("child_memory_ids", [])
         )
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:
