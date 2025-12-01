@@ -19,6 +19,11 @@ class DatabaseSchema:
         "namespace": "DEFINE NAMESPACE khala;",
         "database": "DEFINE DATABASE memories;",
         
+        # Analyzers
+        "analyzers": """
+        DEFINE ANALYZER ascii TOKENIZERS class FILTERS ascii;
+        """,
+        
         # Memory table with all fields
         "memory_table": """
         DEFINE TABLE memory SCHEMAFULL;
@@ -361,6 +366,7 @@ class DatabaseSchema:
         creation_order = [
             "namespace",
             "database", 
+            "analyzers",
             "functions",
             "memory_table",
             "memory_indexes",
