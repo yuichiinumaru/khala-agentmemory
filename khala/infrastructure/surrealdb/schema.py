@@ -194,6 +194,10 @@ class DatabaseSchema:
         DEFINE INDEX entity_type_index ON entity FIELDS entity_type;
         DEFINE INDEX entity_confidence_index ON entity FIELDS confidence;
         DEFINE INDEX entity_vector_index ON entity FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
+
+        -- Hyperedge support (Strategy 42 & 66)
+        DEFINE INDEX hyperedge_index ON entity FIELDS metadata.is_hyperedge;
+        DEFINE INDEX hyperedge_type_index ON entity FIELDS metadata.hyperedge_type;
         """,
         
         # Relationship table (graph edge)
