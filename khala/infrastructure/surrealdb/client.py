@@ -7,6 +7,7 @@ transaction support, and error handling optimized for the KHALA memory system.
 import asyncio
 import hashlib
 from typing import Dict, List, Optional, Any, Union
+from datetime import datetime, timezone
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -145,10 +146,12 @@ class SurrealDBClient:
                      existing_item = items[0]
                      existing_id = existing_item.get('id')
                      if existing_id:
-                         if isinstance(existing_id, str) and existing_id.startswith("memory:"):
-                             existing_id = existing_id.split(":")[1]
-                         logger.info(f"Duplicate memory detected. Returning existing ID: {existing_id}")
-                         return existing_id
+                         # Handle RecordID or string
+                         existing_id_str = str(existing_id)
+                         if existing_id_str.startswith("memory:"):
+                             existing_id_str = existing_id_str.split(":")[1]
+                         logger.info(f"Duplicate memory detected. Returning existing ID: {existing_id_str}")
+                         return existing_id_str
 
         query = """
         CREATE type::thing('memory', $id) CONTENT {
@@ -161,24 +164,25 @@ class SurrealDBClient:
             tags: $tags,
             category: $category,
             metadata: $metadata,
-            created_at: $created_at,
-            updated_at: $updated_at,
-            accessed_at: $accessed_at,
+            created_at: type::datetime($created_at),
+            updated_at: type::datetime($updated_at),
+            accessed_at: type::datetime($accessed_at),
             access_count: $access_count,
             llm_cost: $llm_cost,
             verification_score: $verification_score,
             verification_count: $verification_count,
             verification_status: $verification_status,
-            verified_at: $verified_at,
+            verified_at: type::datetime($verified_at),
             verification_issues: $verification_issues,
             debate_consensus: $debate_consensus,
             is_archived: $is_archived,
-            decay_score: $decay_score,
-            source: $source,
-            sentiment: $sentiment,
+            `source`: $source,
+            `sentiment`: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            versions: $versions,
+            events: $events
         };
         """
         
@@ -193,6 +197,12 @@ class SurrealDBClient:
         sentiment_data = None
         if memory.sentiment:
             sentiment_data = asdict(memory.sentiment)
+
+        # Dynamic clauses for optional datetime fields
+        verified_at_clause = "type::datetime($verified_at)" if memory.verified_at else "NONE"
+
+        # Inject dynamic clause into query
+        query = query.replace("verified_at: type::datetime($verified_at)", f"verified_at: {verified_at_clause}")
 
         params = {
             "id": memory.id,
@@ -220,15 +230,17 @@ class SurrealDBClient:
             "verification_issues": memory.verification_issues,
             "debate_consensus": memory.debate_consensus,
             "is_archived": memory.is_archived,
-            "decay_score": memory.decay_score.value if memory.decay_score else None,
             "source": source_data,
             "sentiment": sentiment_data,
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "versions": memory.versions,
+            "events": memory.events,
         }
         
         async with self.get_connection() as conn:
+            logger.info(f"Creating memory with params: {params}")
             response = await conn.query(query, params)
             
             # Check for error string
@@ -281,6 +293,26 @@ class SurrealDBClient:
         # Recalculate hash on update
         content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
 
+        # Strategy 60: Document Versioning
+        # Fetch current state to save as a version before updating
+        current_memory = await self.get_memory(memory.id)
+        if current_memory:
+             # Create version snapshot (excluding large vectors/versions to save space if needed,
+             # but keeping core data for audit).
+             # For now, we store a lightweight snapshot.
+             version_snapshot = {
+                 "content": current_memory.content,
+                 "tier": current_memory.tier.value,
+                 "importance": current_memory.importance.value,
+                 "updated_at": current_memory.updated_at.isoformat(),
+                 "changed_by": "system"  # Could be passed in if we had user context here
+             }
+
+             # Append to versions array in the update query
+             # using array::append or just setting the field if we manage it in app
+             # We'll use the SET versions = array::append(...) approach in the query
+             pass
+
         query = """
         UPDATE type::thing('memory', $id) CONTENT {
             user_id: $user_id,
@@ -292,15 +324,15 @@ class SurrealDBClient:
             tags: $tags,
             category: $category,
             metadata: $metadata,
-            created_at: $created_at,
+            created_at: type::datetime($created_at),
             updated_at: time::now(),
-            accessed_at: $accessed_at,
+            accessed_at: type::datetime($accessed_at),
             access_count: $access_count,
             llm_cost: $llm_cost,
             verification_score: $verification_score,
             verification_count: $verification_count,
             verification_status: $verification_status,
-            verified_at: $verified_at,
+            verified_at: type::datetime($verified_at),
             verification_issues: $verification_issues,
             debate_consensus: $debate_consensus,
             is_archived: $is_archived,
@@ -309,7 +341,8 @@ class SurrealDBClient:
             sentiment: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            versions: array::append(versions ?? [], $new_version)
         };
         """
         
@@ -324,6 +357,23 @@ class SurrealDBClient:
         sentiment_data = None
         if memory.sentiment:
             sentiment_data = asdict(memory.sentiment)
+
+        # Prepare version snapshot
+        new_version = None
+        if current_memory:
+             new_version = {
+                 "content": current_memory.content,
+                 "tier": current_memory.tier.value,
+                 "importance": current_memory.importance.value,
+                 "updated_at": current_memory.updated_at.isoformat(),
+                 "reason": "update"
+             }
+
+        # Dynamic clauses for optional datetime fields
+        verified_at_clause = "type::datetime($verified_at)" if memory.verified_at else "NONE"
+
+        # Inject dynamic clause into query
+        query = query.replace("verified_at: type::datetime($verified_at)", f"verified_at: {verified_at_clause}")
 
         params = {
             "id": memory.id,
@@ -353,12 +403,47 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "new_version": new_version
         }
         
         async with self.get_connection() as conn:
             response = await conn.query(query, params)
             if isinstance(response, str):
                  raise RuntimeError(f"Failed to update memory: {response}")
+
+    async def add_memory_event(self, memory_id: str, event_type: str, payload: Dict[str, Any]) -> None:
+        """Add an event to the memory's event log (Strategy 61).
+
+        Args:
+            memory_id: ID of the memory
+            event_type: Type of event (e.g., 'accessed', 'verified', 'consolidated')
+            payload: Data associated with the event
+        """
+        # Ensure ID format
+        memory_id = str(memory_id)
+        if ":" not in memory_id:
+             # This check assumes we might pass "memory:uuid" or just "uuid"
+             # The query expects just the ID part if we use type::thing
+             pass
+
+        query = """
+        UPDATE type::thing('memory', $id)
+        SET events = array::append(events ?? [], $event);
+        """
+
+        event = {
+            "event_type": event_type,
+            "payload": payload,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+        params = {
+            "id": memory_id,
+            "event": event
+        }
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
     
     async def delete_memory(self, memory_id: str) -> None:
         """Delete a memory by ID."""
@@ -377,7 +462,7 @@ class SurrealDBClient:
             confidence: $confidence,
             embedding: $embedding,
             metadata: $metadata,
-            created_at: $created_at
+            created_at: type::datetime($created_at)
         };
         """
 
@@ -403,10 +488,10 @@ class SurrealDBClient:
             to_entity_id: $to_entity_id,
             relation_type: $relation_type,
             strength: $strength,
-            valid_from: $valid_from,
-            valid_to: $valid_to,
-            transaction_time_start: $transaction_time_start,
-            transaction_time_end: $transaction_time_end
+            valid_from: type::datetime($valid_from),
+            valid_to: type::datetime($valid_to),
+            transaction_time_start: type::datetime($transaction_time_start),
+            transaction_time_end: type::datetime($transaction_time_end)
         };
         """
 
@@ -421,6 +506,14 @@ class SurrealDBClient:
             "transaction_time_start": relationship.transaction_time_start.isoformat(),
             "transaction_time_end": relationship.transaction_time_end.isoformat() if relationship.transaction_time_end else None,
         }
+
+        # Dynamic clauses for optional datetime fields
+        valid_to_clause = "type::datetime($valid_to)" if relationship.valid_to else "NONE"
+        transaction_time_end_clause = "type::datetime($transaction_time_end)" if relationship.transaction_time_end else "NONE"
+
+        # Inject dynamic clauses into query
+        query = query.replace("valid_to: type::datetime($valid_to)", f"valid_to: {valid_to_clause}")
+        query = query.replace("transaction_time_end: type::datetime($transaction_time_end)", f"transaction_time_end: {transaction_time_end_clause}")
 
         async with self.get_connection() as conn:
             await conn.query(query, params)
@@ -709,7 +802,9 @@ class SurrealDBClient:
             sentiment=sentiment,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
-            source_reliability=data.get("source_reliability", 1.0)
+            source_reliability=data.get("source_reliability", 1.0),
+            versions=data.get("versions", []),
+            events=data.get("events", [])
         )
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:
