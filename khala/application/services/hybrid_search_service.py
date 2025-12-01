@@ -5,6 +5,7 @@ from khala.domain.memory.repository import MemoryRepository
 from khala.domain.ports.embedding_service import EmbeddingService
 from khala.domain.memory.entities import Memory, EmbeddingVector
 from khala.application.services.query_expansion_service import QueryExpansionService
+from khala.application.services.intent_classifier import IntentClassifier
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 
 logger = logging.getLogger(__name__)
@@ -18,12 +19,18 @@ class HybridSearchService:
         memory_repository: MemoryRepository,
         embedding_service: EmbeddingService,
         query_expansion_service: Optional[QueryExpansionService] = None,
-        db_client: Optional[SurrealDBClient] = None
+        db_client: Optional[SurrealDBClient] = None,
+        intent_classifier: Optional[IntentClassifier] = None
     ):
         self.memory_repo = memory_repository
         self.embedding_service = embedding_service
         self.query_expansion_service = query_expansion_service
         self.db_client = db_client
+        self.intent_classifier = intent_classifier
+
+        # Try to initialize intent classifier if not provided but query expansion service is available
+        if not self.intent_classifier and self.query_expansion_service and hasattr(self.query_expansion_service, 'gemini_client'):
+            self.intent_classifier = IntentClassifier(self.query_expansion_service.gemini_client)
 
     async def search(
         self,
@@ -53,6 +60,12 @@ class HybridSearchService:
         Returns:
             List of unique Memory objects sorted by RRF score.
         """
+        # 0. Intent Classification (Task 30)
+        intent = "Analysis" # Default
+        if self.intent_classifier:
+            intent = await self.intent_classifier.classify(query)
+            logger.debug(f"Query intent classified as: {intent}")
+
         # 0. Query Expansion
         expanded_queries = [query]
         if expand_query and self.query_expansion_service:
@@ -255,7 +268,8 @@ class HybridSearchService:
                     "results_count": len(final_results),
                     "metadata": {
                         "rrf_k": rrf_k,
-                        "graph_reranking": enable_graph_reranking
+                        "graph_reranking": enable_graph_reranking,
+                        "intent": intent  # Log intent
                     }
                 })
             except Exception as e:
