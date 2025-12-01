@@ -64,6 +64,8 @@ class DatabaseSchema:
 
         -- Module 12: Experimental Fields
         DEFINE FIELD episode_id ON memory TYPE option<string>;
+        -- Task 72: Agent-Centric Partitioning
+        DEFINE FIELD agent_id ON memory TYPE option<string>;
         DEFINE FIELD confidence ON memory TYPE float;
         DEFINE FIELD source_reliability ON memory TYPE float;
         -- Module 11: Optimized Fields
@@ -98,6 +100,9 @@ class DatabaseSchema:
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
+
+        -- Task 72: Agent-Centric Partitioning
+        DEFINE INDEX agent_index ON memory FIELDS agent_id;
         """,
         
         # LGKGR Tables (Module 13.2.1)
@@ -210,6 +215,14 @@ class DatabaseSchema:
         DEFINE FIELD valid_to ON relationship TYPE option<datetime>;
         DEFINE FIELD transaction_time_start ON relationship TYPE datetime;
         DEFINE FIELD transaction_time_end ON relationship TYPE option<datetime>;
+
+        -- Task 72: Agent-Centric Partitioning
+        DEFINE FIELD agent_id ON relationship TYPE option<string>;
+
+        -- Task 73: Consensus Graph
+        DEFINE FIELD is_consensus ON relationship TYPE bool DEFAULT false;
+        DEFINE FIELD consensus_data ON relationship TYPE option<object> FLEXIBLE;
+
         DEFINE FIELD created_at ON relationship TYPE datetime DEFAULT time::now();
         
         -- Indexes
@@ -217,6 +230,7 @@ class DatabaseSchema:
         DEFINE INDEX rel_to_index ON relationship FIELDS to_entity_id;
         DEFINE INDEX rel_type_index ON relationship FIELDS relation_type;
         DEFINE INDEX rel_strength_index ON relationship FIELDS strength;
+        DEFINE INDEX rel_agent_index ON relationship FIELDS agent_id;
         """,
         
         # Audit log table

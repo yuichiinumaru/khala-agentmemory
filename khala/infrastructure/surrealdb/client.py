@@ -181,6 +181,7 @@ class SurrealDBClient:
             source: $source,
             sentiment: $sentiment,
             episode_id: $episode_id,
+            agent_id: $agent_id,
             confidence: $confidence,
             source_reliability: $source_reliability
         };
@@ -228,6 +229,7 @@ class SurrealDBClient:
             "source": source_data,
             "sentiment": sentiment_data,
             "episode_id": memory.episode_id,
+            "agent_id": memory.agent_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
         }
@@ -312,6 +314,7 @@ class SurrealDBClient:
             source: $source,
             sentiment: $sentiment,
             episode_id: $episode_id,
+            agent_id: $agent_id,
             confidence: $confidence,
             source_reliability: $source_reliability
         };
@@ -355,6 +358,7 @@ class SurrealDBClient:
             "source": source_data,
             "sentiment": sentiment_data,
             "episode_id": memory.episode_id,
+            "agent_id": memory.agent_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
         }
@@ -422,6 +426,9 @@ class SurrealDBClient:
             valid_to: $valid_to,
             transaction_time_start: $transaction_time_start,
             transaction_time_end: $transaction_time_end,
+            agent_id: $agent_id,
+            is_consensus: $is_consensus,
+            consensus_data: $consensus_data,
         };
         """
 
@@ -437,6 +444,9 @@ class SurrealDBClient:
             "valid_to": relationship.valid_to,
             "transaction_time_start": relationship.transaction_time_start,
             "transaction_time_end": relationship.transaction_time_end,
+            "agent_id": relationship.agent_id,
+            "is_consensus": relationship.is_consensus,
+            "consensus_data": relationship.consensus_data,
         }
 
         async with self.get_connection() as conn:
@@ -732,6 +742,7 @@ class SurrealDBClient:
             source=source,
             sentiment=sentiment,
             episode_id=data.get("episode_id"),
+            agent_id=data.get("agent_id"),
             confidence=data.get("confidence", 1.0),
             source_reliability=data.get("source_reliability", 1.0)
         )

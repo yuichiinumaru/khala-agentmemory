@@ -64,6 +64,8 @@ class Memory:
     
     # Module 12: Experimental
     episode_id: Optional[str] = None
+    # Task 72: Agent-Centric Partitioning
+    agent_id: Optional[str] = None
     confidence: float = 1.0  # Strategy 135: Metacognitive Indexing
     source_reliability: float = 1.0  # Strategy 136: Source Reliability Scoring
     # Module 11: Optimization Fields
@@ -262,6 +264,14 @@ class Relationship:
     valid_to: Optional[datetime] = field(default=None)
     transaction_time_start: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     transaction_time_end: Optional[datetime] = field(default=None)
+
+    # Task 72: Agent-Centric Partitioning
+    agent_id: Optional[str] = None
+
+    # Task 73: Consensus Graph
+    is_consensus: bool = False
+    consensus_data: Optional[Dict[str, Any]] = field(default=None)
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     
     def __post_init__(self) -> None:
