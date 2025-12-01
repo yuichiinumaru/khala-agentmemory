@@ -61,3 +61,8 @@ class MemoryRepository(ABC):
     ) -> List[Memory]:
         """Retrieve memories by tier."""
         pass
+
+    @abstractmethod
+    async def get_memory_facets(self, user_id: str) -> Dict[str, Any]:
+        """Get faceted counts for memories (Tier, Category, Agent)."""
+        pass

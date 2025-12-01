@@ -230,6 +230,7 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "complexity": memory.complexity,
         }
         
         async with self.get_connection() as conn:
@@ -357,6 +358,7 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "complexity": memory.complexity,
         }
         
         async with self.get_connection() as conn:
@@ -733,8 +735,56 @@ class SurrealDBClient:
             sentiment=sentiment,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
-            source_reliability=data.get("source_reliability", 1.0)
+            source_reliability=data.get("source_reliability", 1.0),
+            complexity=data.get("complexity", 0.0)
         )
+
+    async def get_memory_facets(self, user_id: str) -> Dict[str, Any]:
+        """Get faceted counts for memories."""
+        query = """
+        SELECT count() as count, tier FROM memory WHERE user_id = $user_id GROUP BY tier;
+        SELECT count() as count, category FROM memory WHERE user_id = $user_id GROUP BY category;
+        SELECT count() as count, metadata.agent_id as agent_id FROM memory WHERE user_id = $user_id GROUP BY metadata.agent_id;
+        """
+
+        async with self.get_connection() as conn:
+            responses = await conn.query(query, {"user_id": user_id})
+
+            facets = {
+                "tier": {},
+                "category": {},
+                "agent_id": {}
+            }
+
+            # Helper to extract items from response list
+            def extract_items(response_item):
+                if isinstance(response_item, dict) and 'result' in response_item:
+                    return response_item['result']
+                if isinstance(response_item, list):
+                    return response_item
+                return []
+
+            if responses and isinstance(responses, list):
+                # Tier
+                if len(responses) > 0:
+                    for item in extract_items(responses[0]):
+                        if 'tier' in item and item['tier']:
+                             facets["tier"][str(item['tier'])] = item['count']
+
+                # Category
+                if len(responses) > 1:
+                     for item in extract_items(responses[1]):
+                        if 'category' in item and item['category']:
+                             facets["category"][str(item['category'])] = item['count']
+
+                # Agent
+                if len(responses) > 2:
+                     for item in extract_items(responses[2]):
+                        val = item.get('agent_id') or item.get('metadata', {}).get('agent_id')
+                        if val:
+                             facets["agent_id"][str(val)] = item['count']
+
+            return facets
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:
         """Create a new search session log.

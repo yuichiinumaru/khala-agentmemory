@@ -43,7 +43,7 @@
 - [x] **M11.A.4**: **Vector Model Tuning** (Strategies 78-92).
 
 ### Phase 2.2: Advanced Search & Time (Module 11)
-- [ ] **M11.B.1**: **Full-Text Search Enhancements** (Strategies 93-102).
+- [ ] **M11.B.1**: **Full-Text Search Enhancements** (Strategies 93-102). *Partial: 98, 99, 100, 101, 102 Complete.*
 - [ ] **M11.B.2**: **Time-Series & Geospatial** (Strategies 103-115).
 
 ### Phase 2.3: Experimental Architectures (Module 12)
