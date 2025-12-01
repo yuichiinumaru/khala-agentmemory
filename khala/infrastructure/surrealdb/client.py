@@ -392,7 +392,7 @@ class SurrealDBClient:
             "confidence": entity.confidence,
             "embedding": entity.embedding.values if entity.embedding else None,
             "metadata": entity.metadata,
-            "created_at": entity.created_at.isoformat(),
+            "created_at": entity.created_at,
         }
 
         async with self.get_connection() as conn:
@@ -401,33 +401,53 @@ class SurrealDBClient:
 
     async def create_relationship(self, relationship: Relationship) -> str:
         """Create a new relationship in the database."""
+        # Parse entity IDs to extract UUIDs if they are in record format
+        from_uuid = relationship.from_entity_id
+        if ":" in from_uuid:
+            from_uuid = from_uuid.split(":")[1]
+            
+        to_uuid = relationship.to_entity_id
+        if ":" in to_uuid:
+            to_uuid = to_uuid.split(":")[1]
+
         query = """
         CREATE type::thing('relationship', $id) CONTENT {
-            from_entity_id: $from_entity_id,
-            to_entity_id: $to_entity_id,
-            relation_type: $relation_type,
+        in: type::thing('entity', $from_uuid),
+        out: type::thing('entity', $to_uuid),
+        from_entity_id: $from_entity_id,
+        to_entity_id: $to_entity_id,
+        relation_type: $relation_type,
             strength: $strength,
             valid_from: $valid_from,
             valid_to: $valid_to,
             transaction_time_start: $transaction_time_start,
-            transaction_time_end: $transaction_time_end
+            transaction_time_end: $transaction_time_end,
         };
         """
 
         params = {
             "id": relationship.id,
+            "from_uuid": from_uuid,
+            "to_uuid": to_uuid,
             "from_entity_id": relationship.from_entity_id,
             "to_entity_id": relationship.to_entity_id,
             "relation_type": relationship.relation_type,
             "strength": relationship.strength,
-            "valid_from": relationship.valid_from.isoformat(),
-            "valid_to": relationship.valid_to.isoformat() if relationship.valid_to else None,
-            "transaction_time_start": relationship.transaction_time_start.isoformat(),
-            "transaction_time_end": relationship.transaction_time_end.isoformat() if relationship.transaction_time_end else None,
+            "valid_from": relationship.valid_from,
+            "valid_to": relationship.valid_to,
+            "transaction_time_start": relationship.transaction_time_start,
+            "transaction_time_end": relationship.transaction_time_end,
         }
 
         async with self.get_connection() as conn:
-            await conn.query(query, params)
+            response = await conn.query(query, params)
+            
+            # Check for errors
+            if isinstance(response, list) and len(response) > 0:
+                if isinstance(response[0], dict) and 'status' in response[0] and response[0]['status'] == 'ERR':
+                    logger.error(f"Create relationship failed: {response[0]}")
+                    raise RuntimeError(f"Failed to create relationship: {response[0].get('detail', 'Unknown error')}")
+                    
             return relationship.id
 
     def _build_filter_query(self, filters: Dict[str, Any], params: Dict[str, Any]) -> str:

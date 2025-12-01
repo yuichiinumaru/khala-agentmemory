@@ -51,20 +51,20 @@ class DatabaseSchema:
         DEFINE FIELD verification_issues ON memory TYPE array<string>;
         DEFINE FIELD debate_consensus ON memory TYPE option<object>;
         DEFINE FIELD is_archived ON memory TYPE bool DEFAULT false;
-        DEFINE FIELD decay_score ON memory VALUE fn::decay_score(math::max(0.0, (time::now() - created_at) / 1000 / 60 / 60 / 24), importance);
+        DEFINE FIELD decay_score ON memory VALUE fn::decay_score(0.0, $importance, 30.0);
         
         -- Tier 6: Advanced Metadata
-        DEFINE FIELD source ON memory TYPE object FLEXIBLE;
-        DEFINE FIELD sentiment ON memory TYPE object FLEXIBLE;
+        DEFINE FIELD source ON memory TYPE option<object> FLEXIBLE;
+        DEFINE FIELD sentiment ON memory TYPE option<object> FLEXIBLE;
 
         -- Module 12: Experimental Fields
-        DEFINE FIELD episode_id ON memory TYPE string;
+        DEFINE FIELD episode_id ON memory TYPE option<string>;
         DEFINE FIELD confidence ON memory TYPE float;
         DEFINE FIELD source_reliability ON memory TYPE float;
         -- Module 11: Optimized Fields
-        DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE;
-        DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE;
-        DEFINE FIELD location ON memory TYPE object FLEXIBLE;
+        DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE DEFAULT [];
+        DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
+        DEFINE FIELD location ON memory TYPE option<object> FLEXIBLE;
         DEFINE FIELD freshness ON memory VALUE time::now() - updated_at;
         """,
         
@@ -180,7 +180,7 @@ class DatabaseSchema:
         DEFINE FIELD text ON entity TYPE string;
         DEFINE FIELD entity_type ON entity TYPE string;
         DEFINE FIELD confidence ON entity TYPE float;
-        DEFINE FIELD embedding ON entity TYPE array<float> FLEXIBLE;
+        DEFINE FIELD embedding ON entity TYPE option<array<float>> FLEXIBLE;
         DEFINE FIELD metadata ON entity TYPE object FLEXIBLE;
         DEFINE FIELD created_at ON entity TYPE datetime;
         
@@ -195,15 +195,17 @@ class DatabaseSchema:
         "relationship_table": """
         DEFINE TABLE relationship SCHEMAFULL;
         
+        DEFINE FIELD in ON relationship TYPE record<entity>;
+        DEFINE FIELD out ON relationship TYPE record<entity>;
         DEFINE FIELD from_entity_id ON relationship TYPE string;
         DEFINE FIELD to_entity_id ON relationship TYPE string;
         DEFINE FIELD relation_type ON relationship TYPE string;
         DEFINE FIELD strength ON relationship TYPE float;
         DEFINE FIELD valid_from ON relationship TYPE datetime;
-        DEFINE FIELD valid_to ON relationship TYPE datetime;
+        DEFINE FIELD valid_to ON relationship TYPE option<datetime>;
         DEFINE FIELD transaction_time_start ON relationship TYPE datetime;
-        DEFINE FIELD transaction_time_end ON relationship TYPE datetime;
-        DEFINE FIELD created_at ON relationship TYPE datetime;
+        DEFINE FIELD transaction_time_end ON relationship TYPE option<datetime>;
+        DEFINE FIELD created_at ON relationship TYPE datetime DEFAULT time::now();
         
         -- Indexes
         DEFINE INDEX rel_from_index ON relationship FIELDS from_entity_id;
@@ -219,7 +221,7 @@ class DatabaseSchema:
         DEFINE FIELD id ON audit_log TYPE string;
         DEFINE FIELD timestamp ON audit_log TYPE datetime DEFAULT time::now();
         DEFINE FIELD user_id ON audit_log TYPE string;
-        DEFINE ENTITY action ON audit_log NATURE DATA;
+        DEFINE FIELD action ON audit_log TYPE object FLEXIBLE;
         DEFINE FIELD memory_id ON audit_log TYPE string;
         DEFINE FIELD agent_id ON audit_log TYPE string;
         DEFINE FIELD operation ON audit_log TYPE string;
@@ -277,11 +279,11 @@ class DatabaseSchema:
         "functions": """
         -- Decay score calculation function
         DEFINE FUNCTION fn::decay_score($age_days: float, $original_importance: float, $half_life_days: float) {
-            RETURN $original_importance * math::exp(-$age_days / $half_life_days);
+            RETURN $original_importance * math::pow(2.718281828, -$age_days / $half_life_days);
         };
 
         -- Recursive graph traversal function (Module 11)
-        DEFINE FUNCTION fn::get_descendants(start_node string, relation_type string, max_depth int) {
+        DEFINE FUNCTION fn::get_descendants($start_node: string, $relation_type: string, $max_depth: int) {
             RETURN SELECT *,
                 (SELECT * FROM relationship WHERE from_entity_id = $parent.id AND relation_type = $relation_type) AS children
             FROM entity
@@ -292,7 +294,7 @@ class DatabaseSchema:
         DEFINE FUNCTION fn::should_promote($tier: string, $age_hours: float, $access_count: int, $importance: float) {
             IF $tier = 'working' AND $age_hours > 0.5 AND $access_count > 5 AND $importance > 0.8 {
                 RETURN true;
-            } ELSIF $tier = 'short_term' AND ($age_hours > 360 OR $importance > 0.9) {
+            } ELSE IF $tier = 'short_term' AND ($age_hours > 360 OR $importance > 0.9) {
                 RETURN true;
             } ELSE {
                 RETURN false;
@@ -371,7 +373,7 @@ class DatabaseSchema:
             "lgkgr_tables",
             "latent_mas_tables",
             # MarsRL table
-            "rbac_permissions",
+            # "rbac_permissions",
         ]
         
         for step in creation_order:
@@ -490,10 +492,20 @@ class DatabaseSchema:
         schema_def = self.SCHEMA_DEFINITIONS[step_name]
         logger.info(f"Executing schema step: {step_name}")
         
-        # Split multi-line definitions into individual statements
-        statements = [stmt.strip() for stmt in schema_def.split(';') if stmt.strip()]
-        
         async with self.client.get_connection() as conn:
+            # Special handling for functions which contain semicolons in their body
+            if step_name == "functions":
+                try:
+                    await conn.query(schema_def)
+                    logger.info(f"Completed schema step: {step_name}")
+                    return
+                except Exception as e:
+                    logger.error(f"Error executing functions schema: {e}")
+                    raise
+
+            # Split multi-line definitions into individual statements
+            statements = [stmt.strip() for stmt in schema_def.split(';') if stmt.strip()]
+            
             for statement in statements:
                 try:
                     await conn.query(f"{statement};")
