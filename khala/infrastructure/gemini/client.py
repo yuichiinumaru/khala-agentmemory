@@ -548,6 +548,34 @@ class GeminiClient:
         """Get optimization recommendations."""
         return self.cost_tracker.get_optimization_report()
 
+    async def translate_text(
+        self,
+        text: str,
+        target_language: str = "English",
+        model_id: Optional[str] = None
+    ) -> str:
+        """Translate text to target language.
+
+        Args:
+            text: Text to translate.
+            target_language: Target language name (e.g., "English", "Spanish").
+            model_id: Optional model ID to use.
+
+        Returns:
+            Translated text.
+        """
+        prompt = f"Translate the following text to {target_language}. Return only the translation, no extra text.\n\nText: {text}"
+
+        # Use fast model for translation by default as it's a simple task
+        result = await self.generate_text(
+            prompt=prompt,
+            model_id=model_id,
+            task_type="generation",
+            use_cascading=True
+        )
+
+        return result["content"].strip()
+
     # --- Debate and Verification Methods ---
 
     def _create_debate_agent(self, role: str) -> 'DebateAgent':
