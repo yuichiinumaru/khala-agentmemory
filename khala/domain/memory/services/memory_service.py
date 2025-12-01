@@ -9,8 +9,8 @@ from typing import List, Optional, Dict, Any, Tuple
 import asyncio
 import hashlib
 
-from .entities import Memory, Entity, Relationship, MemoryTier
-from .value_objects import EmbeddingVector, ImportanceScore
+from khala.domain.memory.entities import Memory, Entity, Relationship, MemoryTier
+from khala.domain.memory.value_objects import EmbeddingVector, ImportanceScore
 
 
 class MemoryService:

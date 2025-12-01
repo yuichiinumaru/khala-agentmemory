@@ -67,8 +67,8 @@ class HybridSearchService:
 
         async def _fetch_vector(q_text: str) -> List[Memory]:
             try:
-                embedding_values = await self.embedding_service.get_embedding(q_text)
-                embedding = EmbeddingVector(values=embedding_values)
+                embedding = await self.embedding_service.get_embedding(q_text)
+                # embedding is now an EmbeddingVector object
                 return await self.memory_repo.search_by_vector(
                     embedding=embedding,
                     user_id=user_id,

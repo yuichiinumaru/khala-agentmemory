@@ -160,6 +160,14 @@ class SurrealDBClient:
             content: $content,
             content_hash: $content_hash,
             embedding: $embedding,
+            embedding_model: $embedding_model,
+            embedding_version: $embedding_version,
+            embedding_visual: $embedding_visual,
+            embedding_visual_model: $embedding_visual_model,
+            embedding_visual_version: $embedding_visual_version,
+            embedding_code: $embedding_code,
+            embedding_code_model: $embedding_code_model,
+            embedding_code_version: $embedding_code_version,
             tier: $tier,
             importance: $importance,
             tags: $tags,
@@ -204,8 +212,14 @@ class SurrealDBClient:
             "content": memory.content,
             "content_hash": content_hash,
             "embedding": memory.embedding.values if memory.embedding else None,
+            "embedding_model": memory.embedding.model if memory.embedding else None,
+            "embedding_version": memory.embedding.version if memory.embedding else None,
             "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
+            "embedding_visual_model": memory.embedding_visual.model if memory.embedding_visual else None,
+            "embedding_visual_version": memory.embedding_visual.version if memory.embedding_visual else None,
             "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
+            "embedding_code_model": memory.embedding_code.model if memory.embedding_code else None,
+            "embedding_code_version": memory.embedding_code.version if memory.embedding_code else None,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
             "tags": memory.tags,
@@ -335,6 +349,14 @@ class SurrealDBClient:
             "content": memory.content,
             "content_hash": content_hash,
             "embedding": memory.embedding.values if memory.embedding else None,
+            "embedding_model": memory.embedding.model if memory.embedding else None,
+            "embedding_version": memory.embedding.version if memory.embedding else None,
+            "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
+            "embedding_visual_model": memory.embedding_visual.model if memory.embedding_visual else None,
+            "embedding_visual_version": memory.embedding_visual.version if memory.embedding_visual else None,
+            "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
+            "embedding_code_model": memory.embedding_code.model if memory.embedding_code else None,
+            "embedding_code_version": memory.embedding_code.version if memory.embedding_code else None,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
             "tags": memory.tags,
@@ -666,15 +688,27 @@ class SurrealDBClient:
         # Convert embedding back to EmbeddingVector
         embedding = None
         if data.get("embedding"):
-            embedding = EmbeddingVector(data["embedding"])
+            embedding = EmbeddingVector(
+                values=data["embedding"],
+                model=data.get("embedding_model"),
+                version=data.get("embedding_version")
+            )
         
         embedding_visual = None
         if data.get("embedding_visual"):
-            embedding_visual = EmbeddingVector(data["embedding_visual"])
+            embedding_visual = EmbeddingVector(
+                values=data["embedding_visual"],
+                model=data.get("embedding_visual_model"),
+                version=data.get("embedding_visual_version")
+            )
 
         embedding_code = None
         if data.get("embedding_code"):
-            embedding_code = EmbeddingVector(data["embedding_code"])
+            embedding_code = EmbeddingVector(
+                values=data["embedding_code"],
+                model=data.get("embedding_code_model"),
+                version=data.get("embedding_code_version")
+            )
 
         # Reconstruct MemorySource
         source = None

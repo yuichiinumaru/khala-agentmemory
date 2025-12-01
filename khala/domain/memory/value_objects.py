@@ -21,6 +21,10 @@ class EmbeddingVector:
     # If provided, validation ensures the values list matches this size.
     dimensions: Optional[int] = None
     
+    # Task 85: Vector Provenance
+    model: Optional[str] = None
+    version: Optional[str] = None
+
     def __post_init__(self) -> None:
         """Validate the embedding vector."""
         if self.dimensions is not None and len(self.values) != self.dimensions:
@@ -41,9 +45,9 @@ class EmbeddingVector:
         return np.array(self.values, dtype=np.float32)
     
     @classmethod
-    def from_numpy(cls, array: np.ndarray) -> "EmbeddingVector":
+    def from_numpy(cls, array: np.ndarray, model: Optional[str] = None, version: Optional[str] = None) -> "EmbeddingVector":
         """Create from numpy array."""
-        return cls(values=array.tolist())
+        return cls(values=array.tolist(), model=model, version=version)
 
 
 @dataclass(frozen=True)
@@ -183,4 +187,3 @@ class Sentiment:
             raise ValueError("Sentiment score must be in [-1.0, 1.0]")
         if not self.label.strip():
             raise ValueError("Sentiment label cannot be empty")
-

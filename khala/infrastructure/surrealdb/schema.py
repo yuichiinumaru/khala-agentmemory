@@ -34,9 +34,17 @@ class DatabaseSchema:
         DEFINE FIELD content ON memory TYPE string;
         DEFINE FIELD content_hash ON memory TYPE string;
         DEFINE FIELD embedding ON memory TYPE option<array<float>>;
+        -- Task 85: Vector Provenance
+        DEFINE FIELD embedding_model ON memory TYPE option<string>;
+        DEFINE FIELD embedding_version ON memory TYPE option<string>;
         -- Strategy 78: Multi-Vector
         DEFINE FIELD embedding_visual ON memory TYPE option<array<float>>;
+        DEFINE FIELD embedding_visual_model ON memory TYPE option<string>;
+        DEFINE FIELD embedding_visual_version ON memory TYPE option<string>;
+
         DEFINE FIELD embedding_code ON memory TYPE option<array<float>>;
+        DEFINE FIELD embedding_code_model ON memory TYPE option<string>;
+        DEFINE FIELD embedding_code_version ON memory TYPE option<string>;
         DEFINE FIELD tier ON memory TYPE string ASSERT $value INSIDE ['working', 'short_term', 'long_term'];
         DEFINE FIELD importance ON memory TYPE float;
         DEFINE FIELD tags ON memory TYPE array<string>;
