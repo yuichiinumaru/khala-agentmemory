@@ -134,21 +134,25 @@ class SurrealDBClient:
         check_query = "SELECT id FROM memory WHERE content_hash = $content_hash LIMIT 1;"
         async with self.get_connection() as conn:
             check_response = await conn.query(check_query, {"content_hash": content_hash})
-            if check_response:
-                # Handle possible result wrappers (SurrealDB python client can return various formats)
-                items = check_response
-                if isinstance(check_response, list) and len(check_response) > 0:
+            
+            # Handle SurrealDB response format
+            items = []
+            if check_response and isinstance(check_response, list):
+                if len(check_response) > 0:
                     if isinstance(check_response[0], dict) and 'result' in check_response[0]:
                         items = check_response[0]['result']
+                    else:
+                        items = check_response
 
-                if items and isinstance(items, list) and len(items) > 0:
-                     existing_item = items[0]
-                     existing_id = existing_item.get('id')
-                     if existing_id:
-                         if isinstance(existing_id, str) and existing_id.startswith("memory:"):
-                             existing_id = existing_id.split(":")[1]
-                         logger.info(f"Duplicate memory detected. Returning existing ID: {existing_id}")
-                         return existing_id
+            if items and len(items) > 0:
+                 existing_item = items[0]
+                 existing_id = existing_item.get('id')
+                 if existing_id:
+                     existing_id = str(existing_id)
+                     if existing_id.startswith("memory:"):
+                         existing_id = existing_id.split(":")[1]
+                     logger.info(f"Duplicate memory detected (hash collision). Returning existing ID: {existing_id}")
+                     return existing_id
 
         query = """
         CREATE type::thing('memory', $id) CONTENT {
@@ -208,9 +212,9 @@ class SurrealDBClient:
             "category": memory.category,
             "summary": memory.summary,
             "metadata": memory.metadata,
-            "created_at": memory.created_at.isoformat(),
-            "updated_at": memory.updated_at.isoformat(),
-            "accessed_at": memory.accessed_at.isoformat(),
+            "created_at": memory.created_at,
+            "updated_at": memory.updated_at,
+            "accessed_at": memory.accessed_at,
             "access_count": memory.access_count,
             "llm_cost": memory.llm_cost,
             "verification_score": memory.verification_score,
@@ -675,8 +679,8 @@ class SurrealDBClient:
         from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
         
         # Handle ID: if it contains 'memory:', strip it for the entity ID
-        memory_id = data["id"]
-        if isinstance(memory_id, str) and memory_id.startswith("memory:"):
+        memory_id = str(data["id"])
+        if memory_id.startswith("memory:"):
             memory_id = memory_id.split(":", 1)[1]
         
         return Memory(

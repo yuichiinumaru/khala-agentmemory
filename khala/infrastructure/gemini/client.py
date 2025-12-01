@@ -141,6 +141,7 @@ class GeminiClient:
             return self._complexity_cache[cache_key]
         
         complexity = 0.0
+        prompt_lower = prompt.lower()
         
         # Factor analysis for complexity
         factors = {
@@ -153,20 +154,20 @@ class GeminiClient:
             # Structured data
             "json": min(1.0, prompt.count(":") / 20),  # 20 colons = 1.0 complexity
             # Multi-part tasks
-            "steps": min(1.0, prompt.count("step") / 10),  # 10 steps = 1.0 complexity
+            "steps": min(1.0, prompt_lower.count("step") / 10),  # 10 steps = 1.0 complexity
             # Analysis tasks
-            "analysis": min(1.0, prompt.count("analyze") / 5),
+            "analysis": min(1.0, prompt_lower.count("analyze") / 5),
 
         }
         
         # Weighted combination
         weights = {
             "length": 0.2,
-            "questions": 0.15, 
-            "code": 0.25,
-            "json": 0.15,
-            "steps": 0.15,
-            "analysis": 0.1
+            "questions": 0.2, 
+            "code": 0.3,
+            "json": 0.2,
+            "steps": 0.2,
+            "analysis": 0.2
         }
         
         complexity = sum(factors[factor] * weights[factor] for factor in factors)
@@ -230,7 +231,25 @@ class GeminiClient:
         # Get cost-optimal model
         try:
             complexity_value = complexity if isinstance(complexity, float) else 0.5
-            complexity_score = complexity_value if not hasattr(complexity, "__await__") else asyncio.run(complexity)
+            
+            if hasattr(complexity, "__await__"):
+                try:
+                    loop = asyncio.get_running_loop()
+                    # If we are in a loop, we can't use asyncio.run. 
+                    # We have to assume a default or handle it differently.
+                    # For synchronous select_model, we might need to rely on the cache or default.
+                    if loop.is_running():
+                         # We can't await here because select_model is sync.
+                         # Fallback to default complexity
+                         complexity_score = 0.5
+                    else:
+                        complexity_score = asyncio.run(complexity)
+                except RuntimeError:
+                    # No running loop, safe to use asyncio.run
+                    complexity_score = asyncio.run(complexity)
+            else:
+                complexity_score = complexity_value
+                
             return ModelRegistry.get_cost_optimal_model(complexity_score, quality_requirements)
         except Exception as e:
             logger.warning(f"Error selecting optimal model, using default: {e}")

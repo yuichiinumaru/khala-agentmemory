@@ -509,44 +509,32 @@ class JobProcessor:
         """Execute memory deduplication job."""
         start_time = time.time()
         
-        processed_count = 0
-
-        from khala.application.services.memory_lifecycle import MemoryLifecycleService
-        from khala.infrastructure.persistence.surrealdb_repository import SurrealDBMemoryRepository
-        
-        repo = SurrealDBMemoryRepository(self.db_client)
-        lifecycle_service = MemoryLifecycleService(repository=repo)
-        
-        user_id = job.payload.get("user_id")
-        users_to_process = [user_id] if user_id else []
-        
-        if not users_to_process and job.payload.get("scan_all"):
-             # Fetch all distinct user_ids
-             query = "SELECT user_id FROM memory GROUP BY user_id;"
-             async with self.db_client.get_connection() as conn:
-                response = await conn.query(query)
-                if response and isinstance(response, list) and isinstance(response[0], dict):
-                    items = response[0].get('result', response)
-                    users_to_process = [item['user_id'] for item in items if 'user_id' in item]
-
-        for uid in users_to_process:
-            try:
-                count = await lifecycle_service.deduplicate_memories(uid)
-                processed_count += count
-            except Exception as e:
-                logger.error(f"Deduplication failed for user {uid}: {e}")
-        
-        execution_time = (time.time() - start_time) * 1000
-        
-        return JobResult(
-            job_id=job.job_id,
-            success=True,
-            result={
-                "users_processed": len(users_to_process),
-                "duplicates_removed": processed_count
-            },
-            execution_time_ms=execution_time
-        )
+        try:
+            from .deduplication_job import DeduplicationJob
+            
+            dedup_job = DeduplicationJob(self.db_client)
+            result_data = await dedup_job.execute(job.payload)
+            
+            execution_time = (time.time() - start_time) * 1000
+            
+            return JobResult(
+                job_id=job.job_id,
+                success=True,
+                result=result_data,
+                execution_time_ms=execution_time,
+                worker_id=job.worker_id
+            )
+            
+        except Exception as e:
+            execution_time = (time.time() - start_time) * 1000
+            return JobResult(
+                job_id=job.job_id,
+                success=False,
+                result=None,
+                execution_time_ms=execution_time,
+                error=str(e),
+                worker_id=job.worker_id
+            )
 
     async def _execute_consistency_check(self, job: JobDefinition) -> JobResult:
         """Execute consistency check job."""

@@ -15,14 +15,17 @@ class TestMemoryLifecycleService(unittest.IsolatedAsyncioTestCase):
         self.repository.update = AsyncMock()
         self.repository.create = AsyncMock()
         self.repository.delete = AsyncMock()
+        self.repository.client = MagicMock()
 
         self.memory_service = MagicMock(spec=MemoryService)
         self.decay_service = MagicMock(spec=DecayService)
         self.deduplication_service = MagicMock(spec=DeduplicationService)
         self.consolidation_service = MagicMock(spec=ConsolidationService)
 
+        self.gemini_client = MagicMock()
         self.service = MemoryLifecycleService(
             repository=self.repository,
+            gemini_client=self.gemini_client,
             memory_service=self.memory_service,
             decay_service=self.decay_service,
             deduplication_service=self.deduplication_service,

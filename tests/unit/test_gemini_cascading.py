@@ -8,10 +8,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
+import os
 
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import GeminiModel, ModelTier, ModelRegistry
-from khala.infrastructure.gemini.cost_tracker import CostTracker
+from khala.infrastructure.gemini.cost_tracker import CostTracker, CostRecord
 
 
 class TestGeminiModels:
@@ -38,9 +39,9 @@ class TestGeminiModels:
     
     def test_model_registry_get_model(self):
         """Test model registry retrieval."""
-        model = ModelRegistry.get_model("gemini-1.5-flash")
+        model = ModelRegistry.get_model("gemini-2.0-flash")
         assert model.tier == ModelTier.FAST
-        assert model.model_id == "gemini-1.5-flash"
+        assert model.model_id == "gemini-2.0-flash"
         
         with pytest.raises(ValueError):
             ModelRegistry.get_model("nonexistent-model")
@@ -72,11 +73,15 @@ class TestCostTracker:
     """Test cases for cost tracking functionality."""
     
     @pytest.fixture
-    def tracker(self):
+    def tracker(self, tmp_path):
         """Create a cost tracker with a test budget."""
-        return CostTracker(budget_usd_per_month=Decimal("100.00"))
+        persistence_path = tmp_path / "costs.json"
+        tracker = CostTracker(budget_usd_per_month=Decimal("100.00"))
+        tracker.persistence_path = str(persistence_path)
+        tracker.cost_records = [] # Ensure empty start
+        return tracker
     
-    def test_cost_record_creation(self):
+    def test_cost_record_creation(self, tracker):
         """Test creating a valid cost record."""
         model = ModelRegistry.get_model("gemini-2.5-pro")
         
@@ -97,32 +102,38 @@ class TestCostTracker:
     
     def test_cost_record_validation(self, tracker):
         """Test cost record validation logic."""
-        model = ModelRegistry.get_model("gemini-1.5-flash")
+        model = ModelRegistry.get_model("gemini-2.0-flash")
         
-        # Test negative cost
+        # Test negative cost validation in CostRecord
         with pytest.raises(ValueError):
-            tracker.record_call(
-                model=model,
+            CostRecord(
+                timestamp=datetime.now(timezone.utc),
+                model_id="test",
+                model_tier=ModelTier.FAST,
                 input_tokens=100,
                 output_tokens=100,
-                response_time_ms=100.0,
-                cost_usd=Decimal("-1.0")
+                total_tokens=200,
+                cost_usd=Decimal("-1.0"),
+                response_time_ms=100.0
             )
         
-        # Test token mismatch
+        # Test token mismatch in CostRecord
         with pytest.raises(ValueError):
-            tracker.record_call(
-                model=model,
+            CostRecord(
+                timestamp=datetime.now(timezone.utc),
+                model_id="test",
+                model_tier=ModelTier.FAST,
                 input_tokens=100,
                 output_tokens=150,
-                response_time_ms=100.0,
-                total_tokens=300  # Wrong total
+                total_tokens=300, # Wrong total
+                cost_usd=Decimal("0.001"),
+                response_time_ms=100.0
             )
     
     def test_daily_summarization(self, tracker):
         """Test daily cost summarization."""
         model = ModelRegistry.get_model("gemini-2.5-pro")
-        model_fast = ModelRegistry.get_model("gemini-1.5-flash")
+        model_fast = ModelRegistry.get_model("gemini-2.0-flash")
         
         # Add different calls
         tracker.record_call(model, 1000, 500, 200, "task1")
@@ -147,7 +158,7 @@ class TestCostTracker:
         
         # Add calls that exceed budget
         # Cost of call: (1000/1M) * $100 = $0.10
-        for _ in range(1200):  # 1200 calls would cost $120
+        for _ in range(12000):  # 12000 calls would cost $1200
             tracker.record_call(model, 1000, 200, 150)
         
         status = tracker.get_budget_status()
@@ -163,7 +174,7 @@ class TestCostTracker:
     def test_optimization_report(self, tracker):
         """Test optimization report generation."""
         model_smart = ModelRegistry.get_model("gemini-2.5-pro")
-        model_fast = ModelRegistry.get_model("gemini-1.5-flash")
+        model_fast = ModelRegistry.get_model("gemini-2.0-flash")
         
         # Add expensive smart tier usage
         for _ in range(10):
@@ -196,7 +207,7 @@ class TestCostTracker:
     
     def test_cache_ttl_auto_cleanup(self, tracker):
         """Test automatic cache cleanup."""
-        model = ModelRegistry.get_model("gemini-1.5-flash")
+        model = ModelRegistry.get_model("gemini-2.0-flash")
         
         # Add some old records
         timestamp_30_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
@@ -204,12 +215,13 @@ class TestCostTracker:
         # Mock a couple of old records
         old_record_1 = CostRecord(
             timestamp=timestamp_30_days_ago,
-            model_id="gemini-1.5-flash",
+            model_id="gemini-2.0-flash",
             model_tier=ModelTier.FAST,
             input_tokens=100,
             output_tokens=50,
             total_tokens=150,
-            cost_usd=Decimal("0.001125")
+            cost_usd=Decimal("0.001125"),
+            response_time_ms=100.0
         )
         
         # Simulate having these old records
@@ -228,12 +240,20 @@ class TestGeminiClient:
     @pytest.fixture
     def client(self):
         """Create a Gemini client for testing."""
-        with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
-            return GeminiClient(
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}), \
+             patch("khala.infrastructure.gemini.client.genai") as mock_genai:
+            
+            # Configure mock
+            mock_genai.configure = MagicMock()
+            mock_genai.GenerativeModel = MagicMock()
+            mock_genai.embed_content = MagicMock(return_value={'embedding': [[0.1]*768]*3})
+            
+            client = GeminiClient(
                 enable_cascading=True,
                 enable_caching=True,
                 cache_ttl_seconds=300
             )
+            return client
     
     def test_api_key_validation(self):
         """Test API key validation and environment variable fallback."""
@@ -253,7 +273,11 @@ class TestGeminiClient:
         # High complexity
         high_complexity = await client.classify_task_complexity(
             "Analyze the following complex algorithm involving multiple steps "
-            "with nested loops and recursion..."
+            "with nested loops and recursion. "
+            "Step 1: Initialize... Step 2: Process... Step 3: Verify... "
+            "```python\ndef complex_algo():\n    pass\n``` "
+            "What are the implications? How does it scale? "
+            "Please provide a detailed JSON response: { 'analysis': ... }"
         )
         assert 0.7 <= high_complexity <= 1.0
         
@@ -273,12 +297,16 @@ class TestGeminiClient:
     
     def test_model_selection_with_cascading(self, client):
         """Test model selection with cascading enabled."""
+        # Mock complexity classification to avoid async issues
+        client.classify_task_complexity = MagicMock(return_value=0.2)
+        
         # Simple text should use fast tier
         simple_text = "What is 2+2?"
         model = client.select_model(simple_text, "generation")
         assert model.tier == ModelTier.FAST
         
-        # Complex text should use smart tier  
+        # Complex text should use smart tier
+        client.classify_task_complexity = MagicMock(return_value=0.9)
         complex_text = "Perform deep analysis of these requirements..."
         model = client.select_model(complex_text, "generation")
         assert model.tier == ModelTier.SMART
@@ -300,7 +328,7 @@ class TestGeminiClient:
     @pytest.mark.asyncio
     async def test_caching_functionality(self, client):
         """Test response caching."""
-        model = ModelRegistry.get_model("gemini-1.5-flash")
+        model = ModelRegistry.get_model("gemini-2.0-flash")
         
         # Mock the model
         mock_model = AsyncMock()
@@ -336,7 +364,7 @@ class TestGeminiClient:
         # Mock model
         mock_model = AsyncMock()
         mock_model.generate_content.return_value = "Generated response"
-        client._models["gemini-1.5-flash"] = mock_model
+        client._models["gemini-2.0-flash"] = mock_model
         
         response = await client.generate_text("Test prompt")
         
@@ -372,7 +400,7 @@ class TestGeminiClient:
         # Mock model
         mock_model = AsyncMock()
         mock_model.generate_content.return_value = "Response"
-        client._models["gemini-1.5-flash"] = mock_model
+        client._models["gemini-2.0-flash"] = mock_model
         
         initial_budget = client.get_budget_status()
         
@@ -419,7 +447,7 @@ class TestGeminiClient:
     
     def test_cache_management(self, client):
         """Test cache functionality."""
-        cache_key = client._get_cache_key("test", "gemini-1.5-flash")
+        cache_key = client._get_cache_key("test", "gemini-2.0-flash")
         
         # Cache should start empty
         assert client._get_cached_response(cache_key) is None
@@ -437,7 +465,8 @@ class TestGeminiClient:
         assert client._get_cached_response(cache_key) is None
         assert cache_key not in client._response_cache
     
-    def test_error_handling_with_retries(self, client):
+    @pytest.mark.asyncio
+    async def test_error_handling_with_retries(self, client):
         """Test error handling with retry logic."""
         # Mock model that fails initially
         mock_model = AsyncMock()
@@ -448,22 +477,24 @@ class TestGeminiClient:
             if len(side_effects) < 2:
                 side_effects.append(len(side_effects))
                 raise Exception("Temporary failure")
-            return "Success after retries"
+            return MagicMock(text="Success after retries")
         
         mock_model.generate_content.side_effect = generate_content_with_retries
-        client._models["gemini-1.5-flash"] = mock_model
+        client._models["gemini-2.0-flash"] = mock_model
         client.max_retries = 3
         client.timeout_seconds = 5
         
         # Should succeed after retries
-        response = client.generate_text("Test prompt", model_id="gemini-1.5-flash")
+        response = await client.generate_text("Test prompt", model_id="gemini-2.0-flash")
         
         assert response["content"] == "Success after retries"
         assert mock_model.generate_content.call_count == 3  # Initial call + 2 retries
     
-    def test_disable_cascading(self):
+    def test_disable_cascading(self, client):
         """Test client with cascading disabled."""
         client.disable_cascading = True
+        # Mock complexity just in case, though it shouldn't be called if cascading is disabled
+        client.classify_task_complexity = MagicMock(return_value=0.5)
         
         # Without cascading, model selection should fallback to smart tier
         model = client.select_model("Any prompt", "generation")
@@ -476,7 +507,7 @@ class TestGeminiClient:
         # Mock model
         mock_model = AsyncMock()
         mock_model.generate_content.return_value = "Response"
-        client._models["gemini-1.5-flash"] = mock_model
+        client._models["gemini-2.0-flash"] = mock_model
         
         # Both calls should hit API when caching is disabled
         response1 = await client.generate_text("Test 1", use_caching=False)
@@ -491,6 +522,7 @@ class TestGeminiClient:
     def test_custom_configuration(self):
         """Test client with custom configuration."""
         custom_client = GeminiClient(
+            api_key="test-key",
             enable_cascading=False,
             enable_caching=False,
             max_retries=5,

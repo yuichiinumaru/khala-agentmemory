@@ -28,15 +28,15 @@ class DatabaseSchema:
         DEFINE FIELD user_id ON memory TYPE string;
         DEFINE FIELD content ON memory TYPE string;
         DEFINE FIELD content_hash ON memory TYPE string;
-        DEFINE FIELD embedding ON memory TYPE array<float> FLEXIBLE;
+        DEFINE FIELD embedding ON memory TYPE option<array<float>>;
         -- Strategy 78: Multi-Vector
-        DEFINE FIELD embedding_visual ON memory TYPE array<float> FLEXIBLE;
-        DEFINE FIELD embedding_code ON memory TYPE array<float> FLEXIBLE;
-        DEFINE FIELD tier ON memory TYPE enum<working,short_term,long_term>;
+        DEFINE FIELD embedding_visual ON memory TYPE option<array<float>>;
+        DEFINE FIELD embedding_code ON memory TYPE option<array<float>>;
+        DEFINE FIELD tier ON memory TYPE string ASSERT $value INSIDE ['working', 'short_term', 'long_term'];
         DEFINE FIELD importance ON memory TYPE float;
         DEFINE FIELD tags ON memory TYPE array<string>;
-        DEFINE FIELD category ON memory TYPE string;
-        DEFINE FIELD summary ON memory TYPE string;
+        DEFINE FIELD category ON memory TYPE option<string>;
+        DEFINE FIELD summary ON memory TYPE option<string>;
         DEFINE FIELD metadata ON memory TYPE object FLEXIBLE;
         
         -- Timestamps
@@ -49,7 +49,7 @@ class DatabaseSchema:
         DEFINE FIELD llm_cost ON memory TYPE float DEFAULT 0.0;
         DEFINE FIELD verification_score ON memory TYPE float;
         DEFINE FIELD verification_issues ON memory TYPE array<string>;
-        DEFINE FIELD debate_consensus ON memory TYPE object FLEXIBLE;
+        DEFINE FIELD debate_consensus ON memory TYPE option<object>;
         DEFINE FIELD is_archived ON memory TYPE bool DEFAULT false;
         DEFINE FIELD decay_score ON memory VALUE fn::decay_score(math::max(0.0, (time::now() - created_at) / 1000 / 60 / 60 / 24), importance);
         
@@ -77,29 +77,19 @@ class DatabaseSchema:
         DEFINE INDEX content_hash_index ON memory FIELDS content_hash;
 
         -- Search indexes
-        DEFINE INDEX vector_search ON memory FIELDS embedding HNSW 
-          PARAMETERS {
-            M: 16,
-            ef_construction: 200,
-            ef_runtime: 50,
-            dimensions: 768,
-            distance_metric: "cosine"
-          };
+        DEFINE INDEX vector_search ON memory FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
         
-        DEFINE INDEX bm25_search ON memory FIELDS content FULLTEXT;
+        DEFINE INDEX bm25_search ON memory FIELDS content SEARCH ANALYZER ascii BM25;
         
         -- Performance indexes
         DEFINE INDEX tier_index ON memory FIELDS tier;
-        DEFINE INDEX importance_index ON memory FIELDS importance DESC;
-        DEFINE INDEX created_index ON memory FIELDS created_at DESC;
-        DEFINE INDEX accessed_index ON memory FIELDS accessed_at DESC;
+        DEFINE INDEX importance_index ON memory FIELDS importance;
+        DEFINE INDEX created_index ON memory FIELDS created_at;
+        DEFINE INDEX accessed_index ON memory FIELDS accessed_at;
         
-        -- Hot path composite
-        DEFINE INDEX hot_path ON memory 
-          FIELDS user_id, importance DESC, EXPRESSION (now() - accessed_at);
         
         -- Tag prefix search
-        DEFINE INDEX tag_search ON memory FIELDS tags FULLTEXT;
+        DEFINE INDEX tag_search ON memory FIELDS tags SEARCH ANALYZER ascii BM25;
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
@@ -129,8 +119,7 @@ class DatabaseSchema:
         DEFINE FIELD task_context ON kg_embeddings TYPE string;
         DEFINE FIELD representation_timestamp ON kg_embeddings TYPE datetime;
 
-        DEFINE INDEX kge_vector_index ON kg_embeddings FIELDS embedding HNSW
-          PARAMETERS { M: 16, ef_construction: 200, ef_runtime: 50, dimensions: 768, distance_metric: "cosine" };
+        DEFINE INDEX kge_vector_index ON kg_embeddings FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
         """,
 
         # LatentMAS & FULORA Tables (Module 13.3)
@@ -180,7 +169,7 @@ class DatabaseSchema:
         -- Indexes
         DEFINE INDEX episode_user_index ON episode FIELDS user_id;
         DEFINE INDEX episode_status_index ON episode FIELDS status;
-        DEFINE INDEX episode_time_index ON episode FIELDS started_at DESC;
+        DEFINE INDEX episode_time_index ON episode FIELDS started_at;
         """,
 
         # Entity table
@@ -198,15 +187,8 @@ class DatabaseSchema:
         -- Indexes
         DEFINE INDEX entity_text_index ON entity FIELDS text;
         DEFINE INDEX entity_type_index ON entity FIELDS entity_type;
-        DEFINE INDEX entity_confidence_index ON entity FIELDS confidence DESC;
-        DEFINE INDEX entity_vector_index ON entity FIELDS embedding HNSW 
-          PARAMETERS {
-            M: 16,
-            ef_construction: 200,
-            ef_runtime: 50,
-            dimensions: 768,
-            distance_metric: "cosine"
-          };
+        DEFINE INDEX entity_confidence_index ON entity FIELDS confidence;
+        DEFINE INDEX entity_vector_index ON entity FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
         """,
         
         # Relationship table (graph edge)
@@ -227,7 +209,7 @@ class DatabaseSchema:
         DEFINE INDEX rel_from_index ON relationship FIELDS from_entity_id;
         DEFINE INDEX rel_to_index ON relationship FIELDS to_entity_id;
         DEFINE INDEX rel_type_index ON relationship FIELDS relation_type;
-        DEFINE INDEX rel_strength_index ON relationship FIELDS strength DESC;
+        DEFINE INDEX rel_strength_index ON relationship FIELDS strength;
         """,
         
         # Audit log table
@@ -246,7 +228,7 @@ class DatabaseSchema:
         DEFINE FIELD after_state ON audit_log TYPE object FLEXIBLE;
         
         -- Indexes
-        DEFINE INDEX audit_time_index ON audit_log FIELDS timestamp DESC;
+        DEFINE INDEX audit_time_index ON audit_log FIELDS timestamp;
         DEFINE INDEX audit_user_index ON audit_log FIELDS user_id;
         DEFINE INDEX audit_memory_index ON audit_log FIELDS memory_id;
         """,
@@ -266,7 +248,7 @@ class DatabaseSchema:
 
         -- Indexes
         DEFINE INDEX session_user_index ON search_session FIELDS user_id;
-        DEFINE INDEX session_time_index ON search_session FIELDS timestamp DESC;
+        DEFINE INDEX session_time_index ON search_session FIELDS timestamp;
         """,
 
         # Skill table
@@ -294,8 +276,8 @@ class DatabaseSchema:
         # Custom functions
         "functions": """
         -- Decay score calculation function
-        DEFINE FUNCTION fn::decay_score(age_days float, original_importance float, half_life_days float DEFAULT 30.0) {
-            RETURN original_importance * math::exp(-age_days / half_life_days);
+        DEFINE FUNCTION fn::decay_score($age_days: float, $original_importance: float, $half_life_days: float) {
+            RETURN $original_importance * math::exp(-$age_days / $half_life_days);
         };
 
         -- Recursive graph traversal function (Module 11)
@@ -307,10 +289,10 @@ class DatabaseSchema:
         };
         
         -- Memory promotion check function
-        DEFINE FUNCTION fn::should_promote(tier string, age_hours float, access_count int, importance float) {
-            IF tier = 'working' AND age_hours > 0.5 AND access_count > 5 AND importance > 0.8 {
+        DEFINE FUNCTION fn::should_promote($tier: string, $age_hours: float, $access_count: int, $importance: float) {
+            IF $tier = 'working' AND $age_hours > 0.5 AND $access_count > 5 AND $importance > 0.8 {
                 RETURN true;
-            } ELSIF tier = 'short_term' AND (age_hours > 360 OR importance > 0.9) {
+            } ELSIF $tier = 'short_term' AND ($age_hours > 360 OR $importance > 0.9) {
                 RETURN true;
             } ELSE {
                 RETURN false;
@@ -318,8 +300,8 @@ class DatabaseSchema:
         };
         
         -- Memory archival check function
-        DEFINE FUNCTION fn::should_archive(age_hours float, access_count int, importance float) {
-            IF age_hours > 2160 AND access_count = 0 AND importance < 0.3 {
+        DEFINE FUNCTION fn::should_archive($age_hours: float, $access_count: int, $importance: float) {
+            IF $age_hours > 2160 AND $access_count = 0 AND $importance < 0.3 {
                 RETURN true;
             } ELSE {
                 RETURN false;
@@ -377,6 +359,7 @@ class DatabaseSchema:
         creation_order = [
             "namespace",
             "database", 
+            "functions",
             "memory_table",
             "memory_indexes",
             "episode_table",
@@ -388,7 +371,6 @@ class DatabaseSchema:
             "lgkgr_tables",
             "latent_mas_tables",
             # MarsRL table
-            "functions",
             "rbac_permissions",
         ]
         
