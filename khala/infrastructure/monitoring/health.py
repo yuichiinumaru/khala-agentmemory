@@ -21,6 +21,7 @@ class HealthMonitor:
         gemini_client: GeminiClient,
         job_processor: Optional[JobProcessor] = None
     ):
+    def __init__(self, db_client: SurrealDBClient, gemini_client: GeminiClient, job_processor: Optional[JobProcessor] = None):
         self.db_client = db_client
         self.gemini_client = gemini_client
         self.job_processor = job_processor
@@ -47,7 +48,11 @@ class HealthMonitor:
         try:
             # Check if models are initialized
             if self.gemini_client._models:
-                status["components"]["llm"] = {"status": "up", "models": list(self.gemini_client._models.keys())}
+                status["components"]["llm"] = {
+                    "status": "up",
+                    "models": list(self.gemini_client._models.keys()),
+                    "cache": self.gemini_client.get_cache_stats()
+                }
             else:
                 status["components"]["llm"] = {"status": "unknown", "details": "No models initialized"}
         except Exception as e:
@@ -69,5 +74,17 @@ class HealthMonitor:
                     status["components"]["queue"] = {"status": "ok", "pending": pending, "running": running}
             except Exception as e:
                 status["components"]["queue"] = {"status": "unknown", "error": str(e)}
+            
+        # Check Job Queue
+        if self.job_processor:
+            try:
+                queue_stats = await self.job_processor.get_queue_stats()
+                status["components"]["queue"] = {
+                    "status": "up",
+                    "stats": queue_stats
+                }
+            except Exception as e:
+                status["components"]["queue"] = {"status": "down", "error": str(e)}
+                status["status"] = "degraded"
 
         return status
