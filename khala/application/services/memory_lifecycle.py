@@ -16,6 +16,7 @@ from khala.domain.memory.services import (
     DeduplicationService,
     ConsolidationService
 )
+from khala.application.services.surprise_service import SurpriseService
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
@@ -32,7 +33,8 @@ class MemoryLifecycleService:
         memory_service: Optional[MemoryService] = None,
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
-        consolidation_service: Optional[ConsolidationService] = None
+        consolidation_service: Optional[ConsolidationService] = None,
+        surprise_service: Optional[SurpriseService] = None
     ):
         self.repository = repository
         self.gemini_client = gemini_client or GeminiClient()
@@ -40,6 +42,7 @@ class MemoryLifecycleService:
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
+        self.surprise_service = surprise_service or SurpriseService(self.gemini_client)
 
     async def ingest_memory(self, memory: Memory) -> str:
         """Ingest a new memory, performing auto-summarization if needed."""
@@ -57,6 +60,25 @@ class MemoryLifecycleService:
                 memory.summary = response.get("content", "").strip()
             except Exception as e:
                 logger.warning(f"Failed to auto-summarize memory: {e}")
+
+        # Strategy 133: Surprise-Based Learning
+        # Only calculate if we have an embedding to find context
+        if memory.embedding:
+            try:
+                # Fetch context (top 5 similar memories)
+                # Note: Assuming repository returns List[Memory] as per interface
+                context_results = await self.repository.search_by_vector(
+                    embedding=memory.embedding,
+                    user_id=memory.user_id,
+                    top_k=5,
+                    min_similarity=0.6
+                )
+
+                score, reason = await self.surprise_service.calculate_surprise(memory, context_results)
+                self.surprise_service.apply_surprise_boost(memory, score, reason)
+
+            except Exception as e:
+                logger.warning(f"Failed to calculate surprise score: {e}")
 
         return await self.repository.create(memory)
 
