@@ -147,6 +147,53 @@ class GraphService:
 
         return direct_rels + inherited_rels
 
+    async def get_graph_snapshot(
+        self,
+        timestamp: datetime,
+        entity_id: Optional[str] = None
+    ) -> List[Relationship]:
+        """
+        Get a snapshot of the graph (or a specific entity's relationships) at a specific point in time.
+
+        Task 41: Bi-temporal Graph Edges (Time Travel).
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+            logger.error("Repository does not have client access")
+            return []
+
+        if entity_id:
+             # Get relationships for specific entity at time T
+             data = await client.get_relationships_at_time(entity_id, timestamp)
+             return [self._deserialize_relationship(item) for item in data]
+        else:
+             # TODO: Full graph snapshot query if needed
+             # For now, we only support entity-centric snapshots
+             return []
+
+    async def correct_relationship_history(
+        self,
+        relationship_id: str,
+        valid_from: Optional[datetime] = None,
+        valid_to: Optional[datetime] = None
+    ) -> None:
+        """
+        Correct the history of a relationship (Bi-temporal correction).
+
+        This updates the VALID time, which is different from TRANSACTION time.
+        Transaction time is when we made the change (now), Valid time is when the fact is true in the world.
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+             logger.error("Repository does not have client access")
+             return
+
+        await client.update_relationship_validity(
+            relationship_id,
+            valid_from=valid_from,
+            valid_to=valid_to
+        )
+
     async def get_entity_descendants(
         self,
         entity_id: str,
