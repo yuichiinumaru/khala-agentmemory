@@ -34,8 +34,10 @@ class HybridSearchService:
         rrf_k: int = 60,
         vector_weight: float = 1.0,
         bm25_weight: float = 1.0,
+        geo_weight: float = 1.0,
         expand_query: bool = False,
-        enable_graph_reranking: bool = False
+        enable_graph_reranking: bool = False,
+        geospatial: Optional[Dict[str, float]] = None
     ) -> List[Memory]:
         """
         Perform hybrid search using Reciprocal Rank Fusion (RRF).
@@ -48,7 +50,9 @@ class HybridSearchService:
             rrf_k: Constant for RRF formula (default 60).
             vector_weight: Weight for vector search results (default 1.0).
             bm25_weight: Weight for BM25 search results (default 1.0).
+            geo_weight: Weight for Geospatial search results (default 1.0).
             enable_graph_reranking: Whether to apply graph distance reranking (Strategy 121).
+            geospatial: Optional dict with 'lat', 'lon', 'radius_km'.
 
         Returns:
             List of unique Memory objects sorted by RRF score.
@@ -64,6 +68,7 @@ class HybridSearchService:
 
         all_vector_results: List[Memory] = []
         all_bm25_results: List[Memory] = []
+        all_geo_results: List[Memory] = []
 
         async def _fetch_vector(q_text: str) -> List[Memory]:
             try:
@@ -91,19 +96,48 @@ class HybridSearchService:
                 logger.error(f"BM25 search failed for query '{q_text}': {e}")
                 return []
 
-        # Gather all tasks: 2 tasks per query (Vector + BM25)
+        async def _fetch_geo() -> List[Memory]:
+            if not geospatial:
+                return []
+            try:
+                radius = geospatial.get("radius_km", 50.0)
+                lat = geospatial.get("lat")
+                lon = geospatial.get("lon")
+                if lat is None or lon is None:
+                    return []
+
+                results_with_dist = await self.memory_repo.search_by_location(
+                    location={"lat": lat, "lon": lon},
+                    radius_km=radius,
+                    user_id=user_id,
+                    top_k=candidate_k,
+                    filters=filters
+                )
+                return [m for m, d in results_with_dist]
+            except Exception as e:
+                logger.error(f"Geospatial search failed: {e}")
+                return []
+
+        # Gather all tasks: 2 tasks per query (Vector + BM25) + 1 Geo task
         tasks = []
         for q in expanded_queries:
             tasks.append(_fetch_vector(q))
             tasks.append(_fetch_bm25(q))
 
+        # Geo search is query independent (for now)
+        tasks.append(_fetch_geo())
+
         results = await asyncio.gather(*tasks)
 
         # Separate results back into vector and bm25 lists
-        # Order is [V1, B1, V2, B2, ...]
-        for i in range(0, len(results), 2):
+        # Order is [V1, B1, V2, B2, ..., Geo]
+        geo_results_idx = len(expanded_queries) * 2
+
+        for i in range(0, geo_results_idx, 2):
             all_vector_results.extend(results[i])
             all_bm25_results.extend(results[i+1])
+
+        all_geo_results = results[geo_results_idx]
 
         if not all_vector_results and not all_bm25_results:
             return []
@@ -139,6 +173,19 @@ class HybridSearchService:
             memories[memory.id] = memory
             scores[memory.id] = scores.get(memory.id, 0.0) + \
                 (bm25_weight * (1.0 / (rrf_k + rank + 1)))
+
+        # Process Geo Results
+        seen_geo_ids = set()
+        unique_geo_results = []
+        for m in all_geo_results:
+             if m.id not in seen_geo_ids:
+                 seen_geo_ids.add(m.id)
+                 unique_geo_results.append(m)
+
+        for rank, memory in enumerate(unique_geo_results):
+            memories[memory.id] = memory
+            scores[memory.id] = scores.get(memory.id, 0.0) + \
+                (geo_weight * (1.0 / (rrf_k + rank + 1)))
 
         # 3. Sort by Score
         sorted_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
