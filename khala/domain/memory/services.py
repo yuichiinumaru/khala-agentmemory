@@ -56,9 +56,29 @@ class MemoryService:
         
         return max(tier_counts.values(), default=0) > 100
 
+    def adapt_vector_dimensions(self, memory: Memory) -> None:
+        """Adapt vector dimensions based on importance (Strategy 82).
+
+        If memory importance is low (< 0.3) and it has a full embedding,
+        create a smaller, truncated embedding to save space/compute in
+        secondary indexes.
+        """
+        if memory.importance.value < 0.3 and memory.embedding:
+            # Create truncated embedding (first 256 dimensions)
+            # Matryoshka Representation Learning allows slicing
+            full_vector = memory.embedding.values
+            if len(full_vector) > 256:
+                memory.embedding_small = EmbeddingVector(
+                    values=full_vector[:256],
+                    dimensions=256
+                )
+
 
 class DecayService:
     """Domain service for memory decay operations."""
+
+    def __init__(self, memory_service: Optional[MemoryService] = None):
+        self.memory_service = memory_service or MemoryService()
 
     def update_decay_score(self, memory: Memory) -> None:
         """Update the decay score for a single memory.
@@ -69,6 +89,10 @@ class DecayService:
             return
 
         memory.calculate_decay_score()
+
+        # Check if we should adapt vector dimensions
+        # Strategy 82: Adaptive Vector Dimensions
+        self.memory_service.adapt_vector_dimensions(memory)
 
     def should_archive_based_on_decay(self, memory: Memory, threshold: float = 0.1) -> bool:
         """Check if memory should be archived based on decay score."""

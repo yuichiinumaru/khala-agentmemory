@@ -37,6 +37,10 @@ class DatabaseSchema:
         -- Strategy 78: Multi-Vector
         DEFINE FIELD embedding_visual ON memory TYPE option<array<float>>;
         DEFINE FIELD embedding_code ON memory TYPE option<array<float>>;
+        -- Strategy 82: Adaptive Vector Dimensions
+        DEFINE FIELD embedding_small ON memory TYPE option<array<float>>;
+        -- Strategy 81: Vector Clustering
+        DEFINE FIELD cluster_id ON memory TYPE option<string>;
         DEFINE FIELD tier ON memory TYPE string ASSERT $value INSIDE ['working', 'short_term', 'long_term'];
         DEFINE FIELD importance ON memory TYPE float;
         DEFINE FIELD tags ON memory TYPE array<string>;
@@ -83,6 +87,7 @@ class DatabaseSchema:
 
         -- Search indexes
         DEFINE INDEX vector_search ON memory FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
+        DEFINE INDEX vector_small_search ON memory FIELDS embedding_small HNSW DIMENSION 256 DIST COSINE M 16;
         
         DEFINE INDEX bm25_search ON memory FIELDS content SEARCH ANALYZER ascii BM25;
         
@@ -98,6 +103,22 @@ class DatabaseSchema:
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
+        DEFINE INDEX cluster_index ON memory FIELDS cluster_id;
+        """,
+
+        # Vector Centroids (Strategy 81)
+        "vector_centroid_table": """
+        DEFINE TABLE vector_centroid SCHEMAFULL;
+        DEFINE FIELD cluster_id ON vector_centroid TYPE string;
+        DEFINE FIELD embedding ON vector_centroid TYPE array<float>;
+        DEFINE FIELD member_count ON vector_centroid TYPE int DEFAULT 0;
+        DEFINE FIELD radius ON vector_centroid TYPE float DEFAULT 0.0;
+        DEFINE FIELD metadata ON vector_centroid TYPE object FLEXIBLE;
+        DEFINE FIELD created_at ON vector_centroid TYPE datetime;
+        DEFINE FIELD updated_at ON vector_centroid TYPE datetime;
+
+        DEFINE INDEX centroid_vector_index ON vector_centroid FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
+        DEFINE INDEX centroid_id_index ON vector_centroid FIELDS cluster_id;
         """,
         
         # LGKGR Tables (Module 13.2.1)
@@ -370,6 +391,7 @@ class DatabaseSchema:
             "functions",
             "memory_table",
             "memory_indexes",
+            "vector_centroid_table",
             "episode_table",
             "entity_table",
             "relationship_table",
@@ -403,6 +425,7 @@ class DatabaseSchema:
             "REMOVE TABLE audit_log",
             "REMOVE TABLE search_session",
             "REMOVE TABLE skill",
+            "REMOVE TABLE vector_centroid",
             "REMOVE FUNCTION fn::decay_score",
             "REMOVE FUNCTION fn::should_promote",
             "REMOVE FUNCTION fn::should_archive",
@@ -428,6 +451,7 @@ class DatabaseSchema:
             ("audit_log", "SELECT count() FROM audit_log;"),
             ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
+            ("vector_centroid", "SELECT count() FROM vector_centroid;"),
         ]
         
         for table_name, query in table_checks:

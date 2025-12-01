@@ -36,6 +36,12 @@ class Memory:
     # Strategy 78: Multi-Vector
     embedding_visual: Optional[EmbeddingVector] = field(default=None)
     embedding_code: Optional[EmbeddingVector] = field(default=None)
+
+    # Strategy 82: Adaptive Vector Dimensions
+    embedding_small: Optional[EmbeddingVector] = field(default=None)
+    # Strategy 81: Vector Clustering
+    cluster_id: Optional[str] = field(default=None)
+
     tags: List[str] = field(default_factory=list)
     category: Optional[str] = field(default=None)
     summary: Optional[str] = field(default=None)
