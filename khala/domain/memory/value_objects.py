@@ -184,3 +184,11 @@ class Sentiment:
         if not self.label.strip():
             raise ValueError("Sentiment label cannot be empty")
 
+
+class AbstractionLevel(Enum):
+    """Abstraction levels for hierarchical graph (Strategy 69)."""
+
+    OBSERVATION = "observation"  # Raw facts, sensor data
+    PATTERN = "pattern"          # Identified trends, repeated occurrences
+    PRINCIPLE = "principle"      # General rules, laws, axioms
+    META = "meta"                # Information about the system itself

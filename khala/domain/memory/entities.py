@@ -16,7 +16,8 @@ from .value_objects import (
     DecayScore, 
     MemoryTier,
     MemorySource,
-    Sentiment
+    Sentiment,
+    AbstractionLevel
 )
 
 
@@ -70,6 +71,7 @@ class Memory:
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)
     location: Optional[Dict[str, Any]] = field(default=None)
+    abstraction_level: AbstractionLevel = field(default=AbstractionLevel.OBSERVATION)
 
     @property
     def importance_score(self) -> ImportanceScore:
@@ -236,6 +238,7 @@ class Entity:
     metadata: Dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    abstraction_level: AbstractionLevel = field(default=AbstractionLevel.OBSERVATION)
     
     def __post_init__(self) -> None:
         """Validate entity after creation."""
@@ -288,3 +291,22 @@ class Relationship:
     def expire(self) -> None:
         """Mark relationship as expired."""
         self.valid_to = datetime.now(timezone.utc)
+
+
+@dataclass
+class Hyperedge:
+    """Hyperedge representing an N-way relationship (Strategy 66)."""
+
+    participants: List[str]  # List of entity/memory IDs
+    relation_type: str
+    properties: Dict[str, Any] = field(default_factory=dict)
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self) -> None:
+        """Validate hyperedge."""
+        if not self.participants:
+            raise ValueError("Hyperedge must have participants")
+        if not self.relation_type.strip():
+            raise ValueError("Relation type cannot be empty")

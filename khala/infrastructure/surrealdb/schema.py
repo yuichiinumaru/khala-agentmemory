@@ -71,6 +71,8 @@ class DatabaseSchema:
         DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD location ON memory TYPE option<object> FLEXIBLE;
         DEFINE FIELD freshness ON memory VALUE time::now() - updated_at;
+        -- Strategy 69: Hierarchical Graph
+        DEFINE FIELD abstraction_level ON memory TYPE string ASSERT $value INSIDE ['observation', 'pattern', 'principle', 'meta'] DEFAULT 'observation';
         """,
         
         # Memory indexes
@@ -95,6 +97,7 @@ class DatabaseSchema:
         
         -- Tag prefix search
         DEFINE INDEX tag_search ON memory FIELDS tags SEARCH ANALYZER ascii BM25;
+        DEFINE INDEX abstraction_index ON memory FIELDS abstraction_level;
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
@@ -188,8 +191,11 @@ class DatabaseSchema:
         DEFINE FIELD embedding ON entity TYPE option<array<float>> FLEXIBLE;
         DEFINE FIELD metadata ON entity TYPE object FLEXIBLE;
         DEFINE FIELD created_at ON entity TYPE datetime;
+        -- Strategy 69: Hierarchical Graph
+        DEFINE FIELD abstraction_level ON entity TYPE string ASSERT $value INSIDE ['observation', 'pattern', 'principle', 'meta'] DEFAULT 'observation';
         
         -- Indexes
+        DEFINE INDEX entity_abstraction_index ON entity FIELDS abstraction_level;
         DEFINE INDEX entity_text_index ON entity FIELDS text;
         DEFINE INDEX entity_type_index ON entity FIELDS entity_type;
         DEFINE INDEX entity_confidence_index ON entity FIELDS confidence;
@@ -219,6 +225,22 @@ class DatabaseSchema:
         DEFINE INDEX rel_strength_index ON relationship FIELDS strength;
         """,
         
+        # Hyperedge table (Strategy 66)
+        "hyperedge_table": """
+        DEFINE TABLE hyperedge SCHEMAFULL;
+
+        DEFINE FIELD id ON hyperedge TYPE string;
+        DEFINE FIELD participants ON hyperedge TYPE array<record>;
+        DEFINE FIELD relation_type ON hyperedge TYPE string;
+        DEFINE FIELD properties ON hyperedge TYPE object FLEXIBLE;
+        DEFINE FIELD created_at ON hyperedge TYPE datetime DEFAULT time::now();
+        DEFINE FIELD updated_at ON hyperedge TYPE datetime DEFAULT time::now();
+
+        -- Indexes
+        DEFINE INDEX hyperedge_participants_index ON hyperedge FIELDS participants;
+        DEFINE INDEX hyperedge_type_index ON hyperedge FIELDS relation_type;
+        """,
+
         # Audit log table
         "audit_log_table": """
         DEFINE TABLE audit_log SCHEMAFULL;
@@ -373,6 +395,7 @@ class DatabaseSchema:
             "episode_table",
             "entity_table",
             "relationship_table",
+            "hyperedge_table",
             "audit_log_table",
             "search_session_table",
             "skill_table",
@@ -400,6 +423,7 @@ class DatabaseSchema:
             "REMOVE TABLE memory;",
             "REMOVE TABLE entity", 
             "REMOVE TABLE relationship",
+            "REMOVE TABLE hyperedge",
             "REMOVE TABLE audit_log",
             "REMOVE TABLE search_session",
             "REMOVE TABLE skill",
@@ -425,6 +449,7 @@ class DatabaseSchema:
             ("episode", "SELECT count() FROM episode;"),
             ("entity", "SELECT count() FROM entity;"),
             ("relationship", "SELECT count() FROM relationship;"),
+            ("hyperedge", "SELECT count() FROM hyperedge;"),
             ("audit_log", "SELECT count() FROM audit_log;"),
             ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
