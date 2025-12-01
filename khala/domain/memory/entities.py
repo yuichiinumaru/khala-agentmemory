@@ -38,6 +38,8 @@ class Memory:
     # Strategy 78: Multi-Vector
     embedding_visual: Optional[EmbeddingVector] = field(default=None)
     embedding_code: Optional[EmbeddingVector] = field(default=None)
+    # Strategy 89: Vector Ensemble
+    embedding_secondary: Optional[EmbeddingVector] = field(default=None)
 
     # Strategy 82: Adaptive Vector Dimensions
     embedding_small: Optional[EmbeddingVector] = field(default=None)

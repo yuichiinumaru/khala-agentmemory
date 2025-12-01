@@ -39,6 +39,8 @@ class DatabaseSchema:
         -- Strategy 78: Multi-Vector
         DEFINE FIELD embedding_visual ON memory TYPE option<array<float>>;
         DEFINE FIELD embedding_code ON memory TYPE option<array<float>>;
+        -- Strategy 89: Vector Ensemble
+        DEFINE FIELD embedding_secondary ON memory TYPE option<array<float>>;
         -- Strategy 82: Adaptive Vector Dimensions
         DEFINE FIELD embedding_small ON memory TYPE option<array<float>>;
         -- Strategy 81: Vector Clustering
@@ -93,6 +95,8 @@ class DatabaseSchema:
 
         -- Search indexes
         DEFINE INDEX vector_search ON memory FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
+        -- Strategy 89: Vector Ensemble Index
+        DEFINE INDEX vector_search_secondary ON memory FIELDS embedding_secondary HNSW DIMENSION 768 DIST COSINE M 16;
         DEFINE INDEX vector_small_search ON memory FIELDS embedding_small HNSW DIMENSION 256 DIST COSINE M 16;
         
         -- Strategy 96: Typo Tolerance (Fuzzy Analyzer)
@@ -353,6 +357,20 @@ class DatabaseSchema:
         DEFINE INDEX session_query_index ON search_session FIELDS query;
         """,
 
+        # Strategy 88: Feedback-Loop Vectors
+        "search_feedback_table": """
+        DEFINE TABLE search_feedback SCHEMAFULL;
+        DEFINE FIELD session_id ON search_feedback TYPE string;
+        DEFINE FIELD memory_id ON search_feedback TYPE string;
+        DEFINE FIELD query ON search_feedback TYPE string;
+        DEFINE FIELD score ON search_feedback TYPE float; -- 1.0 for click, -1.0 for negative
+        DEFINE FIELD created_at ON search_feedback TYPE datetime DEFAULT time::now();
+
+        DEFINE INDEX feedback_session ON search_feedback FIELDS session_id;
+        DEFINE INDEX feedback_memory ON search_feedback FIELDS memory_id;
+        DEFINE INDEX feedback_query ON search_feedback FIELDS query;
+        """,
+
         # Skill table
         "skill_table": """
         DEFINE TABLE skill SCHEMAFULL;
@@ -507,6 +525,7 @@ class DatabaseSchema:
             "graph_snapshot_table",
             "system_metric_table",
             "search_session_table",
+            "search_feedback_table",
             "skill_table",
             "instruction_table",
             "instruction_set_table",
@@ -539,6 +558,7 @@ class DatabaseSchema:
             "REMOVE TABLE graph_snapshot",
             "REMOVE TABLE system_metric",
             "REMOVE TABLE search_session",
+            "REMOVE TABLE search_feedback",
             "REMOVE TABLE skill",
             "REMOVE TABLE vector_centroid",
             "REMOVE FUNCTION fn::decay_score",
@@ -567,6 +587,7 @@ class DatabaseSchema:
             ("graph_snapshot", "SELECT count() FROM graph_snapshot;"),
             ("system_metric", "SELECT count() FROM system_metric;"),
             ("search_session", "SELECT count() FROM search_session;"),
+            ("search_feedback", "SELECT count() FROM search_feedback;"),
             ("skill", "SELECT count() FROM skill;"),
             ("vector_centroid", "SELECT count() FROM vector_centroid;"),
             ("instruction", "SELECT count() FROM instruction;"),

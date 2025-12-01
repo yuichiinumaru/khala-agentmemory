@@ -207,6 +207,7 @@ class SurrealDBClient:
             "embedding": memory.embedding.values if memory.embedding else None,
             "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
             "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
+            "embedding_secondary": memory.embedding_secondary.values if memory.embedding_secondary else None,
             "embedding_small": memory.embedding_small.values if memory.embedding_small else None,
             "cluster_id": memory.cluster_id,
             "tier": memory.tier.value,
@@ -296,6 +297,7 @@ class SurrealDBClient:
             content: $content,
             content_hash: $content_hash,
             embedding: $embedding,
+            embedding_secondary: $embedding_secondary,
             tier: $tier,
             importance: $importance,
             tags: $tags,
@@ -340,6 +342,7 @@ class SurrealDBClient:
             "content": memory.content,
             "content_hash": content_hash,
             "embedding": memory.embedding.values if memory.embedding else None,
+            "embedding_secondary": memory.embedding_secondary.values if memory.embedding_secondary else None,
             "embedding_small": memory.embedding_small.values if memory.embedding_small else None,
             "cluster_id": memory.cluster_id,
             "tier": memory.tier.value,
@@ -731,9 +734,19 @@ class SurrealDBClient:
         user_id: str,
         top_k: int = 10,
         min_similarity: float = 0.6,
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
+        field_name: str = "embedding"
     ) -> List[Dict[str, Any]]:
-        """Search memories using vector similarity."""
+        """Search memories using vector similarity.
+
+        Args:
+            field_name: The embedding field to search (embedding, embedding_secondary, etc)
+        """
+        # Sanitize field name to prevent injection
+        allowed_fields = ["embedding", "embedding_secondary", "embedding_visual", "embedding_code"]
+        if field_name not in allowed_fields:
+            raise ValueError(f"Invalid embedding field name: {field_name}")
+
         params = {
             "user_id": user_id,
             "embedding": embedding.values,
@@ -744,12 +757,12 @@ class SurrealDBClient:
         filter_clause = self._build_filter_query(filters, params)
 
         query = f"""
-        SELECT *, vector::similarity::cosine(embedding, $embedding) AS similarity
+        SELECT *, vector::similarity::cosine({field_name}, $embedding) AS similarity
         FROM memory 
         WHERE user_id = $user_id 
         AND is_archived = false
-        AND embedding != NONE
-        AND vector::similarity::cosine(embedding, $embedding) > $min_similarity
+        AND {field_name} != NONE
+        AND vector::similarity::cosine({field_name}, $embedding) > $min_similarity
         {filter_clause}
         ORDER BY similarity DESC
         LIMIT $top_k;
@@ -1011,6 +1024,9 @@ class SurrealDBClient:
         if data.get("embedding_code"):
             embedding_code = EmbeddingVector(data["embedding_code"])
 
+        embedding_secondary = None
+        if data.get("embedding_secondary"):
+            embedding_secondary = EmbeddingVector(data["embedding_secondary"])
         embedding_small = None
         if data.get("embedding_small"):
             embedding_small = EmbeddingVector(data["embedding_small"])
@@ -1051,6 +1067,7 @@ class SurrealDBClient:
             embedding=embedding,
             embedding_visual=embedding_visual,
             embedding_code=embedding_code,
+            embedding_secondary=embedding_secondary,
             embedding_small=embedding_small,
             cluster_id=data.get("cluster_id"),
             tags=data.get("tags", []),
@@ -1266,6 +1283,64 @@ class SurrealDBClient:
                 return response
             return []
 
+    async def create_search_feedback(self, session_id: str, memory_id: str, query_text: str, score: float) -> str:
+        """Create a new search feedback record.
+
+        Args:
+            session_id: ID of the search session
+            memory_id: ID of the memory that received feedback
+            query_text: The search query
+            score: Feedback score (e.g. 1.0 for click, -1.0 for negative)
+        """
+        query = """
+        CREATE search_feedback CONTENT {
+            session_id: $session_id,
+            memory_id: $memory_id,
+            query: $query,
+            score: $score,
+            created_at: time::now()
+        };
+        """
+        params = {
+            "session_id": session_id,
+            "memory_id": memory_id,
+            "query": query_text,
+            "score": score
+        }
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list) and len(response) > 0:
+                item = response[0]
+                if isinstance(item, dict):
+                    if 'id' in item:
+                        return item['id']
+                    if 'result' in item and isinstance(item['result'], list) and len(item['result']) > 0:
+                        return item['result'][0].get('id')
+            return ""
+
+    async def get_feedback_for_query(self, query_text: str) -> List[Dict[str, Any]]:
+        """Get aggregated feedback for a query.
+
+        Returns memories that have positive feedback for this query.
+        """
+        # Exact match on query for now
+        query = """
+        SELECT memory_id, math::sum(score) as total_score
+        FROM search_feedback
+        WHERE query = $query
+        GROUP BY memory_id
+        HAVING total_score > 0
+        ORDER BY total_score DESC;
+        """
+        params = {"query": query_text}
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list):
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                    return response[0]['result']
+                return response
+            return []
     async def get_search_suggestions(self, prefix: str, limit: int = 10) -> List[str]:
         """Get search suggestions based on past successful queries (Strategy 101)."""
         # We search for queries starting with the prefix
