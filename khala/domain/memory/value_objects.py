@@ -45,6 +45,34 @@ class EmbeddingVector:
         """Create from numpy array."""
         return cls(values=array.tolist())
 
+    def apply_attention(self, weights: List[float]) -> "EmbeddingVector":
+        """Apply attention weights to the vector.
+
+        This implements Strategy 92: Vector Attention.
+
+        The resulting vector is re-normalized to unit length to ensure
+        compatibility with cosine similarity and value constraints.
+
+        Args:
+            weights: List of weights to apply to each dimension.
+                     Must match vector dimension.
+        """
+        if len(weights) != len(self.values):
+             raise ValueError(
+                f"Weights dimension {len(weights)} does not match vector dimension {len(self.values)}"
+            )
+
+        weighted_values = [v * w for v, w in zip(self.values, weights)]
+
+        # Re-normalize to unit length
+        norm = sum(x**2 for x in weighted_values) ** 0.5
+        if norm > 0:
+            new_values = [x / norm for x in weighted_values]
+        else:
+            new_values = weighted_values
+
+        return EmbeddingVector(values=new_values, dimensions=self.dimensions)
+
 
 @dataclass(frozen=True)
 class ImportanceScore:

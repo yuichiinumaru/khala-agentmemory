@@ -180,16 +180,37 @@ class MemoryLifecycleService:
                 )
 
                 # 2. Semantic duplicates (if embeddings exist)
+                # Strategy 90: Aggressive semantic deduplication check (>0.98)
+                # We can perform a standard check and then refine, or just use one check.
+                # Here we use the standard threshold but we could make it configurable.
                 semantic_dupes = []
+                aggressive_dupes = []
+
                 if memory.embedding:
+                    # Standard check (0.95)
                     semantic_dupes = self.deduplication_service.find_semantic_duplicates(
-                        memory, candidates
+                        memory, candidates, threshold=0.95
+                    )
+
+                    # Aggressive check (0.98) - subset of standard check
+                    aggressive_dupes = self.deduplication_service.find_semantic_duplicates(
+                        memory, semantic_dupes, threshold=0.98
                     )
 
                 all_dupes = set(exact_dupes + semantic_dupes)
 
+                # Identify aggressive dupes for merging
+                aggressive_ids = {d.id for d in aggressive_dupes}
+                aggressive_ids.update({d.id for d in exact_dupes}) # Treat exact dupes as aggressive too
+
                 for dupe in all_dupes:
                     if dupe.id not in processed_ids:
+                        # Strategy 90: Merge logic for aggressive duplicates
+                        if dupe.id in aggressive_ids:
+                             self.deduplication_service.merge_memories(target=memory, source=dupe)
+                             # Save the updated target (memory)
+                             await self.repository.update(memory)
+
                         # Simple strategy: Archive the duplicate
                         if not dupe.is_archived:
                             # Force archive for duplicates
