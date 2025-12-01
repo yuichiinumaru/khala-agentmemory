@@ -80,6 +80,8 @@ class GeminiClient:
         self._complexity_cache: Dict[str, float] = {}  # Cache complexity scores
 
         self.T = TypeVar("T", bound=BaseModel)
+        self.cache_hits = 0
+        self.cache_misses = 0
     
         # Initialize models if cascading is enabled
         if self.enable_cascading:
@@ -314,7 +316,10 @@ class GeminiClient:
             cached_response = self._get_cached_response(cache_key)
             if cached_response:
                 logger.debug(f"Cache hit for {model.model_id}")
+                self.cache_hits += 1
                 return cached_response
+            # Record miss
+            self.cache_misses += 1
         
         # Configure generation parameters
         config = {
@@ -550,6 +555,19 @@ class GeminiClient:
         self._cache_timestamps.clear()
         logger.info("Cleared response cache")
     
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        total = self.cache_hits + self.cache_misses
+        hit_rate = (self.cache_hits / total) if total > 0 else 0.0
+
+        return {
+            "hits": self.cache_hits,
+            "misses": self.cache_misses,
+            "total": total,
+            "hit_rate": hit_rate,
+            "size": len(self._response_cache)
+        }
+
     def get_budget_status(self) -> Dict[str, Any]:
         """Get current budget status and alerts."""
         return self.cost_tracker.get_budget_status()

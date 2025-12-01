@@ -230,6 +230,7 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "pos_tags": memory.pos_tags,
         }
         
         async with self.get_connection() as conn:
@@ -357,6 +358,7 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "pos_tags": memory.pos_tags,
         }
         
         async with self.get_connection() as conn:
@@ -733,7 +735,8 @@ class SurrealDBClient:
             sentiment=sentiment,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
-            source_reliability=data.get("source_reliability", 1.0)
+            source_reliability=data.get("source_reliability", 1.0),
+            pos_tags=data.get("pos_tags")
         )
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:
@@ -793,6 +796,44 @@ class SurrealDBClient:
             if response and isinstance(response, list):
                 return response
             return []
+
+    async def get_search_suggestions(self, prefix: str, limit: int = 10) -> List[str]:
+        """Get search suggestions based on past successful queries (Strategy 101)."""
+        # We search for queries starting with the prefix
+        # and we aggregate to get unique queries, perhaps sorting by frequency (count)
+        # SurrealDB doesn't have a simple GROUP BY COUNT on the fly easily without defining a view mostly.
+        # But we can select distinct queries.
+
+        # Using a simple SELECT DISTINCT with basic filtering
+        # Note: 'string::starts_with' is useful here.
+
+        query = """
+        SELECT query, count() as frequency FROM search_session
+        WHERE string::starts_with(string::lowercase(query), string::lowercase($prefix))
+        GROUP BY query
+        ORDER BY frequency DESC
+        LIMIT $limit;
+        """
+
+        params = {
+            "prefix": prefix,
+            "limit": limit
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+
+            suggestions = []
+            if response and isinstance(response, list):
+                items = response
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                    items = response[0]['result']
+
+                for item in items:
+                    if isinstance(item, dict) and 'query' in item:
+                        suggestions.append(item['query'])
+
+            return suggestions
 
     async def create_skill(self, skill: Skill) -> str:
         """Create a new skill in the database."""

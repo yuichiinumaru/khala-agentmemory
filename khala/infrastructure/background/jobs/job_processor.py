@@ -137,6 +137,7 @@ class JobProcessor:
         # Services
         self.memory_service = None
         self.db_client = None
+        self.embedding_service = None
         
         # Job types
         self._register_default_jobs()
@@ -160,6 +161,12 @@ class JobProcessor:
             # Initialize services
             self.memory_service = MemoryService()
             self.db_client = SurrealDBClient()
+            try:
+                from ...embeddings.local_embedding import LocalEmbedding
+                self.embedding_service = LocalEmbedding()
+            except Exception as e:
+                logger.warning(f"Failed to initialize EmbeddingService: {e}")
+                self.embedding_service = None
             
             # Start worker tasks
             self.is_running = True
@@ -207,7 +214,8 @@ class JobProcessor:
             "decay_scoring": "DecayScoringJob",
             "consolidation": "ConsolidationJob", 
             "deduplication": "DeduplicationJob",
-            "consistency_check": "ConsistencyJob"
+            "consistency_check": "ConsistencyJob",
+            "vector_drift": "VectorDriftJob"
         }
     
     async def submit_job(
@@ -404,6 +412,8 @@ class JobProcessor:
                 return await self._execute_deduplication(job)
             elif job.job_type == "consistency_check":
                 return await self._execute_consistency_check(job)
+            elif job.job_type == "vector_drift":
+                return await self._execute_vector_drift(job)
             else:
                 raise ValueError(f"Unsupported job type: {job.job_type}")
                 
@@ -567,6 +577,40 @@ class JobProcessor:
                 worker_id=job.worker_id
             )
     
+    async def _execute_vector_drift(self, job: JobDefinition) -> JobResult:
+        """Execute vector drift detection job."""
+        start_time = time.time()
+
+        try:
+            from .vector_drift_job import VectorDriftJob
+
+            if not self.embedding_service:
+                raise ValueError("Embedding service not available")
+
+            drift_job = VectorDriftJob(self.db_client, self.embedding_service)
+            result_data = await drift_job.execute(job.payload)
+
+            execution_time = (time.time() - start_time) * 1000
+
+            return JobResult(
+                job_id=job.job_id,
+                success=True,
+                result=result_data,
+                execution_time_ms=execution_time,
+                worker_id=job.worker_id
+            )
+
+        except Exception as e:
+            execution_time = (time.time() - start_time) * 1000
+            return JobResult(
+                job_id=job.job_id,
+                success=False,
+                result=None,
+                execution_time_ms=execution_time,
+                error=str(e),
+                worker_id=job.worker_id
+            )
+
     async def _store_result(self, result: JobResult) -> None:
         """Store job result."""
         if self.redis_client:
