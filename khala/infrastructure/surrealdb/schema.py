@@ -386,7 +386,7 @@ class DatabaseSchema:
         -- Recursive graph traversal function (Module 11)
         DEFINE FUNCTION fn::get_descendants($start_node: string, $relation_type: string, $max_depth: int) {
             RETURN SELECT *,
-                (SELECT * FROM relationship WHERE from_entity_id = $parent.id AND relation_type = $relation_type) AS children
+                (SELECT * FROM relationship WHERE from_entity_id = $parent.id AND relation_type = $relation_type AND (valid_to IS NONE OR valid_to > time::now())) AS children
             FROM entity
             WHERE id = $start_node;
         };
