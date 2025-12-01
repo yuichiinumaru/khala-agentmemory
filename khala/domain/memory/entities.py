@@ -85,6 +85,11 @@ class Memory:
     events: List[Dict[str, Any]] = field(default_factory=list)
     location: Optional[Dict[str, Any]] = field(default=None)
 
+    # Module 15: Version Control & Branching
+    branch_id: Optional[str] = None
+    parent_memory_id: Optional[str] = None
+    version: int = 1
+
     @property
     def importance_score(self) -> ImportanceScore:
         """Alias for importance to support legacy code."""
@@ -318,3 +323,20 @@ class Relationship:
     def expire(self) -> None:
         """Mark relationship as expired."""
         self.valid_to = datetime.now(timezone.utc)
+
+
+@dataclass
+class Branch:
+    """Branch entity representing a version control branch."""
+
+    name: str
+    created_by: str  # user_id
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    parent_id: Optional[str] = None
+    description: str = ""
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self) -> None:
+        """Validate branch after creation."""
+        if not self.name.strip():
+            raise ValueError("Branch name cannot be empty")

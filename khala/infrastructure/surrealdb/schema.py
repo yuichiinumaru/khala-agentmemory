@@ -83,6 +83,11 @@ class DatabaseSchema:
         DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD location ON memory TYPE option<object> FLEXIBLE;
         DEFINE FIELD freshness ON memory VALUE time::now() - updated_at;
+
+        -- Module 15: Version Control & Branching
+        DEFINE FIELD branch ON memory TYPE option<record<branch>>;
+        DEFINE FIELD parent_memory ON memory TYPE option<record<memory>>;
+        DEFINE FIELD version ON memory TYPE int DEFAULT 1;
         """,
         
         # Memory indexes
@@ -119,6 +124,24 @@ class DatabaseSchema:
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
+
+        -- Branching indexes
+        DEFINE INDEX branch_index ON memory FIELDS branch;
+        DEFINE INDEX parent_memory_index ON memory FIELDS parent_memory;
+        """,
+
+        # Branch table
+        "branch_table": """
+        DEFINE TABLE branch SCHEMAFULL;
+
+        DEFINE FIELD id ON branch TYPE string;
+        DEFINE FIELD name ON branch TYPE string;
+        DEFINE FIELD parent ON branch TYPE option<record<branch>>;
+        DEFINE FIELD description ON branch TYPE string;
+        DEFINE FIELD created_at ON branch TYPE datetime DEFAULT time::now();
+        DEFINE FIELD created_by ON branch TYPE string; -- user_id
+
+        DEFINE INDEX idx_branch_name ON branch FIELDS name UNIQUE;
         DEFINE INDEX complexity_index ON memory FIELDS complexity;
         DEFINE INDEX cluster_index ON memory FIELDS cluster_id;
         """,
@@ -515,6 +538,7 @@ class DatabaseSchema:
             "database", 
             "analyzers",
             "functions",
+            "branch_table",
             "memory_table",
             "memory_indexes",
             "vector_centroid_table",
