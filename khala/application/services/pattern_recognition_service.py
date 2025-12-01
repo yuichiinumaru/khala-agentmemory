@@ -4,6 +4,7 @@ import json
 import asyncio
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.surrealdb.client import SurrealDBClient
+from khala.application.utils import parse_json_safely
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,9 @@ class PatternRecognitionService:
         try:
             sessions = await self.db_client.get_user_sessions(user_id=user_id, limit=lookback_limit)
 
+            # Need at least 3 sessions for meaningful pattern recognition
             if len(sessions) < 3:
-                return [] # Not enough data
+                return []
 
             # Format data for LLM
             history_data = []
@@ -63,14 +65,10 @@ class PatternRecognitionService:
                 temperature=0.2
             )
 
-            content = response.get("content", "").strip()
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].strip()
-
-            patterns = json.loads(content)
-            return patterns
+            result = parse_json_safely(response.get("content", ""))
+            if isinstance(result, list):
+                return result
+            return []
 
         except Exception as e:
             logger.error(f"Pattern recognition failed: {e}")
