@@ -175,7 +175,10 @@ class SurrealDBClient:
             is_archived: $is_archived,
             decay_score: $decay_score,
             source: $source,
-            sentiment: $sentiment
+            sentiment: $sentiment,
+            episode_id: $episode_id,
+            confidence: $confidence,
+            source_reliability: $source_reliability
         };
         """
         
@@ -218,6 +221,9 @@ class SurrealDBClient:
             "decay_score": memory.decay_score.value if memory.decay_score else None,
             "source": source_data,
             "sentiment": sentiment_data,
+            "episode_id": memory.episode_id,
+            "confidence": memory.confidence,
+            "source_reliability": memory.source_reliability,
         }
         
         async with self.get_connection() as conn:
@@ -298,7 +304,10 @@ class SurrealDBClient:
             is_archived: $is_archived,
             decay_score: $decay_score,
             source: $source,
-            sentiment: $sentiment
+            sentiment: $sentiment,
+            episode_id: $episode_id,
+            confidence: $confidence,
+            source_reliability: $source_reliability
         };
         """
         
@@ -339,6 +348,9 @@ class SurrealDBClient:
             "decay_score": memory.decay_score.value if memory.decay_score else None,
             "source": source_data,
             "sentiment": sentiment_data,
+            "episode_id": memory.episode_id,
+            "confidence": memory.confidence,
+            "source_reliability": memory.source_reliability,
         }
         
         async with self.get_connection() as conn:
@@ -682,7 +694,10 @@ class SurrealDBClient:
             is_archived=data.get("is_archived", False),
             decay_score=None,  # Would need to recreate DecayScore if needed
             source=source,
-            sentiment=sentiment
+            sentiment=sentiment,
+            episode_id=data.get("episode_id"),
+            confidence=data.get("confidence", 1.0),
+            source_reliability=data.get("source_reliability", 1.0)
         )
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:

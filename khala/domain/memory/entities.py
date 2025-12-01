@@ -59,6 +59,10 @@ class Memory:
     source: Optional[MemorySource] = field(default=None)  # Task 28: Traceability
     sentiment: Optional[Sentiment] = field(default=None)  # Task 37: Emotion
     
+    # Module 12: Experimental
+    episode_id: Optional[str] = None
+    confidence: float = 1.0  # Strategy 135: Metacognitive Indexing
+    source_reliability: float = 1.0  # Strategy 136: Source Reliability Scoring
     # Module 11: Optimization Fields
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)
