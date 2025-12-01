@@ -200,6 +200,8 @@ class SurrealDBClient:
             "content": memory.content,
             "content_hash": content_hash,
             "embedding": memory.embedding.values if memory.embedding else None,
+            "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
+            "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
             "tags": memory.tags,
@@ -642,6 +644,14 @@ class SurrealDBClient:
         if data.get("embedding"):
             embedding = EmbeddingVector(data["embedding"])
         
+        embedding_visual = None
+        if data.get("embedding_visual"):
+            embedding_visual = EmbeddingVector(data["embedding_visual"])
+
+        embedding_code = None
+        if data.get("embedding_code"):
+            embedding_code = EmbeddingVector(data["embedding_code"])
+
         # Reconstruct MemorySource
         source = None
         if data.get("source"):
@@ -676,6 +686,8 @@ class SurrealDBClient:
             tier=MemoryTier(data["tier"]),
             importance=ImportanceScore(data["importance"]),
             embedding=embedding,
+            embedding_visual=embedding_visual,
+            embedding_code=embedding_code,
             tags=data.get("tags", []),
             category=data.get("category"),
             summary=data.get("summary"),
