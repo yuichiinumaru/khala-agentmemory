@@ -590,6 +590,65 @@ class SurrealDBClient:
             if response and isinstance(response, list):
                 return [self._deserialize_memory(data) for data in response]
             return []
+
+    async def get_latest_memories(
+        self,
+        user_id: str,
+        limit: int = 100
+    ) -> List[Memory]:
+        """Get latest memories for a user regardless of tier."""
+        query = """
+        SELECT *
+        FROM memory
+        WHERE user_id = $user_id
+        AND is_archived = false
+        AND embedding != NONE
+        ORDER BY created_at DESC
+        LIMIT $limit;
+        """
+
+        params = {
+            "user_id": user_id,
+            "limit": limit,
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list):
+                return [self._deserialize_memory(data) for data in response]
+            return []
+
+    async def find_outliers_by_centroid(
+        self,
+        centroid: List[float],
+        user_id: str,
+        limit: int = 10,
+        max_similarity: float = 0.5
+    ) -> List[Dict[str, Any]]:
+        """Find memories that are least similar to the centroid vector."""
+        params = {
+            "user_id": user_id,
+            "centroid": centroid,
+            "max_similarity": max_similarity,
+            "limit": limit,
+        }
+
+        query = """
+        SELECT *, vector::similarity::cosine(embedding, $centroid) AS similarity
+        FROM memory
+        WHERE user_id = $user_id
+        AND is_archived = false
+        AND embedding != NONE
+        AND vector::similarity::cosine(embedding, $centroid) < $max_similarity
+        ORDER BY similarity ASC
+        LIMIT $limit;
+        """
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list):
+                return response
+            return []
     
     async def listen_live(self, table: str) -> Any:
         """
