@@ -39,7 +39,8 @@ class GeminiClient:
         enable_caching: bool = True,
         cache_ttl_seconds: int = 300,  # 5 minutes
         max_retries: int = 3,
-        timeout_seconds: int = 30
+        timeout_seconds: int = 30,
+        concurrency_limit: int = 10
     ):
         """Initialize Gemini client.
         
@@ -51,6 +52,7 @@ class GeminiClient:
             cache_ttl_seconds: Cache TTL in seconds
             max_retries: Maximum retry attempts
             timeout_seconds: Request timeout in seconds
+            concurrency_limit: Maximum concurrent requests to the API
         """
         self.api_key = api_key or self._get_api_key_from_env()
         self.cost_tracker = cost_tracker or CostTracker()
@@ -60,6 +62,9 @@ class GeminiClient:
         self.max_retries = max_retries
         self.timeout_seconds = timeout_seconds
         
+        # Concurrency control
+        self._semaphore = asyncio.Semaphore(concurrency_limit)
+
         # Response cache
         self._response_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_timestamps: Dict[str, datetime] = {}
@@ -343,11 +348,12 @@ class GeminiClient:
         
         for attempt in range(self.max_retries + 1):
             try:
-                response = model_instance.generate_content(
-                    content_parts,
-                    stream=False,
-                    request_options={"timeout": self.timeout_seconds}
-                )
+                async with self._semaphore:
+                    response = await model_instance.generate_content_async(
+                        content_parts,
+                        stream=False,
+                        request_options={"timeout": self.timeout_seconds}
+                    )
                 break
             except gcp_exceptions.GoogleAPIError as e:
                 if attempt == self.max_retries:
@@ -428,13 +434,19 @@ class GeminiClient:
             batch = texts[i:i + batch_size]
             
             try:
-                result = genai.embed_content(
-                    model=embedding_model.model_id,
-                    content=batch,
-                    task_type="retrieval_document",
-                    output_dimensionality=embedding_model.embedding_dimensions,
-                    request_options={"timeout": self.timeout_seconds}
-                )
+                async with self._semaphore:
+                    # genai.embed_content is sync. Run in executor.
+                    loop = asyncio.get_running_loop()
+                    result = await loop.run_in_executor(
+                        None,
+                        lambda: genai.embed_content(
+                            model=embedding_model.model_id,
+                            content=batch,
+                            task_type="retrieval_document",
+                            output_dimensionality=embedding_model.embedding_dimensions,
+                            request_options={"timeout": self.timeout_seconds}
+                        )
+                    )
                 # result['embedding'] is a list of embeddings
                 embeddings.extend(result['embedding'])
             except Exception as e:

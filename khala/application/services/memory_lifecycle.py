@@ -16,6 +16,8 @@ from khala.domain.memory.services import (
     DeduplicationService,
     ConsolidationService
 )
+from khala.domain.approval.entities import ApprovalActionType, ApprovalStatus
+from khala.application.services.approval_service import ApprovalService
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
@@ -32,7 +34,8 @@ class MemoryLifecycleService:
         memory_service: Optional[MemoryService] = None,
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
-        consolidation_service: Optional[ConsolidationService] = None
+        consolidation_service: Optional[ConsolidationService] = None,
+        approval_service: Optional[ApprovalService] = None
     ):
         self.repository = repository
         self.gemini_client = gemini_client or GeminiClient()
@@ -40,6 +43,7 @@ class MemoryLifecycleService:
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
+        self.approval_service = approval_service
 
     async def ingest_memory(self, memory: Memory) -> str:
         """Ingest a new memory, performing auto-summarization if needed."""
@@ -243,28 +247,94 @@ class MemoryLifecycleService:
                         new_content = response.get("content", "").strip()
 
                         if new_content:
-                            # 2. Create new consolidated memory
-                            new_memory = Memory(
-                                user_id=user_id,
-                                content=new_content,
-                                tier=MemoryTier.LONG_TERM, # Promote to long-term
-                                importance=0.8, # Reset importance or calculate avg
-                                metadata={"consolidated_from": [m.id for m in group]}
-                            )
-                            # Embed if possible (omitted for brevity, handled by create trigger or separate service usually)
+                            # Check if approval service is enabled
+                            if self.approval_service:
+                                # Request approval for consolidation
+                                await self.approval_service.request_approval(
+                                    user_id=user_id,
+                                    action_type=ApprovalActionType.MEMORY_CONSOLIDATION,
+                                    payload={
+                                        "new_content": new_content,
+                                        "original_memory_ids": [m.id for m in group],
+                                        "tier": MemoryTier.LONG_TERM.value,
+                                        "importance": 0.8
+                                    },
+                                    description=f"Consolidate {len(group)} memories into a new long-term memory."
+                                )
+                                logger.info(f"Requested approval for consolidation of {len(group)} memories")
+                            else:
+                                # 2. Create new consolidated memory directly
+                                new_memory = Memory(
+                                    user_id=user_id,
+                                    content=new_content,
+                                    tier=MemoryTier.LONG_TERM, # Promote to long-term
+                                    importance=0.8, # Reset importance or calculate avg
+                                    metadata={"consolidated_from": [m.id for m in group]}
+                                )
+                                # Embed if possible (omitted for brevity, handled by create trigger or separate service usually)
 
-                            await self.repository.create(new_memory)
+                                await self.repository.create(new_memory)
 
-                            # 3. Archive original memories
-                            for m in group:
-                                m.archive(force=True)
-                                m.metadata["consolidated_into"] = new_memory.id
-                                await self.repository.update(m)
+                                # 3. Archive original memories
+                                for m in group:
+                                    m.archive(force=True)
+                                    m.metadata["consolidated_into"] = new_memory.id
+                                    await self.repository.update(m)
 
-                            consolidated_count += len(group)
-                            logger.info(f"Consolidated {len(group)} memories into new memory {new_memory.id}")
+                                consolidated_count += len(group)
+                                logger.info(f"Consolidated {len(group)} memories into new memory {new_memory.id}")
 
                     except Exception as e:
                         logger.error(f"Failed to consolidate group: {e}")
 
         return consolidated_count
+
+    async def execute_approved_consolidation(self, request_id: str) -> bool:
+        """Execute a consolidation that has been approved."""
+        if not self.approval_service:
+            raise RuntimeError("ApprovalService is not configured")
+
+        request = await self.approval_service.repository.get(request_id)
+        if not request:
+            raise ValueError(f"Request {request_id} not found")
+
+        if request.status != ApprovalStatus.APPROVED:
+            logger.warning(f"Request {request_id} is not approved (status: {request.status})")
+            return False
+
+        try:
+            payload = request.payload
+            user_id = request.user_id
+
+            new_content = payload["new_content"]
+            original_memory_ids = payload["original_memory_ids"]
+
+            # Create new memory
+            new_memory = Memory(
+                user_id=user_id,
+                content=new_content,
+                tier=MemoryTier(payload.get("tier", "long_term")),
+                importance=payload.get("importance", 0.8),
+                metadata={"consolidated_from": original_memory_ids}
+            )
+
+            await self.repository.create(new_memory)
+
+            # Archive original memories
+            for mem_id in original_memory_ids:
+                memory = await self.repository.get_by_id(mem_id)
+                if memory:
+                    memory.archive(force=True)
+                    memory.metadata["consolidated_into"] = new_memory.id
+                    await self.repository.update(memory)
+
+            await self.approval_service.mark_completed(request_id)
+            logger.info(f"Executed approved consolidation request {request_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to execute approved consolidation {request_id}: {e}")
+            # Mark as failed
+            request.fail(str(e))
+            await self.approval_service.repository.update(request)
+            return False

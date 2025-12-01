@@ -49,6 +49,8 @@
 ### Phase 2.3: Experimental Architectures (Module 12)
 *Code exists, Tests Pass (Low Coverage)*
 - [ ] **M12.C.1**: **Agent Cognitive Patterns** (Strategies 116-128).
+    - [x] **125**: Human-in-the-Loop Checkpoints.
+    - [x] **126**: Semaphore Concurrency Limiting.
 - [ ] **M12.C.2**: **Advanced Learning & Adaptation** (Strategies 129-140).
 - [ ] **M12.C.3**: **Meta-Cognition & Self-Correction** (Strategies 141-159).
 
