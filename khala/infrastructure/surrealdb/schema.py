@@ -48,11 +48,17 @@ class DatabaseSchema:
         DEFINE FIELD verification_issues ON memory TYPE array<string>;
         DEFINE FIELD debate_consensus ON memory TYPE object FLEXIBLE;
         DEFINE FIELD is_archived ON memory TYPE bool DEFAULT false;
-        DEFINE FIELD decay_score ON memory TYPE float;
+        DEFINE FIELD decay_score ON memory VALUE fn::decay_score(math::max(0.0, (time::now() - created_at) / 1000 / 60 / 60 / 24), importance);
         
         -- Tier 6: Advanced Metadata
         DEFINE FIELD source ON memory TYPE object FLEXIBLE;
         DEFINE FIELD sentiment ON memory TYPE object FLEXIBLE;
+
+        -- Module 11: Optimized Fields
+        DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE;
+        DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE;
+        DEFINE FIELD location ON memory TYPE object FLEXIBLE;
+        DEFINE FIELD freshness ON memory VALUE time::now() - updated_at;
         """,
         
         # Memory indexes
@@ -202,6 +208,14 @@ class DatabaseSchema:
         -- Decay score calculation function
         DEFINE FUNCTION fn::decay_score(age_days float, original_importance float, half_life_days float DEFAULT 30.0) {
             RETURN original_importance * math::exp(-age_days / half_life_days);
+        };
+
+        -- Recursive graph traversal function (Module 11)
+        DEFINE FUNCTION fn::get_descendants(start_node string, relation_type string, max_depth int) {
+            RETURN SELECT *,
+                (SELECT * FROM relationship WHERE from_entity_id = $parent.id AND relation_type = $relation_type) AS children
+            FROM entity
+            WHERE id = $start_node;
         };
         
         -- Memory promotion check function

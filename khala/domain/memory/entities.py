@@ -59,6 +59,11 @@ class Memory:
     source: Optional[MemorySource] = field(default=None)  # Task 28: Traceability
     sentiment: Optional[Sentiment] = field(default=None)  # Task 37: Emotion
     
+    # Module 11: Optimization Fields
+    versions: List[Dict[str, Any]] = field(default_factory=list)
+    events: List[Dict[str, Any]] = field(default_factory=list)
+    location: Optional[Dict[str, Any]] = field(default=None)
+
     @property
     def importance_score(self) -> ImportanceScore:
         """Alias for importance to support legacy code."""
