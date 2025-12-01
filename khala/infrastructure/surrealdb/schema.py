@@ -253,6 +253,8 @@ class DatabaseSchema:
         DEFINE FIELD user_id ON audit_log TYPE string;
         DEFINE FIELD action ON audit_log TYPE object FLEXIBLE;
         DEFINE FIELD memory_id ON audit_log TYPE string;
+        DEFINE FIELD target_id ON audit_log TYPE string;
+        DEFINE FIELD target_type ON audit_log TYPE string;
         DEFINE FIELD agent_id ON audit_log TYPE string;
         DEFINE FIELD operation ON audit_log TYPE string;
         DEFINE FIELD reason ON audit_log TYPE string;
@@ -263,6 +265,31 @@ class DatabaseSchema:
         DEFINE INDEX audit_time_index ON audit_log FIELDS timestamp;
         DEFINE INDEX audit_user_index ON audit_log FIELDS user_id;
         DEFINE INDEX audit_memory_index ON audit_log FIELDS memory_id;
+        DEFINE INDEX audit_agent_index ON audit_log FIELDS agent_id;
+        """,
+
+        # Graph Snapshot (Strategy 75)
+        "graph_snapshot_table": """
+        DEFINE TABLE graph_snapshot SCHEMAFULL;
+        DEFINE FIELD timestamp ON graph_snapshot TYPE datetime DEFAULT time::now();
+        DEFINE FIELD node_count ON graph_snapshot TYPE int;
+        DEFINE FIELD edge_count ON graph_snapshot TYPE int;
+        DEFINE FIELD avg_degree ON graph_snapshot TYPE float;
+        DEFINE FIELD density ON graph_snapshot TYPE float;
+        DEFINE FIELD metadata ON graph_snapshot TYPE object FLEXIBLE;
+
+        DEFINE INDEX snapshot_time_index ON graph_snapshot FIELDS timestamp;
+        """,
+
+        # System Metrics (Strategy 105)
+        "system_metric_table": """
+        DEFINE TABLE system_metric SCHEMAFULL;
+        DEFINE FIELD timestamp ON system_metric TYPE datetime DEFAULT time::now();
+        DEFINE FIELD metric_name ON system_metric TYPE string;
+        DEFINE FIELD value ON system_metric TYPE float;
+        DEFINE FIELD labels ON system_metric TYPE object FLEXIBLE;
+
+        DEFINE INDEX metric_name_time_index ON system_metric FIELDS metric_name, timestamp;
         """,
 
         # Search Session table
@@ -399,6 +426,8 @@ class DatabaseSchema:
             "entity_table",
             "relationship_table",
             "audit_log_table",
+            "graph_snapshot_table",
+            "system_metric_table",
             "search_session_table",
             "skill_table",
             "lgkgr_tables",
@@ -427,6 +456,8 @@ class DatabaseSchema:
             "REMOVE TABLE entity", 
             "REMOVE TABLE relationship",
             "REMOVE TABLE audit_log",
+            "REMOVE TABLE graph_snapshot",
+            "REMOVE TABLE system_metric",
             "REMOVE TABLE search_session",
             "REMOVE TABLE skill",
             "REMOVE FUNCTION fn::decay_score",
@@ -452,6 +483,8 @@ class DatabaseSchema:
             ("entity", "SELECT count() FROM entity;"),
             ("relationship", "SELECT count() FROM relationship;"),
             ("audit_log", "SELECT count() FROM audit_log;"),
+            ("graph_snapshot", "SELECT count() FROM graph_snapshot;"),
+            ("system_metric", "SELECT count() FROM system_metric;"),
             ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
         ]
