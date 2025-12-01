@@ -6,14 +6,17 @@ from datetime import datetime, timezone
 
 from khala.domain.memory.entities import Entity, Relationship, EntityType
 from khala.domain.memory.repository import MemoryRepository
+from khala.domain.graph.hyperedge import Hyperedge
+from khala.infrastructure.cache.cache_manager import CacheManager
 
 logger = logging.getLogger(__name__)
 
 class GraphService:
     """Service for advanced graph operations like hyperedges and inheritance."""
 
-    def __init__(self, repository: MemoryRepository):
+    def __init__(self, repository: MemoryRepository, cache_manager: Optional[CacheManager] = None):
         self.repository = repository
+        self.cache_manager = cache_manager
 
     async def create_hyperedge(
         self,
@@ -24,16 +27,12 @@ class GraphService:
         """
         Create a hyperedge connecting multiple entities.
         """
-        # 1. Create the HyperNode
-        hyper_node = Entity(
+        # 1. Create the HyperNode using Hyperedge domain entity
+        hyper_node = Hyperedge.create(
             text=f"Hyperedge: {edge_type}",
-            entity_type=EntityType.EVENT,
-            confidence=1.0,
-            metadata={
-                "is_hyperedge": True,
-                "hyperedge_type": edge_type,
-                **(metadata or {})
-            }
+            participants=entities,
+            hyperedge_type=edge_type,
+            metadata=metadata
         )
 
         # Access client to save entity
@@ -68,7 +67,7 @@ class GraphService:
             return []
 
         # 1. Get direct relationships (where entity is source)
-        query = "SELECT * FROM relationship WHERE from_entity_id = $id;"
+        query = "SELECT * FROM relationship WHERE from_entity_id = $id AND (valid_to IS NONE OR valid_to > time::now());"
         params = {"id": entity_id}
 
         direct_rels = []
@@ -93,7 +92,8 @@ class GraphService:
         SELECT to_entity_id
         FROM relationship
         WHERE from_entity_id = $id
-        AND (relation_type = 'is_a' OR relation_type = 'subclass_of');
+        AND (relation_type = 'is_a' OR relation_type = 'subclass_of')
+        AND (valid_to IS NONE OR valid_to > time::now());
         """
 
         parents = []
@@ -113,7 +113,7 @@ class GraphService:
         inherited_rels = []
         for parent_id in parents:
             # Get parent's relationships
-            query_parent_rels = "SELECT * FROM relationship WHERE from_entity_id = $id;"
+            query_parent_rels = "SELECT * FROM relationship WHERE from_entity_id = $id AND (valid_to IS NONE OR valid_to > time::now());"
             parent_params = {"id": parent_id}
 
             async with client.get_connection() as conn:
@@ -204,7 +204,23 @@ class GraphService:
         Get all descendants of an entity using recursive graph traversal.
 
         Strategy 71: Recursive Graph Patterns.
+        Strategy 122: Path Lookup Acceleration (Cache).
+        Strategy 124: Multi-Hop Constraints (Max Depth).
         """
+        # Task 124: Multi-Hop Constraints
+        if max_depth > 3:
+            logger.warning(f"Max depth {max_depth} exceeds limit 3. Clamping to 3.")
+            max_depth = 3
+
+        # Task 122: Path Lookup Acceleration (Check Cache)
+        cache_key = ""
+        if self.cache_manager:
+            cache_key = self.cache_manager.generate_cache_key("descendants", entity_id, relation_type, max_depth)
+            cached_result = await self.cache_manager.get(cache_key)
+            if cached_result:
+                logger.debug(f"Cache hit for descendants of {entity_id}")
+                return cached_result
+
         client = getattr(self.repository, 'client', None)
         if not client:
             logger.error("Repository does not have client access")
@@ -223,13 +239,23 @@ class GraphService:
             async with client.get_connection() as conn:
                 response = await conn.query(query, params)
                 # Parse response
+                result = []
                 if response and isinstance(response, list):
                      if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
                         # The function returns a specific structure, we might need to flatten it
                         # depending on how fn::get_descendants is implemented in schema.
                         # Schema: RETURN SELECT *, (SELECT * FROM relationship...) AS children
-                        return response[0]['result']
-                     return response
+                        result = response[0]['result']
+                     else:
+                        result = response
+
+                # Cache result
+                if self.cache_manager and result:
+                     # Cache for 1 hour (3600s)
+                     await self.cache_manager.put(cache_key, result, ttl_seconds=3600)
+
+                return result
+
         except Exception as e:
             logger.error(f"Recursive graph traversal failed: {e}")
 
