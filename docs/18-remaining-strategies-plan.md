@@ -111,8 +111,8 @@ This document outlines the roadmap for implementing the remaining strategies for
 - [ ] **114. Migration Path Tracking**: Tracking concept movement between agents.
 - [ ] **115. Geospatial Similarity**: Distance-aware search.
 - [ ] **143. Community Detection**: Graph clustering algorithms.
-- [ ] **144. Centrality Analysis**: Identifying key influencers in the graph.
-- [ ] **145. Pathfinding Algorithms**: Shortest path and A*.
+- [x] **144. Centrality Analysis**: Identifying key influencers in the graph.
+- [x] **145. Pathfinding Algorithms**: Shortest path and A*.
 - [ ] **146. Subgraph Isomorphism**: Structural pattern matching.
 
 ### 3.3 System Resilience & Architecture

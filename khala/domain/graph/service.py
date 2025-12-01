@@ -4,6 +4,7 @@ import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
+import networkx as nx
 from khala.domain.memory.entities import Entity, Relationship, EntityType
 from khala.domain.memory.repository import MemoryRepository
 
@@ -188,27 +189,96 @@ class GraphService:
 
         return []
 
-    def _deserialize_relationship(self, data: Dict[str, Any]) -> Relationship:
-        """Helper to deserialize relationship data."""
-        def parse_dt(dt_val: Any) -> Optional[datetime]:
-            if not dt_val: return None
-            if isinstance(dt_val, str):
-                if dt_val.endswith('Z'): dt_val = dt_val[:-1]
-                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
-            return dt_val
+    async def analyze_centrality(
+        self,
+        node_ids: Optional[List[str]] = None,
+        max_nodes: int = 1000
+    ) -> Dict[str, float]:
+        """
+        Analyze centrality of the graph or a subgraph.
 
-        rel_id = str(data["id"])
-        if rel_id.startswith("relationship:"):
-            rel_id = rel_id.split(":", 1)[1]
+        Strategy 144: Centrality Analysis.
+        """
+        G = await self._fetch_graph_snapshot(node_ids=node_ids, limit=max_nodes)
+        if not G or G.number_of_nodes() == 0:
+            return {}
 
-        return Relationship(
-            id=rel_id,
-            from_entity_id=data["from_entity_id"],
-            to_entity_id=data["to_entity_id"],
-            relation_type=data["relation_type"],
-            strength=data["strength"],
-            valid_from=parse_dt(data.get("valid_from")) or datetime.now(timezone.utc),
-            valid_to=parse_dt(data.get("valid_to")),
-            transaction_time_start=parse_dt(data.get("transaction_time_start")) or datetime.now(timezone.utc),
-            transaction_time_end=parse_dt(data.get("transaction_time_end"))
-        )
+        # Degree Centrality is efficient and often sufficient for "Influencers"
+        centrality = nx.degree_centrality(G)
+
+        # Sort by score descending
+        sorted_centrality = dict(sorted(centrality.items(), key=lambda item: item[1], reverse=True))
+        return sorted_centrality
+
+    async def find_shortest_path(
+        self,
+        source_id: str,
+        target_id: str,
+        weight_field: Optional[str] = None,
+        algorithm: str = "shortest_path"
+    ) -> List[str]:
+        """
+        Find the shortest path between two entities.
+
+        Strategy 145: Pathfinding Algorithms (Shortest Path & A*).
+
+        Args:
+            source_id: ID of start node.
+            target_id: ID of end node.
+            weight_field: Field to use for edge weights. If None, unweighted.
+            algorithm: 'shortest_path' or 'astar'.
+        """
+        # Fetch a snapshot.
+        # We fetch a larger limit to ensure we have enough connectivity.
+        G = await self._fetch_graph_snapshot(limit=10000)
+
+        try:
+            if algorithm == "astar":
+                # A* requires a heuristic function.
+                # Without spatial data, we use default (Dijkstra) or we could implement one if embeddings available.
+                path = nx.astar_path(G, source=source_id, target=target_id, weight=weight_field)
+            else:
+                path = nx.shortest_path(G, source=source_id, target=target_id, weight=weight_field)
+            return path
+        except nx.NetworkXNoPath:
+            return []
+        except nx.NodeNotFound:
+            return []
+
+    async def _fetch_graph_snapshot(
+        self,
+        node_ids: Optional[List[str]] = None,
+        limit: int = 5000
+    ) -> nx.DiGraph:
+        """Helper to fetch a graph snapshot from Repository into NetworkX."""
+        G = nx.DiGraph()
+
+        rels = []
+        if node_ids:
+            # Fetch relationships where these nodes are present (from OR to)
+            # 1. Edges FROM these nodes
+            rels_from = await self.repository.get_relationships(
+                filters={"from_entity_id": node_ids},
+                limit=limit
+            )
+            # 2. Edges TO these nodes
+            rels_to = await self.repository.get_relationships(
+                filters={"to_entity_id": node_ids},
+                limit=limit
+            )
+            rels = rels_from + rels_to
+        else:
+            # Fetch all (up to limit)
+            rels = await self.repository.get_relationships(limit=limit)
+
+        for rel in rels:
+            # Add edge to NetworkX graph
+            G.add_edge(
+                rel.from_entity_id,
+                rel.to_entity_id,
+                weight=rel.strength,
+                relation_type=rel.relation_type,
+                id=rel.id
+            )
+
+        return G

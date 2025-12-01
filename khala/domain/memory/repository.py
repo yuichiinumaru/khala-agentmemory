@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
-from .entities import Memory
+from .entities import Memory, Relationship
 from .value_objects import EmbeddingVector
 
 class MemoryRepository(ABC):
@@ -60,4 +60,13 @@ class MemoryRepository(ABC):
         limit: int = 100
     ) -> List[Memory]:
         """Retrieve memories by tier."""
+        pass
+
+    @abstractmethod
+    async def get_relationships(
+        self,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 1000
+    ) -> List[Relationship]:
+        """Retrieve relationships based on filters."""
         pass
