@@ -279,6 +279,47 @@ class DatabaseSchema:
         DEFINE FIELD version ON skill TYPE string;
         DEFINE FIELD is_active ON skill TYPE bool;
         """,
+
+        # SOP table
+        "sop_table": """
+        DEFINE TABLE sop SCHEMAFULL;
+        DEFINE FIELD id ON sop TYPE string;
+        DEFINE FIELD title ON sop TYPE string;
+        DEFINE FIELD objective ON sop TYPE string;
+        DEFINE FIELD steps ON sop TYPE array<object>;
+        DEFINE FIELD triggers ON sop TYPE array<string>;
+        DEFINE FIELD owner_role ON sop TYPE string;
+        DEFINE FIELD tags ON sop TYPE array<string>;
+        DEFINE FIELD metadata ON sop TYPE object FLEXIBLE;
+        DEFINE FIELD version ON sop TYPE string;
+        DEFINE FIELD created_at ON sop TYPE datetime DEFAULT time::now();
+        DEFINE FIELD updated_at ON sop TYPE datetime DEFAULT time::now();
+        DEFINE FIELD is_active ON sop TYPE bool DEFAULT true;
+
+        -- Indexes
+        DEFINE INDEX sop_tags_index ON sop FIELDS tags;
+        DEFINE INDEX sop_trigger_index ON sop FIELDS triggers;
+        """,
+
+        # Instruction table
+        "instruction_table": """
+        DEFINE TABLE instruction SCHEMAFULL;
+        DEFINE FIELD id ON instruction TYPE string;
+        DEFINE FIELD name ON instruction TYPE string;
+        DEFINE FIELD content ON instruction TYPE string;
+        DEFINE FIELD instruction_type ON instruction TYPE string;
+        DEFINE FIELD version ON instruction TYPE string;
+        DEFINE FIELD variables ON instruction TYPE array<string>;
+        DEFINE FIELD tags ON instruction TYPE array<string>;
+        DEFINE FIELD metadata ON instruction TYPE object FLEXIBLE;
+        DEFINE FIELD created_at ON instruction TYPE datetime DEFAULT time::now();
+        DEFINE FIELD updated_at ON instruction TYPE datetime DEFAULT time::now();
+        DEFINE FIELD is_active ON instruction TYPE bool DEFAULT true;
+
+        -- Indexes
+        DEFINE INDEX instruction_type_index ON instruction FIELDS instruction_type;
+        DEFINE INDEX instruction_name_index ON instruction FIELDS name;
+        """,
         
         # Custom functions
         "functions": """
@@ -376,6 +417,8 @@ class DatabaseSchema:
             "audit_log_table",
             "search_session_table",
             "skill_table",
+            "sop_table",
+            "instruction_table",
             "lgkgr_tables",
             "latent_mas_tables",
             # MarsRL table
@@ -428,6 +471,8 @@ class DatabaseSchema:
             ("audit_log", "SELECT count() FROM audit_log;"),
             ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
+            ("sop", "SELECT count() FROM sop;"),
+            ("instruction", "SELECT count() FROM instruction;"),
         ]
         
         for table_name, query in table_checks:
