@@ -151,46 +151,92 @@ class HybridSearchService:
 
         final_results = [memories[mid] for mid in sorted_ids]
 
-        if enable_graph_reranking and self.db_client and final_results:
+        # Access client safely (prefer self.memory_repo.client if db_client not set)
+        client_to_use = self.db_client
+        if not client_to_use and hasattr(self.memory_repo, 'client'):
+            client_to_use = self.memory_repo.client
+
+        if enable_graph_reranking and client_to_use and final_results:
             try:
                 # Use the top result as the "Anchor"
                 anchor_id = final_results[0].id
 
-                # Fetch connections for the anchor
-                # This query finds memories connected to the anchor via relationships
-                # (either direction)
+                # Fetch connected entities/memories for the anchor
+                # 1. Direct connections via Relationship table (if anchor is an Entity ID or Memory ID tracked in graph)
+                # 2. Shared Episode ID (Strategy 118)
+
+                anchor_episode = final_results[0].episode_id
+                connected_ids = set()
+
+                # If we had Memory-Memory links in relationship table, we could query them.
+                # Assuming 'relationship' table links entities. If Memory IDs are used as Entity IDs or
+                # mapped, we can query. For now, we'll try to fetch direct neighbors.
+
+                # We need to handle the ID format (strip 'memory:' if present)
+                clean_anchor_id = anchor_id
+                if ":" in clean_anchor_id:
+                    clean_anchor_id = clean_anchor_id.split(":")[1]
+
                 query_graph = """
-                SELECT to_entity_id, from_entity_id FROM relationship
-                WHERE from_entity_id = $anchor OR to_entity_id = $anchor;
+                SELECT from_entity_id, to_entity_id FROM relationship
+                WHERE from_entity_id = $anchor OR to_entity_id = $anchor
+                LIMIT 50;
                 """
 
-                # Note: This assumes memories are entities or linked to entities with same ID
-                # In current schema, Memory and Entity are distinct tables.
-                # However, if we assume a Memory is a "node", we need to check how they are linked.
-                # The relationship table links entities. Memories might contain entities.
-                # Without explicit Memory-Memory links, graph reranking is limited to Entity Graph.
-                # Assuming Strategy 121 implies a graph of Memories or Entities.
+                # We use a raw query via client if possible, or skip if client doesn't expose raw query easily here
+                # accessing client_to_use.get_connection()
+                async with client_to_use.get_connection() as conn:
+                    graph_resp = await conn.query(query_graph, {"anchor": clean_anchor_id})
+                    if graph_resp and isinstance(graph_resp, list):
+                         items = graph_resp
+                         if len(graph_resp) > 0 and isinstance(graph_resp[0], dict) and 'result' in graph_resp[0]:
+                             items = graph_resp[0]['result']
 
-                # Let's skip complex implementation for now and just put a placeholder log,
-                # as full graph reranking requires fetching edges which might be expensive here.
-                # Or we can boost items that share the same 'episode_id' (Strategy 118).
+                         for item in items:
+                             if isinstance(item, dict):
+                                 if item.get('from_entity_id') != clean_anchor_id:
+                                     connected_ids.add(item.get('from_entity_id'))
+                                 if item.get('to_entity_id') != clean_anchor_id:
+                                     connected_ids.add(item.get('to_entity_id'))
 
-                # Boosting by Episode ID
-                anchor_episode = final_results[0].episode_id
-                if anchor_episode:
-                    # Boost other results in the same episode
-                    reranked = []
-                    for m in final_results:
-                         score_boost = 0.0
-                         if m.episode_id == anchor_episode:
-                             score_boost = 0.1 # Boost by 10%
+                # Apply Boosting
+                # Logic:
+                # 1. Same Episode: +15% score
+                # 2. Graph Neighbor: +10% score
 
-                         # Store tuple (original_index, boost) to stable sort
-                         reranked.append((m, score_boost))
+                reranked_scores = []
+                for m in final_results:
+                    # Base score is inverted rank (higher is better)
+                    # We can't easily modify the RRF score directly as it's not passed down.
+                    # But we can re-sort.
 
-                    # Sort by original rank + boost? No, that's hard to mix.
-                    # Let's just move same-episode items up slightly.
-                    final_results = sorted(final_results, key=lambda m: (1 if m.episode_id == anchor_episode else 0), reverse=True)
+                    boost_score = 0.0
+
+                    # Episode Boost
+                    if anchor_episode and m.episode_id == anchor_episode:
+                        boost_score += 0.15
+
+                    # Graph Boost
+                    clean_m_id = m.id.split(":")[1] if ":" in m.id else m.id
+                    if clean_m_id in connected_ids:
+                        boost_score += 0.10
+
+                    # We store (boost, original_index) to sort primarily by boost, then keep original order
+                    reranked_scores.append(boost_score)
+
+                # Re-sort final_results based on boost + original position preservation
+                # We want to keep the original RRF ordering as the base, but bubble up boosted items.
+                # A simple way: add boost to a normalized rank score?
+                # Or simply: stable sort by boost descending.
+
+                # Combine memory with boost
+                zipped = list(zip(final_results, reranked_scores))
+                # Sort: primary key = boost (desc), secondary = original index (asc) is implicit in stable sort
+                zipped.sort(key=lambda x: x[1], reverse=True)
+
+                final_results = [m for m, score in zipped]
+
+                logger.debug(f"Graph reranking applied. Anchor: {anchor_id}, Connected: {len(connected_ids)}")
 
             except Exception as e:
                 logger.warning(f"Graph reranking failed: {e}")
@@ -199,9 +245,9 @@ class HybridSearchService:
         final_results = final_results[:top_k]
 
         # 6. Log search session
-        if self.db_client:
+        if client_to_use:
             try:
-                await self.db_client.create_search_session({
+                await client_to_use.create_search_session({
                     "user_id": user_id,
                     "query": query,
                     "expanded_queries": expanded_queries,

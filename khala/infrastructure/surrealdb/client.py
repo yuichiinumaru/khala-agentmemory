@@ -901,6 +901,59 @@ class SurrealDBClient:
         async with self.get_connection() as conn:
             await conn.query(query, params)
 
+    async def archive_relationship(self, relationship_id: str) -> None:
+        """Soft-delete a relationship by setting valid_to to now.
+
+        Strategy 67 & 119: Temporal Edge Invalidation / Bi-temporal Graph.
+        """
+        # Strip ID prefix if present
+        if ":" in relationship_id:
+            relationship_id = relationship_id.split(":")[1]
+
+        query = """
+        UPDATE type::thing('relationship', $id)
+        SET valid_to = time::now(),
+            transaction_time_end = time::now();
+        """
+        params = {"id": relationship_id}
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+
+    async def get_relationships_at_time(
+        self,
+        entity_id: str,
+        timestamp: "datetime"
+    ) -> List[Dict[str, Any]]:
+        """Query relationships valid at a specific point in time (Time Travel).
+
+        Strategy 67: Temporal Graph (Bi-temporal).
+        """
+        # Ensure entity_id format
+        if ":" in entity_id:
+             entity_id = entity_id.split(":")[1]
+
+        query = """
+        SELECT * FROM relationship
+        WHERE (from_entity_id = $entity_id OR to_entity_id = $entity_id)
+        AND valid_from <= $timestamp
+        AND (valid_to IS NONE OR valid_to > $timestamp);
+        """
+
+        params = {
+            "entity_id": entity_id,
+            "timestamp": timestamp.isoformat()
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list):
+                 # Handle nested response
+                 if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                     return response[0]['result']
+                 return response
+            return []
+
     async def search_skills_by_vector(
         self, 
         embedding: EmbeddingVector, 
