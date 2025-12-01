@@ -470,8 +470,13 @@ class SurrealDBClient:
             await conn.query(query, params)
             return entity.id
 
-    async def create_relationship(self, relationship: Relationship) -> str:
-        """Create a new relationship in the database."""
+    async def create_relationship(self, relationship: Relationship, bidirectional: bool = False) -> str:
+        """Create a new relationship in the database.
+
+        Args:
+            relationship: The relationship entity to create.
+            bidirectional: If True, automatically creates the inverse edge.
+        """
         # Parse entity IDs to extract UUIDs if they are in record format
         from_uuid = relationship.from_entity_id
         if ":" in from_uuid:
@@ -483,11 +488,11 @@ class SurrealDBClient:
 
         query = """
         CREATE type::thing('relationship', $id) CONTENT {
-        in: type::thing('entity', $from_uuid),
-        out: type::thing('entity', $to_uuid),
-        from_entity_id: $from_entity_id,
-        to_entity_id: $to_entity_id,
-        relation_type: $relation_type,
+            in: type::thing('entity', $from_uuid),
+            out: type::thing('entity', $to_uuid),
+            from_entity_id: $from_entity_id,
+            to_entity_id: $to_entity_id,
+            relation_type: $relation_type,
             strength: $strength,
             weight: $weight,
             valid_from: $valid_from,
@@ -520,6 +525,49 @@ class SurrealDBClient:
                 if isinstance(response[0], dict) and 'status' in response[0] and response[0]['status'] == 'ERR':
                     logger.error(f"Create relationship failed: {response[0]}")
                     raise RuntimeError(f"Failed to create relationship: {response[0].get('detail', 'Unknown error')}")
+
+            # Handle bidirectional creation
+            if bidirectional:
+                # Create the inverse relationship
+                inverse_query = """
+                CREATE type::thing('relationship', $inverse_id) CONTENT {
+                    in: type::thing('entity', $to_uuid),
+                    out: type::thing('entity', $from_uuid),
+                    from_entity_id: $to_entity_id,
+                    to_entity_id: $from_entity_id,
+                    relation_type: $relation_type,
+                    strength: $strength,
+                    valid_from: $valid_from,
+                    valid_to: $valid_to,
+                    transaction_time_start: $transaction_time_start,
+                    transaction_time_end: $transaction_time_end,
+                    metadata: {
+                        is_inverse: true,
+                        original_relationship_id: $original_id
+                    }
+                };
+                """
+
+                # Generate a new ID for the inverse relationship
+                import uuid
+                inverse_id = str(uuid.uuid4())
+
+                inverse_params = {
+                    "inverse_id": inverse_id,
+                    "original_id": relationship.id,
+                    "from_uuid": from_uuid,
+                    "to_uuid": to_uuid,
+                    "from_entity_id": relationship.from_entity_id,
+                    "to_entity_id": relationship.to_entity_id,
+                    "relation_type": relationship.relation_type,
+                    "strength": relationship.strength,
+                    "valid_from": relationship.valid_from,
+                    "valid_to": relationship.valid_to,
+                    "transaction_time_start": relationship.transaction_time_start,
+                    "transaction_time_end": relationship.transaction_time_end,
+                }
+
+                await conn.query(inverse_query, inverse_params)
                     
             return relationship.id
 
