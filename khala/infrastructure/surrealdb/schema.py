@@ -161,6 +161,22 @@ class DatabaseSchema:
         DEFINE FIELD reward_mean ON training_curves TYPE float;
         DEFINE FIELD created_at ON training_curves TYPE datetime;
 
+        -- MarsRL Agent Rewards
+        DEFINE TABLE agent_rewards SCHEMAFULL;
+        DEFINE FIELD episode_id ON agent_rewards TYPE string;
+        DEFINE FIELD timestamp ON agent_rewards TYPE datetime;
+        DEFINE FIELD solver ON agent_rewards TYPE object FLEXIBLE;
+        DEFINE FIELD verifier ON agent_rewards TYPE object FLEXIBLE;
+        DEFINE FIELD corrector ON agent_rewards TYPE object FLEXIBLE;
+        DEFINE FIELD agreement_score ON agent_rewards TYPE float;
+
+        -- MarsRL Correction Chain (Graph)
+        DEFINE TABLE correction_chain SCHEMAFULL;
+        DEFINE FIELD from_attempt ON correction_chain TYPE string;
+        DEFINE FIELD to_feedback ON correction_chain TYPE string;
+        DEFINE FIELD final_output ON correction_chain TYPE string;
+        DEFINE FIELD success ON correction_chain TYPE bool;
+        DEFINE FIELD created_at ON correction_chain TYPE datetime;
         # Prompt Optimization (Module 13.1 - PromptWizard/Genealogy)
         DEFINE TABLE prompt_candidates SCHEMAFULL;
         DEFINE FIELD task_id ON prompt_candidates TYPE string;

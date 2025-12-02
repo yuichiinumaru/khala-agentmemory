@@ -1090,6 +1090,44 @@ class SurrealDBClient:
                 return response
             return []
 
+    async def create_training_curve(self, data: Dict[str, Any]) -> str:
+        """Record a training curve point for MarsRL."""
+        query = """
+        CREATE training_curves CONTENT {
+            model_id: $model_id,
+            epoch: $epoch,
+            loss: $loss,
+            accuracy: $accuracy,
+            reward_mean: $reward_mean,
+            created_at: time::now()
+        };
+        """
+        async with self.get_connection() as conn:
+            response = await conn.query(query, data)
+            if isinstance(response, list) and len(response) > 0:
+                if isinstance(response[0], dict) and 'id' in response[0]:
+                    return response[0]['id']
+            return ""
+
+    async def create_agent_reward(self, data: Dict[str, Any]) -> str:
+        """Record agent rewards for MarsRL episode."""
+        query = """
+        CREATE agent_rewards CONTENT {
+            episode_id: $episode_id,
+            timestamp: time::now(),
+            solver: $solver,
+            verifier: $verifier,
+            corrector: $corrector,
+            agreement_score: $agreement_score
+        };
+        """
+        async with self.get_connection() as conn:
+            response = await conn.query(query, data)
+            if isinstance(response, list) and len(response) > 0:
+                if isinstance(response[0], dict) and 'id' in response[0]:
+                    return response[0]['id']
+            return ""
+
     def _deserialize_skill(self, data: Dict[str, Any]) -> Skill:
         """Deserialize database record to Skill object."""
         from datetime import datetime, timezone
