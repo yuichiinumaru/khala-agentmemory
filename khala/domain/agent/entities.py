@@ -26,6 +26,7 @@ class AgentProfile:
     name: str
     role: AgentRole
     capabilities: List[str]
+    negative_constraints: List[str] = field(default_factory=list)
     status: AgentStatus = AgentStatus.IDLE
     metadata: Dict[str, Any] = field(default_factory=dict)
     last_heartbeat: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

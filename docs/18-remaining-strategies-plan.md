@@ -125,16 +125,16 @@ This document outlines the roadmap for implementing the remaining strategies for
 - [ ] **137. Conflict Resolution Protocols**: Automated negotiation logic.
 - [ ] **148. Scoped Memories**: Project/Tenant isolation logic.
 - [ ] **150. Recursive Summarization**: Hierarchical summary generation.
-- [ ] **151. Anchor Point Navigation**: Keyframe memory identification.
-- [ ] **152. Bias Detection**: Analysis of memory sentiment distribution.
+- [x] **151. Anchor Point Navigation**: Keyframe memory identification.
+- [x] **152. Bias Detection**: Analysis of memory sentiment distribution.
 - [ ] **156. Version Control**: Branching/Forking logic for memory sets.
 - [ ] **157. Forking Capabilities**: Copy-on-write for memory branches.
-- [ ] **158. Merge Conflict Resolution**: UI/Logic for merging branches.
+- [x] **158. Merge Conflict Resolution**: UI/Logic for merging branches.
 
 ## Phase 4: Deep Research & Experimental (Very High Complexity)
 *Focus: Novel implementations requiring significant R&D.*
 
-- [ ] **129. Dream-Inspired Consolidation**: Generative replay during downtime.
+- [x] **129. Dream-Inspired Consolidation**: Generative replay during downtime.
 - [ ] **130. Counterfactual Simulation**: "What if" scenario generation.
 - [ ] **133. Surprise-Based Learning**: Boosting weights for unexpected data.
 - [ ] **134. Curiosity-Driven Exploration**: Active learning queries.
