@@ -59,6 +59,8 @@
     - [x] **130. Counterfactual Simulation**: "What if" scenario generation.
     - [x] **133. Surprise-Based Learning**: Boosting weights for unexpected data.
 - [ ] **M12.C.3**: **Meta-Cognition & Self-Correction** (Strategies 141-159).
+- [x] **148. Scoped Memories**: Project/Tenant isolation logic.
+- [x] **150. Recursive Summarization**: Hierarchical summary generation.
 
 ### Phase 3: Advanced Intelligence & Reasoning (Module 13)
 *Code exists, Tests Pass (Low Coverage)*

@@ -89,6 +89,16 @@ class TestSurrealDBClient:
         # Mock database connection
         with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
             mock_conn = AsyncMock()
+
+            def query_side_effect(query, params=None):
+                if "SELECT id FROM memory" in query:
+                    return []
+                if "CREATE" in query and "memory" in query:
+                    return [{"id": memory.id}]
+                return []
+
+            mock_conn.query.side_effect = query_side_effect
+            mock_surreal.return_value = mock_conn
             # Side effect needs to account for schema initialization queries first
             # Schema initialization queries happen in client.initialize() called by get_connection()
             # But here we assume initialize() might be mocked or we provide enough side effects

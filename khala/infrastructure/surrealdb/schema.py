@@ -32,6 +32,9 @@ class DatabaseSchema:
         -- Core fields
         DEFINE FIELD id ON memory TYPE string;
         DEFINE FIELD user_id ON memory TYPE string;
+        -- Task 148: Scoped Memories
+        DEFINE FIELD project_id ON memory TYPE option<string>;
+        DEFINE FIELD tenant_id ON memory TYPE option<string>;
         DEFINE FIELD content ON memory TYPE string;
         DEFINE FIELD content_hash ON memory TYPE string;
         DEFINE FIELD memory_type ON memory TYPE string ASSERT $value INSIDE ['fact', 'code', 'decision', 'reflection', 'conversation'];
@@ -77,6 +80,12 @@ class DatabaseSchema:
         DEFINE FIELD episode_id ON memory TYPE option<string>;
         DEFINE FIELD confidence ON memory TYPE float;
         DEFINE FIELD source_reliability ON memory TYPE float;
+
+        -- Task 150: Recursive Summarization
+        DEFINE FIELD summary_level ON memory TYPE int DEFAULT 0;
+        DEFINE FIELD parent_summary_id ON memory TYPE option<string>;
+        DEFINE FIELD child_memory_ids ON memory TYPE array<string> DEFAULT [];
+
         DEFINE FIELD complexity ON memory TYPE float;
         -- Module 11: Optimized Fields
         DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE DEFAULT [];
@@ -94,6 +103,8 @@ class DatabaseSchema:
         "memory_indexes": """
         -- Primary index (multi-tenancy)
         DEFINE INDEX user_index ON memory FIELDS user_id;
+        DEFINE INDEX project_index ON memory FIELDS project_id;
+        DEFINE INDEX tenant_index ON memory FIELDS tenant_id;
         
         -- Deduplication index
         DEFINE INDEX content_hash_index ON memory FIELDS content_hash;
@@ -124,6 +135,7 @@ class DatabaseSchema:
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
+        DEFINE INDEX parent_summary_index ON memory FIELDS parent_summary_id;
 
         -- Branching indexes
         DEFINE INDEX branch_index ON memory FIELDS branch;
