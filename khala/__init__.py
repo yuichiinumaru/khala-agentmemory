@@ -4,7 +4,7 @@ KHALA is a production-ready memory system for AI agents that implements
 57 memory optimization strategies using Agno + SurrealDB.
 """
 
-__version__ = "0.1.0"
+__version__ = "2.0.0"
 __author__ = "KHALA Team"
 __email__ = "khala@example.com"
 

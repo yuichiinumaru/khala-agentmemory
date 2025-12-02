@@ -5,11 +5,14 @@ These tests work around async test setup for initial validation.
 
 import pytest
 from unittest.mock import MagicMock, patch
+import os
 
 from decimal import Decimal
 
+from datetime import datetime, timezone, timedelta
+from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import GeminiModel, ModelTier, ModelRegistry
-from khala.infrastructure.gemini.cost_tracker import CostTracker
+from khala.infrastructure.gemini.cost_tracker import CostTracker, CostRecord
 
 
 # Simplified tests for synchronous operations
@@ -37,9 +40,9 @@ class TestGeminiModelsSync:
     
     def test_model_registry_get_model(self):
         """Test model registry retrieval."""
-        model = ModelRegistry.get_model("gemini-1.5-flash")
+        model = ModelRegistry.get_model("gemini-2.0-flash")
         assert model.tier == ModelTier.FAST
-        assert model.model_id == "gemini-1.5-flash"
+        assert model.model_id == "gemini-2.0-flash"
         
         with pytest.raises(ValueError):
             ModelRegistry.get_model("nonexistent-model")
@@ -63,9 +66,13 @@ class TestCostTrackerSync:
     """Test cases for cost tracking functionality."""
     
     @pytest.fixture
-    def tracker(self):
+    def tracker(self, tmp_path):
         """Create a cost tracker with a test budget."""
-        return CostTracker(budget_usd_per_month=Decimal("100.00"))
+        persistence_path = tmp_path / "costs.json"
+        tracker = CostTracker(budget_usd_per_month=Decimal("100.00"))
+        tracker.persistence_path = str(persistence_path)
+        tracker.cost_records = []
+        return tracker
     
     def test_cost_record_creation(self, tracker):
         """Test creating a valid cost record."""
@@ -88,16 +95,19 @@ class TestCostTrackerSync:
     
     def test_cost_record_validation(self, tracker):
         """Test cost record validation logic."""
-        model = ModelRegistry.get_model("gemini-1.5-flash")
+        model = ModelRegistry.get_model("gemini-2.0-flash")
         
-        # Test negative cost
+        # Test negative cost validation in CostRecord
         with pytest.raises(ValueError):
-            tracker.record_call(
-                model=model,
+            CostRecord(
+                timestamp=datetime.now(timezone.utc),
+                model_id="test",
+                model_tier=ModelTier.FAST,
                 input_tokens=100,
                 output_tokens=100,
-                response_time_ms=100.0,
-                cost_usd=Decimal("-1.0")
+                total_tokens=200,
+                cost_usd=Decimal("-1.0"),
+                response_time_ms=100.0
             )
         
         # Test token mismatch
@@ -113,7 +123,7 @@ class TestCostTrackerSync:
     def test_daily_summarization(self, tracker):
         """Test daily cost summarization."""
         model = ModelRegistry.get_model("gemini-2.5-pro")
-        model_fast = ModelRegistry.get_model("gemini-1.5-flash")
+        model_fast = ModelRegistry.get_model("gemini-2.0-flash")
         
         # Add different calls
         tracker.record_call(model, 1000, 500, 200, "task1")
@@ -153,8 +163,8 @@ class TestCostTrackerSync:
     
     def test_optimization_report(self, tracker):
         """Test optimization report generation."""
-        model = ModelRegistry.get_model("gemini-2.5-pro")
-        model_fast = ModelRegistry.get_model("gemini-1.5-flash")
+        model_smart = ModelRegistry.get_model("gemini-2.5-pro")
+        model_fast = ModelRegistry.get_model("gemini-2.0-flash")
         
         # Add expensive smart tier usage
         for _ in range(10):
@@ -187,7 +197,7 @@ class TestCostTrackerSync:
     
     def test_cache_ttl_auto_cleanup(self, tracker):
         """Test automatic cache cleanup."""
-        model = ModelRegistry.get_model("gemini-1.5-flash")
+        model = ModelRegistry.get_model("gemini-2.0-flash")
         
         # Add some old records
         timestamp_30_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
@@ -195,7 +205,7 @@ class TestCostTrackerSync:
         # Mock a couple of old records
         old_record_1 = CostRecord(
             timestamp=timestamp_30_days_ago,
-            model_id="gemini-1.5-flash",
+            model_id="gemini-2.0-flash",
             model_tier=ModelTier.FAST,
             input_tokens=100,
             output_tokens=50,
@@ -267,7 +277,7 @@ class TestGeminiClientSync:
         """Test cache functionality."""
         client = GeminiClient(api_key="test-key")
         
-        cache_key = client._get_cache_key("test", "gemini-1.5-flash")
+        cache_key = client._get_cache_key("test", "gemini-2.0-flash")
         
         # Cache should start empty
         assert client._get_cached_response(cache_key) is None

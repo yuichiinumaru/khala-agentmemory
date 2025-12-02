@@ -7,6 +7,7 @@ name = "khala-memory"
 version = "2.0.0"
 description = "KHALA v2.0 - Knowledge Hierarchical Adaptive Long-term Agent (Consolidated)"
 requires-python = ">=3.11"
+readme = "README.md"
 license = {text = "MIT License"}
 authors = [
     {name = "KHALA Team", email = "khala@example.com"}

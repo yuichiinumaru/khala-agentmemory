@@ -89,14 +89,49 @@ class TestSurrealDBClient:
         # Mock database connection
         with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
             mock_conn = AsyncMock()
-            mock_conn.query.return_value = [{"id": memory.id}]
+
+            def query_side_effect(query, params=None):
+                if "SELECT id FROM memory WHERE content_hash" in query:
+                    return []
+                if "CREATE type::thing('memory'" in query:
+                    return [{"id": memory.id}]
+                return [] # Default for init queries
+            async def query_side_effect(query, params=None):
+                if "SELECT id FROM memory" in query and "content_hash" in query:
+                    return [] # No duplicate
+                if "CREATE" in query:
+                    return [{"id": memory.id}]
+                return [] # Default
+            def query_side_effect(query, params=None):
+                if "SELECT id FROM memory" in query:
+                    return []
+                if "CREATE" in query and "memory" in query:
+                    return [{"id": memory.id}]
+                return []
+
+            mock_conn.query.side_effect = query_side_effect
             mock_surreal.return_value = mock_conn
+            # Side effect needs to account for schema initialization queries first
+            # Schema initialization queries happen in client.initialize() called by get_connection()
+            # But here we assume initialize() might be mocked or we provide enough side effects
             
-            async with client.get_connection() as conn:
-                result = await client.create_memory(memory)
+            # Since client.initialize() calls DatabaseSchema.create_schema() which makes many calls,
+            # we should mock DatabaseSchema to avoid that complexity in this unit test.
+            with patch('khala.infrastructure.surrealdb.client.DatabaseSchema') as MockSchema:
+                mock_schema_instance = MockSchema.return_value
+                mock_schema_instance.create_schema = AsyncMock()
+
+                # Now side effects only apply to logic inside create_memory
+                mock_conn.query.side_effect = [
+                    [],  # First call: Check for duplicate (return empty)
+                    [{"id": memory.id}] # Second call: Create (return new ID)
+                ]
+                mock_surreal.return_value = mock_conn
+
+                async with client.get_connection() as conn:
+                    result = await client.create_memory(memory)
             
             assert result == memory.id
-            # mock_conn.query.assert_called_once() # Called multiple times due to init
             
             # Verify the query parameters - last call should be create
             call_args = mock_conn.query.call_args
@@ -107,7 +142,6 @@ class TestSurrealDBClient:
             create_call = None
             for call in mock_conn.query.call_args_list:
                 args = call[0]
-                kwargs = call[1] # or call[1] for kwargs, but AsyncMock uses args, kwargs tuple
                 # call is (args, kwargs)
                 q = args[0]
                 p = args[1] if len(args) > 1 else {}
@@ -225,6 +259,48 @@ class TestSurrealDBClient:
         assert params["user_id"] == "user123"
         assert params["query_text"] == "Python tutorial"
     
+    @pytest.mark.asyncio
+    async def test_search_memories_by_location(self, client):
+        """Test geospatial search."""
+        mock_results = [
+            {
+                "id": "mem1",
+                "content": "Near memory",
+                "distance": 100.0 # meters
+            }
+        ]
+
+        with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
+            mock_conn = AsyncMock()
+            mock_conn.query.return_value = mock_results
+            mock_surreal.return_value = mock_conn
+
+            results = await client.search_memories_by_location(
+                location={"lat": 40.7, "lon": -74.0},
+                radius_km=10.0,
+                user_id="user123"
+            )
+
+        assert len(results) == 1
+        assert results[0]["id"] == "mem1"
+
+        # Verify query parameters
+        search_call = None
+        for call in mock_conn.query.call_args_list:
+            args = call[0]
+            q = args[0]
+            p = args[1] if len(args) > 1 else {}
+            if "SELECT" in q and "geo::distance" in q:
+                search_call = (q, p)
+                break
+
+        assert search_call is not None
+        query, params = search_call
+
+        assert params["user_id"] == "user123"
+        assert params["radius_m"] == 10000.0
+        assert params["point"]["coordinates"] == [-74.0, 40.7]
+
     @pytest.mark.asyncio
     async def test_get_memories_by_tier(self, client):
         """Test getting memories by tier."""
