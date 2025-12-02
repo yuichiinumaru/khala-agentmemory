@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 try:
-    from surrealdb import Surreal, AsyncSurreal
+    from surrealdb import Surreal
 except ImportError as e:
     raise ImportError(
         "SurrealDB is required. Install with: pip install surrealdb"
@@ -56,7 +56,7 @@ class SurrealDBClient:
         self.password = password
         self.max_connections = max_connections
         
-        self._connection_pool: List[AsyncSurreal] = []
+        self._connection_pool: List[Surreal] = []
         self._pool_lock = asyncio.Lock()
         self._initialized = False
     
@@ -70,7 +70,7 @@ class SurrealDBClient:
                 return
             
             # Create initial connection
-            connection = AsyncSurreal(self.url)
+            connection = Surreal(self.url)
             await connection.connect()
             await connection.signin({"username": self.username, "password": self.password})
             
@@ -107,7 +107,7 @@ class SurrealDBClient:
                 connection = self._connection_pool.pop()
             else:
                 # Create new connection if pool is empty
-                connection = AsyncSurreal(self.url)
+                connection = Surreal(self.url)
                 await connection.connect()
                 await connection.signin({"username": self.username, "password": self.password})
                 await connection.use(namespace=self.namespace, database=self.database)

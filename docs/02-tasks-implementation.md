@@ -7,11 +7,11 @@
 
 ## Progress Tracking
 
-**Total Tasks**: 82 (Primary + Advanced)
-**Verified Complete**: 60
+**Total Tasks**: 84 (Primary + Advanced)
+**Verified Complete**: 62
 **Failing/Incomplete**: 10
 **Partial/Unverified**: 12
-**Progress**: 73% (Verified)
+**Progress**: 74% (Verified)
 
 ---
 
@@ -115,3 +115,7 @@
 - [x] Multimodal Support.
 - [x] Cross-Modal Retrieval.
 - [x] Code AST & Hypothesis Testing.
+
+### Module 12: Novel & Experimental
+- [x] **Privacy-Preserving Sanitization** (Strategy 132).
+- [x] **Conflict Resolution Protocols** (Strategy 137).

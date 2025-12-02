@@ -368,7 +368,7 @@ class TestSignificanceScorer:
         }
         
         significance = await scorer.calculate_significance(
-            memory, 0.7, user_context
+            memory, 0.7
         )
         
         # The basic calculation should still work

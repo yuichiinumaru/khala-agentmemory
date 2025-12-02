@@ -207,8 +207,9 @@ class Memory:
         age: timedelta = now - self.created_at
         return age.total_seconds() / 3600.0
 
-    def get_age_hours(self) -> float:
+    async def get_age_hours(self) -> float:
         """Public helper for consumers requiring age calculations."""
+        await asyncio.sleep(0)  # Make it a valid coroutine
         return self._get_age_hours()
 
 

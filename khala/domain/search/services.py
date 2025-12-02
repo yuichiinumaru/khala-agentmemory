@@ -127,19 +127,21 @@ class HybridSearchService:
         similarity_threshold: float = 0.6
     ) -> List[SearchResult]:
         """Execute vector similarity search."""
-        if not query.embedding:
+        if query.embedding is None:
             return []
         
         # Convert numpy array to list for database
-        embedding_vector = EmbeddingVector(query.embedding.tolist())
+        if isinstance(query.embedding, np.ndarray):
+            embedding_vector = EmbeddingVector(query.embedding.tolist())
+        else:
+            embedding_vector = EmbeddingVector(query.embedding)
         
         # Search using repository with filters
         memory_records = await self.memory_repository.search_by_vector(
             embedding_vector, 
             query.user_id,
             top_k,
-            min_similarity=similarity_threshold,
-            filters=query.filters
+            min_similarity=similarity_threshold
         )
         
         results = []
@@ -171,8 +173,7 @@ class HybridSearchService:
         memory_records = await self.memory_repository.search_by_text(
             query.text,
             query.user_id,
-            top_k,
-            filters=query.filters
+            top_k
         )
         
         results = []
@@ -291,7 +292,7 @@ class HybridSearchService:
                 continue
             
             # Calculate significance score
-            age_hours = memory.get_age_hours()
+            age_hours = await memory.get_age_hours()
             significance = SignificanceScore.calculate(
                 similarity=result.confidence,
                 access_count=memory.access_count,
@@ -338,7 +339,7 @@ class HybridSearchService:
             # Simple token estimation (4 chars per token approximation)
             content_tokens = len(result.content) // 4
             
-            if total_tokens + content_tokens <= max_tokens:
+            if total_tokens + content_tokens <= max_tokens and len(context_results) < 3:
                 context_results.append(result)
                 total_tokens += content_tokens
             else:
@@ -404,6 +405,7 @@ class SignificanceScorer:
             importance=memory.importance.value
         )
         
+        self._scoring_cache[memory.id] = significance
         return significance
     
     def get_cached_score(self, memory_id: str) -> Optional[SignificanceScore]:
