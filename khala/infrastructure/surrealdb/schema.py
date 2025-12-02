@@ -79,6 +79,11 @@ class DatabaseSchema:
         DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD location ON memory TYPE option<object> FLEXIBLE;
         DEFINE FIELD freshness ON memory VALUE time::now() - updated_at;
+
+        -- Module 11.C.2: Advanced Vector Ops (Strategies 79-84)
+        DEFINE FIELD embedding_quantized ON memory TYPE option<array<int>>;
+        DEFINE FIELD cluster_id ON memory TYPE option<record<vector_cluster>>;
+        DEFINE FIELD anomaly_score ON memory TYPE float DEFAULT 0.0;
         """,
         
         # Memory indexes
@@ -108,6 +113,31 @@ class DatabaseSchema:
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
         """,
         
+        # Advanced Vector Ops Tables (Module 11.C.2)
+        "vector_ops_tables": """
+        -- Strategy 81: Vector Clustering
+        DEFINE TABLE vector_cluster SCHEMAFULL;
+        DEFINE FIELD centroid ON vector_cluster TYPE array<float>;
+        DEFINE FIELD radius ON vector_cluster TYPE float;
+        DEFINE FIELD member_count ON vector_cluster TYPE int;
+        DEFINE FIELD created_at ON vector_cluster TYPE datetime;
+        DEFINE FIELD updated_at ON vector_cluster TYPE datetime;
+
+        -- Strategy 80: Vector Drift Detection
+        DEFINE TABLE vector_stats SCHEMAFULL;
+        DEFINE FIELD window_start ON vector_stats TYPE datetime;
+        DEFINE FIELD window_end ON vector_stats TYPE datetime;
+        DEFINE FIELD mean_embedding ON vector_stats TYPE array<float>;
+        DEFINE FIELD variance ON vector_stats TYPE float;
+        DEFINE FIELD drift_score ON vector_stats TYPE float;
+        DEFINE FIELD sample_count ON vector_stats TYPE int;
+        DEFINE FIELD model_version ON vector_stats TYPE string;
+
+        -- Indexes
+        DEFINE INDEX cluster_centroid_index ON vector_cluster FIELDS centroid HNSW DIMENSION 768 DIST COSINE M 16;
+        DEFINE INDEX stats_time_index ON vector_stats FIELDS window_start;
+        """,
+
         # LGKGR Tables (Module 13.2.1)
         "lgkgr_tables": """
         -- Reasoning Paths Trace
@@ -467,6 +497,7 @@ class DatabaseSchema:
             "audit_log_table",
             "search_session_table",
             "skill_table",
+            "vector_ops_tables",
             "lgkgr_tables",
             "latent_mas_tables",
             # MarsRL table is inside latent_mas_tables block in current structure but labeled clearly
@@ -497,6 +528,8 @@ class DatabaseSchema:
             "REMOVE TABLE audit_log",
             "REMOVE TABLE search_session",
             "REMOVE TABLE skill",
+            "REMOVE TABLE vector_cluster",
+            "REMOVE TABLE vector_stats",
             "REMOVE TABLE agent_network",
             "REMOVE TABLE agent_states",
             "REMOVE TABLE network_evolution",
@@ -525,6 +558,7 @@ class DatabaseSchema:
             ("audit_log", "SELECT count() FROM audit_log;"),
             ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
+            ("vector_cluster", "SELECT count() FROM vector_cluster;"),
             ("agent_network", "SELECT count() FROM agent_network;"),
             ("agent_states", "SELECT count() FROM agent_states;"),
             ("network_evolution", "SELECT count() FROM network_evolution;"),
