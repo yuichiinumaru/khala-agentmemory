@@ -3,7 +3,7 @@
 import logging
 import json
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 
@@ -21,6 +21,14 @@ class PlanStep:
     result: Optional[str] = None
 
 @dataclass
+class VerificationResult:
+    """Result of a plan verification."""
+    is_valid: bool
+    issues: List[str]
+    suggestions: List[str]
+    score: float
+
+@dataclass
 class Plan:
     """A multi-step plan."""
     id: str
@@ -29,6 +37,7 @@ class Plan:
     status: str = "created"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = field(default_factory=dict)
+    verification_history: List[VerificationResult] = field(default_factory=list)
 
 class Planner:
     """Service for creating and decomposing plans."""
@@ -74,6 +83,97 @@ class Planner:
             logger.error(f"Error creating plan: {e}")
             raise
             
+    async def verify_plan(self, plan: Plan, context: str = "") -> VerificationResult:
+        """Verify the validity and feasibility of a plan."""
+        plan_dict = {
+            "goal": plan.goal,
+            "steps": [s.description for s in plan.steps]
+        }
+
+        prompt = f"""
+        Review the following plan for errors, logical gaps, or safety issues.
+
+        Plan:
+        {json.dumps(plan_dict, indent=2)}
+
+        Context:
+        {context}
+
+        Provide a verification result in JSON format:
+        {{
+            "is_valid": boolean,
+            "issues": [list of strings],
+            "suggestions": [list of strings],
+            "score": float (0.0 to 1.0)
+        }}
+        """
+
+        try:
+            response = await self.gemini_client.generate_text(
+                prompt,
+                model_id="gemini-2.0-flash", # Use critic/verifier model role
+                temperature=0.1
+            )
+
+            content = self._clean_json_response(response["content"])
+            result_data = json.loads(content)
+
+            result = VerificationResult(
+                is_valid=result_data.get("is_valid", False),
+                issues=result_data.get("issues", []),
+                suggestions=result_data.get("suggestions", []),
+                score=result_data.get("score", 0.0)
+            )
+
+            plan.verification_history.append(result)
+            return result
+
+        except Exception as e:
+            logger.error(f"Error verifying plan: {e}")
+            # Return a fail-safe negative result
+            return VerificationResult(False, [str(e)], [], 0.0)
+
+    async def refine_plan(self, plan: Plan, verification_result: VerificationResult) -> Plan:
+        """Refine a plan based on verification feedback."""
+        prompt = f"""
+        Original Goal: {plan.goal}
+
+        Original Steps:
+        {[s.description for s in plan.steps]}
+
+        Issues Found:
+        {verification_result.issues}
+
+        Suggestions:
+        {verification_result.suggestions}
+
+        Please rewrite the plan to address these issues.
+        Return a JSON list of strings (the new steps).
+        """
+
+        try:
+            response = await self.gemini_client.generate_text(
+                prompt,
+                model_id="gemini-2.5-flash",
+                temperature=0.2
+            )
+
+            content = self._clean_json_response(response["content"])
+            step_descriptions = json.loads(content)
+
+            new_steps = [
+                PlanStep(id=str(uuid.uuid4()), description=desc)
+                for desc in step_descriptions
+            ]
+
+            # Update the existing plan object
+            plan.steps = new_steps
+            return plan
+
+        except Exception as e:
+            logger.error(f"Error refining plan: {e}")
+            raise
+
     async def decompose_step(self, step: PlanStep, context: str = "") -> None:
         """Decompose a complex step into sub-steps."""
         prompt = f"""
