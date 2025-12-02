@@ -177,6 +177,72 @@ class DatabaseSchema:
         DEFINE FIELD final_output ON correction_chain TYPE string;
         DEFINE FIELD success ON correction_chain TYPE bool;
         DEFINE FIELD created_at ON correction_chain TYPE datetime;
+        # Prompt Optimization (Module 13.1 - PromptWizard/Genealogy)
+        DEFINE TABLE prompt_candidates SCHEMAFULL;
+        DEFINE FIELD task_id ON prompt_candidates TYPE string;
+        DEFINE FIELD generation ON prompt_candidates TYPE int;
+        DEFINE FIELD prompt_text ON prompt_candidates TYPE string;
+        DEFINE FIELD instructions ON prompt_candidates TYPE string;
+        DEFINE FIELD examples ON prompt_candidates TYPE array<string>;
+        DEFINE FIELD fitness_score ON prompt_candidates TYPE float;
+        DEFINE FIELD parent_id ON prompt_candidates TYPE option<string>;
+        DEFINE FIELD mutations_applied ON prompt_candidates TYPE array<string>;
+        DEFINE FIELD created_at ON prompt_candidates TYPE datetime;
+        DEFINE FIELD metadata ON prompt_candidates TYPE object FLEXIBLE;
+
+        DEFINE INDEX prompt_task_idx ON prompt_candidates FIELDS task_id;
+        DEFINE INDEX prompt_parent_idx ON prompt_candidates FIELDS parent_id;
+
+        DEFINE TABLE prompt_evaluations SCHEMAFULL;
+        DEFINE FIELD prompt_id ON prompt_evaluations TYPE string;
+        DEFINE FIELD task_id ON prompt_evaluations TYPE string;
+        DEFINE FIELD accuracy ON prompt_evaluations TYPE float;
+        DEFINE FIELD efficiency ON prompt_evaluations TYPE float;
+        DEFINE FIELD human_preference ON prompt_evaluations TYPE int;
+        DEFINE FIELD feedback_rules_triggered ON prompt_evaluations TYPE array<string>;
+        DEFINE FIELD created_at ON prompt_evaluations TYPE datetime;
+
+        DEFINE INDEX eval_prompt_idx ON prompt_evaluations FIELDS prompt_id;
+        """,
+
+        # Dr. MAMR Tables (Strategy 168)
+        "dr_mamr_tables": """
+        DEFINE TABLE reasoning_traces SCHEMAFULL;
+        DEFINE FIELD meta_decision ON reasoning_traces TYPE string;
+        DEFINE FIELD reasoning_step ON reasoning_traces TYPE string;
+        DEFINE FIELD group_advantage ON reasoning_traces TYPE float;
+        DEFINE FIELD created_at ON reasoning_traces TYPE datetime DEFAULT time::now();
+        # AgentsNet (Module 13.4.2 - Strategy 167)
+        "agentsnet_tables": """
+        -- Agent Network (Topology/Edges)
+        DEFINE TABLE agent_network SCHEMAFULL;
+        DEFINE FIELD agent_1 ON agent_network TYPE string;
+        DEFINE FIELD agent_2 ON agent_network TYPE string;
+        DEFINE FIELD connection_strength ON agent_network TYPE float;
+        DEFINE FIELD messages_exchanged ON agent_network TYPE int;
+        DEFINE FIELD coordination_success ON agent_network TYPE bool;
+        DEFINE FIELD created_at ON agent_network TYPE datetime DEFAULT time::now();
+
+        DEFINE INDEX an_agent1_index ON agent_network FIELDS agent_1;
+        DEFINE INDEX an_agent2_index ON agent_network FIELDS agent_2;
+
+        -- Agent States (Vectors)
+        DEFINE TABLE agent_states SCHEMAFULL;
+        DEFINE FIELD agent_id ON agent_states TYPE string;
+        DEFINE FIELD iteration ON agent_states TYPE int;
+        DEFINE FIELD state_embedding ON agent_states TYPE array<float>;
+        DEFINE FIELD decision_made ON agent_states TYPE string;
+        DEFINE FIELD created_at ON agent_states TYPE datetime DEFAULT time::now();
+
+        DEFINE INDEX as_vector_index ON agent_states FIELDS state_embedding HNSW DIMENSION 1024 DIST COSINE M 16;
+
+        -- Network Evolution (TimeSeries Metrics)
+        DEFINE TABLE network_evolution SCHEMAFULL;
+        DEFINE FIELD iteration ON network_evolution TYPE int;
+        DEFINE FIELD avg_coordination ON network_evolution TYPE float;
+        DEFINE FIELD message_count ON network_evolution TYPE int;
+        DEFINE FIELD topology_changes ON network_evolution TYPE int;
+        DEFINE FIELD created_at ON network_evolution TYPE datetime DEFAULT time::now();
         """,
 
         # Episode table
@@ -403,6 +469,9 @@ class DatabaseSchema:
             "skill_table",
             "lgkgr_tables",
             "latent_mas_tables",
+            # MarsRL table is inside latent_mas_tables block in current structure but labeled clearly
+            "dr_mamr_tables",
+            "agentsnet_tables",
             # MarsRL table
             # "rbac_permissions",
         ]
@@ -428,6 +497,9 @@ class DatabaseSchema:
             "REMOVE TABLE audit_log",
             "REMOVE TABLE search_session",
             "REMOVE TABLE skill",
+            "REMOVE TABLE agent_network",
+            "REMOVE TABLE agent_states",
+            "REMOVE TABLE network_evolution",
             "REMOVE FUNCTION fn::decay_score",
             "REMOVE FUNCTION fn::should_promote",
             "REMOVE FUNCTION fn::should_archive",
@@ -453,6 +525,9 @@ class DatabaseSchema:
             ("audit_log", "SELECT count() FROM audit_log;"),
             ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
+            ("agent_network", "SELECT count() FROM agent_network;"),
+            ("agent_states", "SELECT count() FROM agent_states;"),
+            ("network_evolution", "SELECT count() FROM network_evolution;"),
         ]
         
         for table_name, query in table_checks:
