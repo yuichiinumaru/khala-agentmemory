@@ -85,24 +85,31 @@ class TestSurrealDBClient:
             embedding=embedding,
             tags=["test", "example"]
         )
-        
+
         # Mock database connection
         with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
             mock_conn = AsyncMock()
-            mock_conn.query.return_value = [{"id": memory.id}]
-            mock_surreal.return_value = mock_conn
             
+            # We need to account for initialization queries if they run.
+            # But get_connection calls initialize which runs schema creation queries.
+            # It's better to mock initialize to avoid complex side_effect chains.
+
+            client.initialize = AsyncMock()
+            client._initialized = True
+            client._connection_pool = [mock_conn]
+
+            # Configure side_effect for multiple query calls:
+            # 1. Deduplication check (empty list = no existing hash)
+            # 2. Actual create call
+            mock_conn.query.side_effect = [[], [{"id": memory.id}]]
+            mock_surreal.return_value = mock_conn
+
             async with client.get_connection() as conn:
                 result = await client.create_memory(memory)
-            
+
             assert result == memory.id
-            # mock_conn.query.assert_called_once() # Called multiple times due to init
-            
-            # Verify the query parameters - last call should be create
-            call_args = mock_conn.query.call_args
-            query = call_args[0][0]
-            params = call_args[1]
-            
+
+            # Verify the query parameters
             # Find the create call
             create_call = None
             for call in mock_conn.query.call_args_list:
