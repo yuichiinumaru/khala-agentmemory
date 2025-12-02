@@ -160,6 +160,33 @@ class DatabaseSchema:
         DEFINE FIELD accuracy ON training_curves TYPE float;
         DEFINE FIELD reward_mean ON training_curves TYPE float;
         DEFINE FIELD created_at ON training_curves TYPE datetime;
+
+        # Prompt Optimization (Module 13.1 - PromptWizard/Genealogy)
+        DEFINE TABLE prompt_candidates SCHEMAFULL;
+        DEFINE FIELD task_id ON prompt_candidates TYPE string;
+        DEFINE FIELD generation ON prompt_candidates TYPE int;
+        DEFINE FIELD prompt_text ON prompt_candidates TYPE string;
+        DEFINE FIELD instructions ON prompt_candidates TYPE string;
+        DEFINE FIELD examples ON prompt_candidates TYPE array<string>;
+        DEFINE FIELD fitness_score ON prompt_candidates TYPE float;
+        DEFINE FIELD parent_id ON prompt_candidates TYPE option<string>;
+        DEFINE FIELD mutations_applied ON prompt_candidates TYPE array<string>;
+        DEFINE FIELD created_at ON prompt_candidates TYPE datetime;
+        DEFINE FIELD metadata ON prompt_candidates TYPE object FLEXIBLE;
+
+        DEFINE INDEX prompt_task_idx ON prompt_candidates FIELDS task_id;
+        DEFINE INDEX prompt_parent_idx ON prompt_candidates FIELDS parent_id;
+
+        DEFINE TABLE prompt_evaluations SCHEMAFULL;
+        DEFINE FIELD prompt_id ON prompt_evaluations TYPE string;
+        DEFINE FIELD task_id ON prompt_evaluations TYPE string;
+        DEFINE FIELD accuracy ON prompt_evaluations TYPE float;
+        DEFINE FIELD efficiency ON prompt_evaluations TYPE float;
+        DEFINE FIELD human_preference ON prompt_evaluations TYPE int;
+        DEFINE FIELD feedback_rules_triggered ON prompt_evaluations TYPE array<string>;
+        DEFINE FIELD created_at ON prompt_evaluations TYPE datetime;
+
+        DEFINE INDEX eval_prompt_idx ON prompt_evaluations FIELDS prompt_id;
         """,
 
         # Episode table
@@ -386,7 +413,7 @@ class DatabaseSchema:
             "skill_table",
             "lgkgr_tables",
             "latent_mas_tables",
-            # MarsRL table
+            # MarsRL table is inside latent_mas_tables block in current structure but labeled clearly
             # "rbac_permissions",
         ]
         
