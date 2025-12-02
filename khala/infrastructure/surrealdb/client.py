@@ -19,6 +19,7 @@ except ImportError as e:
     ) from e
 
 from khala.domain.memory.entities import Memory, Entity, Relationship
+from khala.domain.memory.value_objects import EmbeddingVector, MemorySource, Sentiment, GeoLocation
 from khala.domain.memory.clustering import VectorCentroid
 from khala.domain.memory.value_objects import EmbeddingVector, MemorySource, Sentiment
 from khala.domain.skills.entities import Skill
@@ -184,6 +185,8 @@ class SurrealDBClient:
             episode_id: $episode_id,
             confidence: $confidence,
             source_reliability: $source_reliability,
+            geo_location: $geo_location,
+            location: $location
             project_id: $project_id,
             tenant_id: $tenant_id,
             summary_level: $summary_level,
@@ -206,6 +209,17 @@ class SurrealDBClient:
         sentiment_data = None
         if memory.sentiment:
             sentiment_data = asdict(memory.sentiment)
+
+        # Serialize geo_location
+        geo_location_data = None
+        location_data = memory.location or {} # Preserve existing location data if any
+        if memory.geo_location:
+            geo_location_data = memory.geo_location.to_geojson()
+            # Merge geo_location details into location_data, preserving existing keys
+            # This ensures we don't overwrite user-defined location metadata
+            geo_details = asdict(memory.geo_location)
+            # Add/overwrite only the geospatial fields
+            location_data.update(geo_details)
 
         params = {
             "id": memory.id,
@@ -242,6 +256,8 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "geo_location": geo_location_data,
+            "location": location_data
             "project_id": memory.project_id,
             "tenant_id": memory.tenant_id,
             "summary_level": memory.summary_level,
@@ -337,6 +353,8 @@ class SurrealDBClient:
             episode_id: $episode_id,
             confidence: $confidence,
             source_reliability: $source_reliability,
+            geo_location: $geo_location,
+            location: $location
             project_id: $project_id,
             tenant_id: $tenant_id,
             summary_level: $summary_level,
@@ -359,6 +377,15 @@ class SurrealDBClient:
         sentiment_data = None
         if memory.sentiment:
             sentiment_data = asdict(memory.sentiment)
+
+        # Serialize geo_location
+        geo_location_data = None
+        location_data = memory.location or {}
+        if memory.geo_location:
+            geo_location_data = memory.geo_location.to_geojson()
+            # Merge details
+            geo_details = asdict(memory.geo_location)
+            location_data.update(geo_details)
 
         params = {
             "id": memory.id,
@@ -391,6 +418,8 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "geo_location": geo_location_data,
+            "location": location_data
             "project_id": memory.project_id,
             "tenant_id": memory.tenant_id,
             "summary_level": memory.summary_level,
@@ -1174,6 +1203,24 @@ class SurrealDBClient:
             except Exception as e:
                 logger.warning(f"Failed to deserialize Sentiment: {e}")
 
+        # Reconstruct GeoLocation
+        geo_location = None
+        if data.get("location") and isinstance(data["location"], dict):
+            # Try to reconstruct from 'location' field if it matches GeoLocation structure
+            try:
+                if "latitude" in data["location"] and "longitude" in data["location"]:
+                    geo_location = GeoLocation(**data["location"])
+            except Exception as e:
+                logger.debug(f"Failed to deserialize GeoLocation from location field: {e}")
+
+        if not geo_location and data.get("geo_location"):
+            # Fallback to coordinates from geo_location if location field is missing/invalid
+            try:
+                coords = data["geo_location"]["coordinates"]
+                geo_location = GeoLocation(latitude=coords[1], longitude=coords[0])
+            except Exception as e:
+                logger.warning(f"Failed to deserialize GeoLocation from geometry: {e}")
+
         # Create Memory object
         from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
         
@@ -1216,6 +1263,8 @@ class SurrealDBClient:
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
             source_reliability=data.get("source_reliability", 1.0),
+            geo_location=geo_location,
+            location=data.get("location")
             location=data.get("location")
         )
 

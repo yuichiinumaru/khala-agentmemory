@@ -17,6 +17,7 @@ from .value_objects import (
     MemoryTier,
     MemorySource,
     Sentiment,
+    GeoLocation
     MemoryType
 )
 
@@ -96,6 +97,7 @@ class Memory:
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)
     location: Optional[Dict[str, Any]] = field(default=None)
+    geo_location: Optional[GeoLocation] = field(default=None)  # Task 111: Agent Location Context
 
     # Module 15: Version Control & Branching
     branch_id: Optional[str] = None

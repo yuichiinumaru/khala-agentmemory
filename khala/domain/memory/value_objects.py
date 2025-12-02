@@ -6,8 +6,8 @@ defined by their values.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Final, Optional, Dict
-from datetime import datetime
+from typing import List, Final, Optional, Dict, Any
+from datetime import datetime, timezone
 from enum import Enum
 import numpy as np
 
@@ -221,3 +221,26 @@ class Sentiment:
         if not self.label.strip():
             raise ValueError("Sentiment label cannot be empty")
 
+
+@dataclass(frozen=True)
+class GeoLocation:
+    """Immutable geospatial location for memory tagging (Task 111)."""
+
+    latitude: float
+    longitude: float
+    address: Optional[str] = None
+    location_type: Optional[str] = "physical"  # e.g. "physical", "virtual"
+
+    def __post_init__(self) -> None:
+        """Validate coordinates."""
+        if not (-90.0 <= self.latitude <= 90.0):
+            raise ValueError(f"Latitude must be in [-90, 90], got {self.latitude}")
+        if not (-180.0 <= self.longitude <= 180.0):
+            raise ValueError(f"Longitude must be in [-180, 180], got {self.longitude}")
+
+    def to_geojson(self) -> Dict[str, Any]:
+        """Convert to GeoJSON Point format (compatible with SurrealDB)."""
+        return {
+            "type": "Point",
+            "coordinates": [self.longitude, self.latitude]
+        }
