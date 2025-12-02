@@ -77,7 +77,7 @@ class DatabaseSchema:
         -- Module 11: Optimized Fields
         DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
-        DEFINE FIELD location ON memory TYPE option<object> FLEXIBLE;
+        DEFINE FIELD location ON memory TYPE option<geometry<point>>;
         DEFINE FIELD freshness ON memory VALUE time::now() - updated_at;
 
         -- Module 11.C.2: Advanced Vector Ops (Strategies 79-84)
@@ -108,6 +108,9 @@ class DatabaseSchema:
         
         -- Tag prefix search
         DEFINE INDEX tag_search ON memory FIELDS tags SEARCH ANALYZER ascii BM25;
+
+        -- Spatial index (Strategies 111-115)
+        DEFINE INDEX location_index ON memory FIELDS location;
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;

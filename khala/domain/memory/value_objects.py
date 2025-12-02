@@ -6,7 +6,7 @@ defined by their values.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Final, Optional, Dict
+from typing import List, Final, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 import numpy as np
@@ -187,3 +187,44 @@ class Sentiment:
             raise ValueError("Sentiment score must be in [-1.0, 1.0]")
         if not self.label.strip():
             raise ValueError("Sentiment label cannot be empty")
+
+
+@dataclass(frozen=True)
+class Location:
+    """Immutable geospatial location for spatial memory (Strategies 111-115)."""
+
+    latitude: float
+    longitude: float
+    address: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate location coordinates."""
+        if not (-90.0 <= self.latitude <= 90.0):
+            raise ValueError(f"Latitude must be in [-90, 90], got {self.latitude}")
+        if not (-180.0 <= self.longitude <= 180.0):
+            raise ValueError(f"Longitude must be in [-180, 180], got {self.longitude}")
+
+    def to_geojson(self) -> Dict[str, Any]:
+        """Convert to GeoJSON Point format."""
+        return {
+            "type": "Point",
+            "coordinates": [self.longitude, self.latitude]
+        }
+
+    @classmethod
+    def from_geojson(cls, geojson: Dict[str, Any], **kwargs) -> "Location":
+        """Create from GeoJSON Point format."""
+        if geojson.get("type") != "Point":
+            raise ValueError("GeoJSON must be of type 'Point'")
+        coords = geojson.get("coordinates", [])
+        if len(coords) != 2:
+            raise ValueError("GeoJSON coordinates must have 2 values [lon, lat]")
+
+        return cls(
+            longitude=coords[0],
+            latitude=coords[1],
+            **kwargs
+        )

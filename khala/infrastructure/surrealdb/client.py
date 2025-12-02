@@ -13,13 +13,14 @@ from dataclasses import asdict
 
 try:
     from surrealdb import Surreal, AsyncSurreal
+    from surrealdb.data.types.geometry import GeometryPoint
 except ImportError as e:
     raise ImportError(
         "SurrealDB is required. Install with: pip install surrealdb"
     ) from e
 
 from khala.domain.memory.entities import Memory, Entity, Relationship
-from khala.domain.memory.value_objects import EmbeddingVector, MemorySource, Sentiment
+from khala.domain.memory.value_objects import EmbeddingVector, MemorySource, Sentiment, Location
 from khala.domain.skills.entities import Skill
 from khala.domain.skills.value_objects import SkillType, SkillLanguage, SkillParameter
 from .schema import DatabaseSchema
@@ -200,7 +201,8 @@ class SurrealDBClient:
             sentiment: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            location: $location
         };
         """
         
@@ -215,6 +217,11 @@ class SurrealDBClient:
         sentiment_data = None
         if memory.sentiment:
             sentiment_data = asdict(memory.sentiment)
+
+        # Serialize location
+        location_data = None
+        if memory.location:
+            location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
 
         params = {
             "id": memory.id,
@@ -244,7 +251,7 @@ class SurrealDBClient:
             "verification_score": memory.verification_score,
             "verification_count": memory.verification_count,
             "verification_status": memory.verification_status,
-            "verified_at": memory.verified_at.isoformat() if memory.verified_at else None,
+            "verified_at": memory.verified_at,
             "verification_issues": memory.verification_issues,
             "debate_consensus": memory.debate_consensus,
             "is_archived": memory.is_archived,
@@ -254,6 +261,7 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "location": location_data,
         }
         
         async with self.get_connection() as conn:
@@ -309,8 +317,9 @@ class SurrealDBClient:
         # Recalculate hash on update
         content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
 
+        # Using MERGE to preserve other fields (like events, versions)
         query = """
-        UPDATE type::thing('memory', $id) CONTENT {
+        UPDATE type::thing('memory', $id) MERGE {
             user_id: $user_id,
             content: $content,
             content_hash: $content_hash,
@@ -337,7 +346,8 @@ class SurrealDBClient:
             sentiment: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            location: $location
         };
         """
         
@@ -352,6 +362,11 @@ class SurrealDBClient:
         sentiment_data = None
         if memory.sentiment:
             sentiment_data = asdict(memory.sentiment)
+
+        # Serialize location
+        location_data = None
+        if memory.location:
+            location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
 
         params = {
             "id": memory.id,
@@ -372,14 +387,14 @@ class SurrealDBClient:
             "tags": memory.tags,
             "category": memory.category,
             "metadata": memory.metadata,
-            "created_at": memory.created_at.isoformat(),
-            "accessed_at": memory.accessed_at.isoformat(),
+            "created_at": memory.created_at,
+            "accessed_at": memory.accessed_at,
             "access_count": memory.access_count,
             "llm_cost": memory.llm_cost,
             "verification_score": memory.verification_score,
             "verification_count": memory.verification_count,
             "verification_status": memory.verification_status,
-            "verified_at": memory.verified_at.isoformat() if memory.verified_at else None,
+            "verified_at": memory.verified_at,
             "verification_issues": memory.verification_issues,
             "debate_consensus": memory.debate_consensus,
             "is_archived": memory.is_archived,
@@ -389,6 +404,7 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "location": location_data,
         }
         
         async with self.get_connection() as conn:
@@ -750,6 +766,20 @@ class SurrealDBClient:
             except Exception as e:
                 logger.warning(f"Failed to deserialize Sentiment: {e}")
 
+        # Reconstruct Location
+        location = None
+        loc_data = data.get("location")
+        if loc_data:
+             try:
+                 # Check if it's a GeometryPoint object (from SDK)
+                 if isinstance(loc_data, GeometryPoint):
+                     # Use coordinates directly
+                     location = Location(longitude=loc_data.longitude, latitude=loc_data.latitude)
+                 elif isinstance(loc_data, dict):
+                     location = Location.from_geojson(loc_data)
+             except Exception as e:
+                 logger.warning(f"Failed to deserialize Location: {e}")
+
         # Create Memory object
         from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
         
@@ -788,7 +818,8 @@ class SurrealDBClient:
             sentiment=sentiment,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
-            source_reliability=data.get("source_reliability", 1.0)
+            source_reliability=data.get("source_reliability", 1.0),
+            location=location
         )
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:
