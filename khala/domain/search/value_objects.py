@@ -253,6 +253,9 @@ class SearchPipeline:
     final_top_k: int = 10
     min_confidence: float = 0.3
     
+    # Context window sizing (Strategy 48)
+    max_context_tokens: int = 8000
+
     @classmethod
     def create_for_intent(cls, intent: SearchIntent) -> "SearchPipeline":
         """Create search pipeline optimized for specific intent."""
@@ -265,7 +268,8 @@ class SearchPipeline:
                 graph_traversal=True,
                 vector_top_k=200,
                 bm25_top_k=100,
-                final_top_k=20
+                final_top_k=20,
+                max_context_tokens=16000
             )
         elif intent == SearchIntent.DECISION:
             # Decision search filters by importance
@@ -274,7 +278,19 @@ class SearchPipeline:
                 bm25_enabled=True,
                 metadata_filtering=True,
                 min_confidence=0.5,
-                final_top_k=5
+                final_top_k=5,
+                max_context_tokens=8000
+            )
+        elif intent in (SearchIntent.ANALYSIS, SearchIntent.SYNTHESIS, SearchIntent.PLANNING):
+            # Complex reasoning needs larger context
+            return cls(
+                vector_enabled=True,
+                bm25_enabled=True,
+                metadata_filtering=True,
+                vector_top_k=300,
+                bm25_top_k=150,
+                final_top_k=30,
+                max_context_tokens=32000
             )
         else:
             # Standard configuration for other intents
