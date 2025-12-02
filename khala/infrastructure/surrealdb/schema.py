@@ -469,6 +469,21 @@ class DatabaseSchema:
         DEFINE FIELD version ON skill TYPE string;
         DEFINE FIELD is_active ON skill TYPE bool;
         """,
+
+        # User Profile table (Task 154)
+        "user_profile_table": """
+        DEFINE TABLE user_profile SCHEMAFULL;
+
+        DEFINE FIELD user_id ON user_profile TYPE string;
+        DEFINE FIELD preferences ON user_profile TYPE object FLEXIBLE;
+        DEFINE FIELD context ON user_profile TYPE object FLEXIBLE;
+        DEFINE FIELD traits ON user_profile TYPE array<string>;
+        DEFINE FIELD created_at ON user_profile TYPE datetime DEFAULT time::now();
+        DEFINE FIELD updated_at ON user_profile TYPE datetime DEFAULT time::now();
+
+        -- Indexes
+        DEFINE INDEX profile_user_index ON user_profile FIELDS user_id UNIQUE;
+        """,
         
         # Instruction tables
         "instruction_table": """
@@ -606,6 +621,7 @@ class DatabaseSchema:
             "search_session_table",
             "search_feedback_table",
             "skill_table",
+            "user_profile_table",
             "instruction_table",
             "instruction_set_table",
             "lgkgr_tables",
@@ -670,6 +686,7 @@ class DatabaseSchema:
             ("search_session", "SELECT count() FROM search_session;"),
             ("search_feedback", "SELECT count() FROM search_feedback;"),
             ("skill", "SELECT count() FROM skill;"),
+            ("user_profile", "SELECT count() FROM user_profile;"),
             ("vector_centroid", "SELECT count() FROM vector_centroid;"),
             ("instruction", "SELECT count() FROM instruction;"),
             ("instruction_set", "SELECT count() FROM instruction_set;"),
