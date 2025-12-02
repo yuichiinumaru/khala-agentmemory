@@ -82,6 +82,9 @@ class Memory:
     episode_id: Optional[str] = None
     confidence: float = 1.0  # Strategy 135: Metacognitive Indexing
     source_reliability: float = 1.0  # Strategy 136: Source Reliability Scoring
+    is_anchor: bool = False  # Strategy 151: Anchor Point Navigation
+    bias_score: Optional[float] = None  # Strategy 152: Bias Detection (score)
+    bias_analysis: Optional[str] = None  # Strategy 152: Bias Detection (details)
 
     # Task 150: Recursive Summarization
     summary_level: int = 0

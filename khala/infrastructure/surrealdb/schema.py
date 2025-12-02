@@ -80,6 +80,9 @@ class DatabaseSchema:
         DEFINE FIELD episode_id ON memory TYPE option<string>;
         DEFINE FIELD confidence ON memory TYPE float;
         DEFINE FIELD source_reliability ON memory TYPE float;
+        DEFINE FIELD is_anchor ON memory TYPE bool DEFAULT false;
+        DEFINE FIELD bias_score ON memory TYPE option<float>;
+        DEFINE FIELD bias_analysis ON memory TYPE option<string>;
 
         -- Task 150: Recursive Summarization
         DEFINE FIELD summary_level ON memory TYPE int DEFAULT 0;
@@ -128,6 +131,7 @@ class DatabaseSchema:
         
         -- Tag prefix search
         DEFINE INDEX tag_search ON memory FIELDS tags SEARCH ANALYZER ascii BM25;
+        DEFINE INDEX anchor_index ON memory FIELDS is_anchor;
 
         -- Multi-Index Strategy (Task 38)
         DEFINE INDEX idx_memory_tags_created ON memory FIELDS tags, created_at;
