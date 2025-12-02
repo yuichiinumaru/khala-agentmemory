@@ -90,31 +90,60 @@ class HybridSearchService:
         """Execute the main search pipeline stages."""
         candidate_results = []
         
+        # Prepare tasks for parallel execution
+        tasks = []
+        task_names = []
+
         # Stage 1: Vector search
         if pipeline.should_execute_stage("vector"):
-            vector_results = await self._vector_search(
+            tasks.append(self._vector_search(
                 query, pipeline.vector_top_k,
                 similarity_threshold=pipeline.vector_similarity_threshold
-            )
-            candidate_results.extend(vector_results)
-            logger.debug(f"Vector search found {len(vector_results)} candidates")
+            ))
+            task_names.append("vector")
         
         # Stage 2: BM25 search  
         if pipeline.should_execute_stage("bm25"):
-            bm25_results = await self._bm25_search(query, pipeline.bm25_top_k)
-            candidate_results.extend(bm25_results)
-            logger.debug(f"BM25 search found {len(bm25_results)} candidates")
-        
+            tasks.append(self._bm25_search(query, pipeline.bm25_top_k))
+            task_names.append("bm25")
+
+        # Stage 4: Graph traversal (for pattern searches)
+        # We launch this in parallel but merge it later to preserve filtering logic if needed
+        if pipeline.should_execute_stage("graph"):
+            tasks.append(self._graph_traversal_search(query))
+            task_names.append("graph")
+
+        # Execute parallel searches
+        results_list = await asyncio.gather(*tasks) if tasks else []
+
+        # Process results
+        vector_results = []
+        bm25_results = []
+        graph_results = []
+
+        for name, results in zip(task_names, results_list):
+            if name == "vector":
+                vector_results = results
+                logger.debug(f"Vector search found {len(vector_results)} candidates")
+            elif name == "bm25":
+                bm25_results = results
+                logger.debug(f"BM25 search found {len(bm25_results)} candidates")
+            elif name == "graph":
+                graph_results = results
+                logger.debug(f"Graph search found {len(graph_results)} candidates")
+
+        # Combine Vector and BM25 candidates for filtering
+        base_candidates = vector_results + bm25_results
+
         # Stage 3: Metadata filtering
         if pipeline.should_execute_stage("metadata"):
-            candidate_results = await self._apply_metadata_filters(
-                candidate_results, query.filters
+            base_candidates = await self._apply_metadata_filters(
+                base_candidates, query.filters
             )
         
-        # Stage 4: Graph traversal (for pattern searches)
-        if pipeline.should_execute_stage("graph"):
-            graph_results = await self._graph_traversal_search(query)
-            candidate_results.extend(graph_results)
+        # Combine with Graph results (which are typically not filtered by same metadata or already filtered)
+        # Note: In original logic, graph results were added AFTER metadata filtering of vector/bm25 results.
+        candidate_results = base_candidates + graph_results
         
         # Deduplicate and sort by confidence
         unique_results = self._deduplicate_results(candidate_results)
@@ -127,19 +156,28 @@ class HybridSearchService:
         similarity_threshold: float = 0.6
     ) -> List[SearchResult]:
         """Execute vector similarity search."""
-        if not query.embedding:
+        if query.embedding is None:
             return []
         
         # Convert numpy array to list for database
-        embedding_vector = EmbeddingVector(query.embedding.tolist())
+        if isinstance(query.embedding, np.ndarray):
+            embedding_vector = EmbeddingVector(query.embedding.tolist())
+        else:
+            embedding_vector = EmbeddingVector(query.embedding)
+        # Handle both list and numpy array
+        if isinstance(query.embedding, list):
+            embedding_values = query.embedding
+        else:
+            embedding_values = query.embedding.tolist()
+
+        embedding_vector = EmbeddingVector(embedding_values)
         
         # Search using repository with filters
         memory_records = await self.memory_repository.search_by_vector(
             embedding_vector, 
             query.user_id,
             top_k,
-            min_similarity=similarity_threshold,
-            filters=query.filters
+            min_similarity=similarity_threshold
         )
         
         results = []
@@ -171,8 +209,7 @@ class HybridSearchService:
         memory_records = await self.memory_repository.search_by_text(
             query.text,
             query.user_id,
-            top_k,
-            filters=query.filters
+            top_k
         )
         
         results = []
@@ -291,7 +328,7 @@ class HybridSearchService:
                 continue
             
             # Calculate significance score
-            age_hours = memory.get_age_hours()
+            age_hours = await memory.get_age_hours()
             significance = SignificanceScore.calculate(
                 similarity=result.confidence,
                 access_count=memory.access_count,
@@ -323,28 +360,74 @@ class HybridSearchService:
     async def _assemble_context(
         self, 
         results: List[SearchResult], 
-        query: Query
+        query: Query,
+        limit: int = 10
     ) -> List[SearchResult]:
         """Assemble context for the results (token management)."""
         # Implement token counting and dynamic window sizing
-        # This would be more complex in production
+        # Task 48: Dynamic Context Window
         
-        max_tokens = 8000  # Example limit for Gemini
+        # Determine token limit based on task complexity
+        max_tokens = self._calculate_dynamic_token_limit(query)
         total_tokens = 0
         
         context_results = []
         
+        # Sort results by confidence before assembly (if not already sorted)
+        # Assuming sorted input for now
+
+        count = 0
         for result in results:
+            # Improved token estimation (approx 1.3 tokens per word, or 4 chars per token)
+            # A more robust estimation:
+            content_tokens = int(len(result.content) / 3.5) # slightly conservative estimate
+            if count >= limit:
+                break
+
             # Simple token estimation (4 chars per token approximation)
             content_tokens = len(result.content) // 4
             
-            if total_tokens + content_tokens <= max_tokens:
+            if total_tokens + content_tokens <= max_tokens and len(context_results) < 3:
                 context_results.append(result)
                 total_tokens += content_tokens
+                count += 1
             else:
+                # Optional: truncate the last result to fit remaining tokens
+                remaining_tokens = max_tokens - total_tokens
+                if remaining_tokens > 50: # Only include if substantial content fits
+                     # This requires modifying the result content which might not be desired for search results
+                     # For now, we just stop.
+                     pass
+                # If this item doesn't fit, maybe smaller ones will?
+                # For now, strict cutoff
                 break
         
+        logger.debug(f"Assembled context with {len(context_results)} results, approx {total_tokens} tokens (Limit: {max_tokens})")
         return context_results
+
+    def _calculate_dynamic_token_limit(self, query: Query) -> int:
+        """Calculate token limit based on task complexity (Strategy 48)."""
+        # Base limit
+        limit = 8000
+
+        # Check Modality
+        if query.modality == SearchModality.CODE:
+             limit = 16000
+
+        # Adjust based on intent
+        if query.intent == SearchIntent.ANALYSIS:
+            limit = max(limit, 32000) # Deep analysis needs more context
+        elif query.intent == SearchIntent.FACTUAL:
+            limit = 4000  # Facts are usually concise
+        elif query.intent == SearchIntent.PATTERN:
+             limit = max(limit, 12000)
+
+        # Adjust based on query complexity (heuristic)
+        # e.g., if query is very long or has many filters
+        if len(query.text) > 200:
+            limit += 2000
+
+        return limit
     
     def _deduplicate_results(self, results: List[SearchResult]) -> List[SearchResult]:
         """Remove duplicate search results."""
@@ -404,6 +487,10 @@ class SignificanceScorer:
             importance=memory.importance.value
         )
         
+        self._scoring_cache[memory.id] = significance
+        # Cache the result
+        self._scoring_cache[memory.id] = significance
+
         return significance
     
     def get_cached_score(self, memory_id: str) -> Optional[SignificanceScore]:
