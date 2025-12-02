@@ -22,7 +22,7 @@ class TestEmbeddingVector:
     def test_valid_embedding_creation(self):
         """Test creating a valid embedding vector."""
         values = [0.1, -0.2, 0.3] + [0.0] * 765  # 768 dimensions
-        embedding = EmbeddingVector(values, dimensions=768)
+        embedding = EmbeddingVector(values)
         
         assert embedding.dimensions == 768
         assert len(embedding.values) == 768
@@ -33,7 +33,7 @@ class TestEmbeddingVector:
         values = [0.1, 0.2, 0.3]  # Only 3 dimensions
         
         with pytest.raises(ValueError, match="Embedding must have 768 dimensions"):
-            EmbeddingVector(values, dimensions=768)
+            EmbeddingVector(values)
     
     def test_embedding_invalid_values(self):
         """Test embedding with invalid values."""

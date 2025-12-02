@@ -3,7 +3,6 @@ Entity Extraction Service for KHALA.
 
 Implements Named Entity Recognition (NER) using Gemini 2.5 Pro
 with confidence scoring, relationship detection, and batch processing.
-Also handles Linguistic Analysis (POS Tagging) as per Strategy 94.
 """
 
 import asyncio
@@ -75,12 +74,6 @@ class ExtractedEntity:
     extraction_method: str = "gemini_llm"
     extracted_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
-@dataclass
-class ExtractedPOSTag:
-    """Part of Speech tag for a keyword."""
-    word: str
-    tag: str
-    confidence: float = 1.0
 
 @dataclass
 class EntityRelationship:
@@ -192,23 +185,8 @@ class EntityExtractionService:
         }
     
     async def extract_entities_from_memory(self, memory: Memory) -> List[ExtractedEntity]:
-        """Extract entities from a single memory. (Legacy wrapper)"""
-        # Ensure await is used correctly on the async call
-        data = await self.extract_data_from_memory(memory)
-        return data.get("entities", [])
-
-    async def extract_entities_from_text(
-        self,
-        text: str,
-        context: Optional[Dict[str, Any]] = None
-    ) -> List[ExtractedEntity]:
-        """Extract entities from text using Gemini API. (Legacy wrapper)"""
-        data = await self.extract_data_from_text(text, context)
-        return data.get("entities", [])
-
-    async def extract_data_from_memory(self, memory: Memory) -> Dict[str, Any]:
-        """Extract entities and POS tags from a single memory."""
-        return await self.extract_data_from_text(
+        """Extract entities from a single memory."""
+        return await self.extract_entities_from_text(
             text=memory.content,
             context={
                 "memory_id": memory.id,
@@ -218,47 +196,43 @@ class EntityExtractionService:
             }
         )
 
-    async def extract_data_from_text(
+    async def extract_entities_from_text(
         self, 
         text: str, 
         context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Extract entities and POS tags from text using Gemini API."""
+    ) -> List[ExtractedEntity]:
+        """Extract entities from text using Gemini API."""
         start_time = time.time()
         
-        result = {"entities": [], "pos_tags": []}
-
         try:
             if self.gemini_client:
-                result = await self._extract_all_with_gemini(text, context)
+                entities = await self._extract_with_gemini(text, context)
             else:
-                result["entities"] = await self._extract_with_regex(text)
-                # No POS tagging in fallback regex mode currently
+                entities = await self._extract_with_regex(text)
             
             # Filter by confidence threshold
-            result["entities"] = [
-                entity for entity in result["entities"]
+            filtered_entities = [
+                entity for entity in entities
                 if entity.confidence >= self.confidence_threshold
             ]
             
             # Update metrics
             execution_time = (time.time() - start_time) * 1000
-            self._update_metrics(result["entities"], execution_time)
+            self._update_metrics(filtered_entities, execution_time)
             
-            logger.info(f"Extracted {len(result['entities'])} entities and {len(result['pos_tags'])} tags in {execution_time:.0f}ms")
+            logger.info(f"Extracted {len(filtered_entities)} entities in {execution_time:.0f}ms")
             
-            return result
+            return filtered_entities
             
         except Exception as e:
             logger.error(f"Entity extraction failed: {e}")
             self.metrics["failed_extractions"] += 1
-            return {"entities": [], "pos_tags": []}
+            return []
     
-    async def _extract_all_with_gemini(self, text: str, context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        """Extract entities and POS tags using Gemini API."""
+    async def _extract_with_gemini(self, text: str, context: Optional[Dict[str, Any]]) -> List[ExtractedEntity]:
+        """Extract entities using Gemini API."""
         if not self.gemini_client:
-             # Fallback
-             return {"entities": await self._extract_with_regex(text), "pos_tags": []}
+            return await self._extract_with_regex(text)
         
         # Build extraction prompt
         prompt = self._build_extraction_prompt(text, context)
@@ -267,20 +241,19 @@ class EntityExtractionService:
             response = await self.gemini_client.generate_content_async(prompt)
             
             # Parse structured output
-            return await self._parse_gemini_response_all(response.text, text)
+            return self._parse_gemini_response(response.text, text)
             
         except gcp_exceptions.GoogleAPICallError as e:
             logger.warning(f"Google API call failed: {e}")
-            return {"entities": await self._extract_with_regex(text), "pos_tags": []}
+            return await self._extract_with_regex(text)
         except Exception as e:
             logger.error(f"Gemini extraction failed: {e}")
-            return {"entities": await self._extract_with_regex(text), "pos_tags": []}
+            return await self._extract_with_regex(text)
     
     def _build_extraction_prompt(self, text: str, context: Optional[Dict[str, Any]]) -> str:
         """Build extraction prompt for Gemini."""
         prompt = f"""
-Analyze the following text to extract named entities and Part-of-Speech (POS) tags for significant keywords.
-Return a JSON object with the following structure:
+Extract named entities from the following text. Return a JSON array with the following structure:
 
 {{
   "entities": [
@@ -297,12 +270,6 @@ Return a JSON object with the following structure:
         }}
       ]
     }}
-  ],
-  "pos_tags": [
-    {{
-        "word": "keyword",
-        "tag": "NOUN|VERB|ADJ|ADV|PROPN"
-    }}
   ]
 }}
 
@@ -317,25 +284,23 @@ Instructions:
 5. Use exact text spans (no abbreviations)
 6. Focus on proper nouns, technical terms, and domain-specific entities
 7. Include context snippets when helpful
-8. For POS tags, select the top 10 most important keywords (nouns, verbs, adjectives) in the text.
 
 Context Information: {json.dumps(context) if context else {}}
 
-Return only the JSON object, no explanation.
+Return only the JSON array, no explanation.
 """
         
         return prompt
     
-    async def _parse_gemini_response_all(self, response: str, original_text: str) -> Dict[str, Any]:
-        """Parse Gemini JSON response into ExtractedEntity and ExtractedPOSTag objects."""
+    async def _parse_gemini_response(self, response: str, original_text: str) -> List[ExtractedEntity]:
+        """Parse Gemini JSON response into ExtractedEntity objects."""
         entities = []
-        pos_tags = []
         
         try:
             # Extract JSON from response
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if not json_match:
-                return {"entities": await self._extract_with_regex(original_text), "pos_tags": []}
+                return await self._extract_with_regex(original_text)
             
             response_data = json.loads(json_match.group())
             
@@ -359,30 +324,14 @@ Return only the JSON object, no explanation.
                         logger.warning(f"Failed to parse entity data {entity_data}: {e}")
                         continue
 
-            if "pos_tags" in response_data:
-                for tag_data in response_data["pos_tags"]:
-                    try:
-                        tag = ExtractedPOSTag(
-                            word=tag_data["word"],
-                            tag=tag_data["tag"]
-                        )
-                        pos_tags.append(tag)
-                    except Exception as e:
-                        logger.warning(f"Failed to parse POS tag data {tag_data}: {e}")
-
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse Gemini JSON response: {e}")
-            return {"entities": await self._extract_with_regex(original_text), "pos_tags": []}
+            return await self._extract_with_regex(original_text)
         except Exception as e:
             logger.error(f"Error parsing Gemini response: {e}")
-            return {"entities": await self._extract_with_regex(original_text), "pos_tags": []}
+            return await self._extract_with_regex(original_text)
         
-        return {"entities": entities, "pos_tags": pos_tags}
-
-    async def _parse_gemini_response(self, response: str, original_text: str) -> List[ExtractedEntity]:
-         # Legacy wrapper for backward compatibility
-         data = await self._parse_gemini_response_all(response, original_text)
-         return data["entities"]
+        return entities
     
     async def _extract_with_regex(self, text: str) -> List[ExtractedEntity]:
         """Fallback extraction using regex patterns."""
@@ -530,107 +479,46 @@ Return only the JSON object, no explanation.
         return relationships
     
     async def process_memory_entities(self, memory: Memory) -> Tuple[List[Entity], List[Relationship]]:
-        """Extract entities from memory and update in database with disambiguation."""
-        if not self.db_client:
-            self.db_client = SurrealDBClient()
-
+        """Extract entities from memory and update in database."""
         # Extract entities
         extracted_entities = await self.extract_entities_from_memory(memory)
         
-        # Resolve entities (Disambiguation)
-        """Extract entities from memory and update in database."""
-        # Extract entities and POS tags
-        extracted_data = await self.extract_data_from_memory(memory)
-        extracted_entities = extracted_data.get("entities", [])
-        extracted_pos_tags = extracted_data.get("pos_tags", [])
-        
-        # Update memory with POS tags if available
-        if extracted_pos_tags:
-            memory.pos_tags = [{"word": tag.word, "tag": tag.tag} for tag in extracted_pos_tags]
-            # Persist POS tags to DB
-            if not self.db_client:
-                self.db_client = SurrealDBClient()
-            try:
-                # We need to use update_memory but we must ensure we don't overwrite other fields concurrently changed?
-                # For now, we assume this is part of ingestion pipeline.
-                # Since we don't have a partial update method exposed easily without full object, we use update_memory
-                # but we must be careful. Ideally we'd use a MERGE query.
-                # However, for this task, relying on memory object state is acceptable.
-                # Actually, wait. 'process_memory_entities' is likely called AFTER memory creation.
-                # If we update memory here, we need to be sure.
-                # Let's try to update just the pos_tags field using a raw query if possible, or full update.
-                # Full update is safer given the client wrapper.
-                await self.db_client.update_memory(memory)
-            except Exception as e:
-                logger.warning(f"Failed to persist POS tags to memory: {e}")
-
         # Detect relationships
         relationships = self.detect_entity_relationships(extracted_entities, memory.content)
         
         # Convert to KHALA entities
         domain_entities = []
-        text_to_entity_map = {}
-
         for extracted in extracted_entities:
-            # Check if entity already exists in DB
-            existing_entity = await self.db_client.get_entity_by_text_and_type(
-                extracted.text,
-                extracted.entity_type.value
-            )
-
-            if existing_entity:
-                # Update existing entity
-                await self.db_client.update_entity_last_seen(existing_entity.id)
-                domain_entity = existing_entity
-                # Merge metadata if needed (optional optimization)
-            else:
-                # Create new entity
-                domain_entity = Entity(
-                    text=extracted.text,
-                    entity_type=extracted.entity_type.value,
-                    confidence=extracted.confidence,
-                    # source=memory.id, # Entity doesn't have source field in dataclass, metadata does
-                    metadata={**extracted.metadata, "source_memory_id": memory.id}
-                )
-                await self.db_client.create_entity(domain_entity)
-
             domain_entity = Entity(
                 text=extracted.text,
                 entity_type=extracted.entity_type.value,
                 confidence=extracted.confidence,
+                source=memory.id,
                 metadata=extracted.metadata
             )
-            # Note: The Entity definition in entities.py does not have a source field matching memory ID.
-            # It seems entities are standalone or linked via relationship.
-            # The original code had `source=memory.id` but the Entity dataclass definition I saw earlier didn't have it.
-            # I removed `source=memory.id` in my overwrite to match the Entity definition I saw in `khala/domain/memory/entities.py`.
-            # Let me double check `entities.py` content from my memory...
-            # The Entity class: text, entity_type, confidence, embedding, metadata, id, created_at. NO source field.
-            # So I was right to remove it.
             domain_entities.append(domain_entity)
-            text_to_entity_map[domain_entity.text] = domain_entity
-
-        # Detect relationships (using extracted entities structure)
-        relationships = self.detect_entity_relationships(extracted_entities, memory.content)
         
-        # Convert relationships using resolved entity IDs
+        # Convert relationships
         domain_relationships = []
         for rel in relationships:
-            source = text_to_entity_map.get(rel.source_entity.text)
-            target = text_to_entity_map.get(rel.target_entity.text)
+            source = next((e for e in domain_entities if e.text == rel.source_entity.text), None)
+            target = next((e for e in domain_entities if e.text == rel.target_entity.text), None)
             
             if source and target:
                 domain_rel = Relationship(
-                    from_entity_id=source.id,
-                    to_entity_id=target.id,
+                    source=source.id,
+                    target=target.id,
                     relation_type=rel.relationship_type.value,
-                    strength=rel.confidence,
+                    confidence=rel.confidence,
+                    strength=rel.confidence,  # Use confidence as strength
                     valid_from=datetime.now(timezone.utc),
-                    # metadata={"extraction_method": "gemini_llm"} # Relationship dataclass doesn't have metadata field
+                    metadata={"extraction_method": "gemini_llm"}
                 )
-                await self.db_client.create_relationship(domain_rel)
                 domain_relationships.append(domain_rel)
         
+        # Store in database
+        await self._store_entities_and_relationships(domain_entities, domain_relationships, memory.id)
+
         return domain_entities, domain_relationships
     
     async def _store_entities_and_relationships(
@@ -639,8 +527,6 @@ Return only the JSON object, no explanation.
         relationships: List[Relationship], 
         memory_id: str
     ) -> None:
-        """Deprecated: Use process_memory_entities direct storage."""
-        pass
         """Store entities and relationships in database."""
         if not self.db_client:
             self.db_client = SurrealDBClient()
@@ -652,7 +538,7 @@ Return only the JSON object, no explanation.
             
             # Store relationships
             for relationship in relationships:
-                await self.db_client.create_relationship(relationship)
+                await self.db_client.create_relationships([relationship])
                 
         except Exception as e:
             logger.error(f"Failed to store entities/relationships: {e}")
@@ -687,14 +573,11 @@ Return only the JSON object, no explanation.
         try:
             # This would query the entity table filtered by type
             # Implementation depends on your database schema
-            # Assuming client has this method or we use raw query
-            # The client I saw didn't have `get_entities_by_type`, so I should probably check that.
-            # But I'm just overwriting this file, keeping existing methods if they were there (Wait, were they?)
-            # The original file had `await self.db_client.get_entities_by_type(...)`.
-            # I must assume the client has it or it was a placeholder.
-            # I will keep it as is.
-            pass
-            return []
+            entities = await self.db_client.get_entities_by_type(
+                entity_type.value,
+                limit=limit
+            )
+            return entities
             
         except Exception as e:
             logger.error(f"Failed to get entities by type {entity_type.value}: {e}")
@@ -707,9 +590,8 @@ Return only the JSON object, no explanation.
         
         try:
             # This would query for memories containing the entity text
-            # Assuming client has this method
-            pass
-            return []
+            memories = await self.db_client.get_memories_containing_entity(entity_text)
+            return memories
             
         except Exception as e:
             logger.error(f"Failed to get entity mentions for {entity_text}: {e}")

@@ -112,20 +112,6 @@ class ModelRegistry:
             top_p=0.0,
             top_k=1
         ),
-
-        # Secondary Embedding model (Strategy 89: Vector Ensemble)
-        "text-embedding-004": GeminiModel(
-            name="Text Embedding 004",
-            tier=ModelTier.FAST,
-            model_id="text-embedding-004",
-            cost_per_million_tokens=2.0,
-            max_tokens=2048,
-            supports_embeddings=True,
-            embedding_dimensions=768,
-            temperature=0.0,
-            top_p=0.0,
-            top_k=1
-        ),
     }
     
     @classmethod

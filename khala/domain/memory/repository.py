@@ -1,9 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any, Tuple
-from .entities import Memory, Entity, Relationship
 from typing import List, Optional, Dict, Any
-from .entities import Memory, Relationship
-from .entities import Memory, Branch
+from .entities import Memory
 from .value_objects import EmbeddingVector
 
 class MemoryRepository(ABC):
@@ -15,11 +12,6 @@ class MemoryRepository(ABC):
     @abstractmethod
     async def create(self, memory: Memory) -> str:
         """Save a new memory."""
-        pass
-
-    @abstractmethod
-    async def save(self, memory: Memory) -> str:
-        """Save a memory (create or update)."""
         pass
         
     @abstractmethod
@@ -61,21 +53,6 @@ class MemoryRepository(ABC):
         pass
 
     @abstractmethod
-    async def search_by_location(
-        self,
-        location: Dict[str, float],
-        radius_km: float,
-        user_id: str,
-        top_k: int = 10,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[Tuple[Memory, float]]:
-        """
-        Search memories by geospatial location.
-        Returns list of (Memory, distance_in_km).
-        """
-        pass
-
-    @abstractmethod
     async def get_by_tier(
         self, 
         user_id: str, 
@@ -83,32 +60,4 @@ class MemoryRepository(ABC):
         limit: int = 100
     ) -> List[Memory]:
         """Retrieve memories by tier."""
-        pass
-
-    @abstractmethod
-    async def get_graph_snapshot(
-        self,
-        user_id: Optional[str] = None
-    ) -> Tuple[List[Entity], List[Relationship]]:
-        """Retrieve all entities and relationships (for community detection)."""
-    async def get_relationships(
-        self,
-        filters: Optional[Dict[str, Any]] = None,
-        limit: int = 1000
-    ) -> List[Relationship]:
-        """Retrieve relationships based on filters."""
-    async def save_branch(self, branch: Branch) -> str:
-        """Save a branch entity."""
-        pass
-
-    @abstractmethod
-    async def get_branch_by_id(self, branch_id: str) -> Optional[Branch]:
-        """Retrieve a branch by ID."""
-        pass
-
-    @abstractmethod
-    async def get_branch_by_name(self, name: str) -> Optional[Branch]:
-        """Retrieve a branch by name."""
-    async def get_memory_facets(self, user_id: str) -> Dict[str, Any]:
-        """Get faceted counts for memories (Tier, Category, Agent)."""
         pass

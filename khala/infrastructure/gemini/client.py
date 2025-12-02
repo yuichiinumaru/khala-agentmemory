@@ -9,20 +9,9 @@ import json
 import time
 import hashlib
 from decimal import Decimal
-from typing import Dict, List, Optional, Any, Union, Tuple, Type
-from typing import Dict, List, Optional, Any, Union, Tuple, Type, TypeVar
+from typing import Dict, List, Optional, Any, Union, Tuple
 from datetime import datetime, timezone, timedelta
 import logging
-
-from pydantic import BaseModel
-
-try:
-    from pydantic import BaseModel
-    PYDANTIC_AVAILABLE = True
-except ImportError:
-    PYDANTIC_AVAILABLE = False
-    # Define a dummy BaseModel for type hinting if pydantic is missing
-    class BaseModel: pass
 
 try:
     import google.generativeai as genai
@@ -50,8 +39,7 @@ class GeminiClient:
         enable_caching: bool = True,
         cache_ttl_seconds: int = 300,  # 5 minutes
         max_retries: int = 3,
-        timeout_seconds: int = 30,
-        concurrency_limit: int = 10
+        timeout_seconds: int = 30
     ):
         """Initialize Gemini client.
         
@@ -63,7 +51,6 @@ class GeminiClient:
             cache_ttl_seconds: Cache TTL in seconds
             max_retries: Maximum retry attempts
             timeout_seconds: Request timeout in seconds
-            concurrency_limit: Maximum concurrent requests to the API
         """
         self.api_key = api_key or self._get_api_key_from_env()
         self.cost_tracker = cost_tracker or CostTracker()
@@ -73,9 +60,6 @@ class GeminiClient:
         self.max_retries = max_retries
         self.timeout_seconds = timeout_seconds
         
-        # Concurrency control
-        self._semaphore = asyncio.Semaphore(concurrency_limit)
-
         # Response cache
         self._response_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_timestamps: Dict[str, datetime] = {}
@@ -86,10 +70,6 @@ class GeminiClient:
         # Metrics
         self._prompt_classification_cache: Dict[str, str] = {}  # Cache prompt classifications
         self._complexity_cache: Dict[str, float] = {}  # Cache complexity scores
-
-        self.T = TypeVar("T", bound=BaseModel)
-        self.cache_hits = 0
-        self.cache_misses = 0
     
         # Initialize models if cascading is enabled
         if self.enable_cascading:
@@ -324,10 +304,7 @@ class GeminiClient:
             cached_response = self._get_cached_response(cache_key)
             if cached_response:
                 logger.debug(f"Cache hit for {model.model_id}")
-                self.cache_hits += 1
                 return cached_response
-            # Record miss
-            self.cache_misses += 1
         
         # Configure generation parameters
         config = {
@@ -366,12 +343,11 @@ class GeminiClient:
         
         for attempt in range(self.max_retries + 1):
             try:
-                async with self._semaphore:
-                    response = await model_instance.generate_content_async(
-                        content_parts,
-                        stream=False,
-                        request_options={"timeout": self.timeout_seconds}
-                    )
+                response = model_instance.generate_content(
+                    content_parts,
+                    stream=False,
+                    request_options={"timeout": self.timeout_seconds}
+                )
                 break
             except gcp_exceptions.GoogleAPIError as e:
                 if attempt == self.max_retries:
@@ -423,109 +399,6 @@ class GeminiClient:
             "model_name": model.name
         }
 
-    async def generate_object(
-        self,
-        prompt: str,
-        response_schema: Type[BaseModel],
-        images: Optional[List[Any]] = None,
-        model_id: Optional[str] = None,
-        temperature: Optional[float] = None,
-        task_type: str = "generation"
-    ) -> BaseModel:
-        """Generate structured object matching the Pydantic schema.
-
-        Args:
-            prompt: Text prompt for generation
-            response_schema: Pydantic model class to enforce structure
-            images: Optional list of images
-            model_id: Specific model to use
-            temperature: Override model temperature
-            task_type: Type of task
-
-        Returns:
-            Instance of response_schema populated with generated data
-        """
-        start_time = time.time()
-
-        # Select model - prefer Pro/Smart models for structured output
-        if not model_id:
-            model = self.select_model(prompt, task_type)
-            # Ensure we use a model capable of reliable JSON generation
-            if model.tier == ModelTier.FAST:
-                model = ModelRegistry.get_model("gemini-2.5-pro")
-        else:
-            model = ModelRegistry.get_model(model_id)
-
-        # Configure generation with schema
-        if model.model_id not in self._models:
-             # Initialize if missing
-             try:
-                 self._models[model.model_id] = genai.GenerativeModel(
-                    model_name=model.model_id
-                 )
-             except Exception:
-                 # Fallback/Retry logic handled in generate_text usually, here we ensure it exists
-                 pass
-
-        model_instance = self._models.get(model.model_id)
-        if not model_instance:
-             # Re-init attempt
-             model_instance = genai.GenerativeModel(model_name=model.model_id)
-             self._models[model.model_id] = model_instance
-
-        # Prepare content
-        content_parts = [prompt]
-        if images:
-            content_parts.extend(images)
-
-        generation_config = genai.types.GenerationConfig(
-            temperature=temperature or model.temperature,
-            response_mime_type="application/json",
-            response_schema=response_schema
-        )
-
-        # Execute generation
-        for attempt in range(self.max_retries + 1):
-            try:
-                response = model_instance.generate_content(
-                    content_parts,
-                    generation_config=generation_config,
-                    request_options={"timeout": self.timeout_seconds}
-                )
-                break
-            except Exception as e:
-                if attempt == self.max_retries:
-                    logger.error(f"Failed structured gen after {self.max_retries} attempts: {e}")
-                    raise
-                await asyncio.sleep(2 ** attempt)
-
-        # Parse response
-        try:
-            # Google GenAI returns JSON text which automatically matches the schema
-            result = response.text
-            # Use pydantic model to validate and parse
-            parsed_object = response_schema.model_validate_json(result)
-
-            # Record metrics
-            response_time_ms = (time.time() - start_time) * 1000
-            input_tokens = len(prompt.split()) * 1.3
-            output_tokens = len(result.split()) * 1.3 # Rough estimate
-
-            self.cost_tracker.record_call(
-                model=model,
-                input_tokens=int(input_tokens),
-                output_tokens=int(output_tokens),
-                response_time_ms=response_time_ms,
-                task_type=task_type,
-                success=True
-            )
-
-            return parsed_object
-
-        except Exception as e:
-            logger.error(f"Failed to parse structured output: {e}")
-            raise ValueError(f"Model failed to generate valid JSON matching schema: {e}")
-
     async def generate_embeddings(
         self,
         texts: List[str],
@@ -555,19 +428,13 @@ class GeminiClient:
             batch = texts[i:i + batch_size]
             
             try:
-                async with self._semaphore:
-                    # genai.embed_content is sync. Run in executor.
-                    loop = asyncio.get_running_loop()
-                    result = await loop.run_in_executor(
-                        None,
-                        lambda: genai.embed_content(
-                            model=embedding_model.model_id,
-                            content=batch,
-                            task_type="retrieval_document",
-                            output_dimensionality=embedding_model.embedding_dimensions,
-                            request_options={"timeout": self.timeout_seconds}
-                        )
-                    )
+                result = genai.embed_content(
+                    model=embedding_model.model_id,
+                    content=batch,
+                    task_type="retrieval_document",
+                    output_dimensionality=embedding_model.embedding_dimensions,
+                    request_options={"timeout": self.timeout_seconds}
+                )
                 # result['embedding'] is a list of embeddings
                 embeddings.extend(result['embedding'])
             except Exception as e:
@@ -673,19 +540,6 @@ class GeminiClient:
         self._cache_timestamps.clear()
         logger.info("Cleared response cache")
     
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache statistics."""
-        total = self.cache_hits + self.cache_misses
-        hit_rate = (self.cache_hits / total) if total > 0 else 0.0
-
-        return {
-            "hits": self.cache_hits,
-            "misses": self.cache_misses,
-            "total": total,
-            "hit_rate": hit_rate,
-            "size": len(self._response_cache)
-        }
-
     def get_budget_status(self) -> Dict[str, Any]:
         """Get current budget status and alerts."""
         return self.cost_tracker.get_budget_status()
@@ -693,34 +547,6 @@ class GeminiClient:
     def get_optimization_report(self) -> Dict[str, Any]:
         """Get optimization recommendations."""
         return self.cost_tracker.get_optimization_report()
-
-    async def translate_text(
-        self,
-        text: str,
-        target_language: str = "English",
-        model_id: Optional[str] = None
-    ) -> str:
-        """Translate text to target language.
-
-        Args:
-            text: Text to translate.
-            target_language: Target language name (e.g., "English", "Spanish").
-            model_id: Optional model ID to use.
-
-        Returns:
-            Translated text.
-        """
-        prompt = f"Translate the following text to {target_language}. Return only the translation, no extra text.\n\nText: {text}"
-
-        # Use fast model for translation by default as it's a simple task
-        result = await self.generate_text(
-            prompt=prompt,
-            model_id=model_id,
-            task_type="generation",
-            use_cascading=True
-        )
-
-        return result["content"].strip()
 
     # --- Debate and Verification Methods ---
 
@@ -1011,121 +837,6 @@ class GeminiClient:
                 "total_time_ms": total_time
             }
         }
-
-    async def analyze_sentiment(
-        self,
-        text: str,
-        model_id: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Analyze sentiment of text.
-
-        Args:
-            text: Text to analyze
-            model_id: Optional model ID
-
-        Returns:
-            Dictionary with score (-1.0 to 1.0), label, and emotions dict.
-        """
-        prompt = f"""
-        Analyze the sentiment of the following text.
-        Return a JSON object with:
-        - score: a float between -1.0 (negative) and 1.0 (positive)
-        - label: one of "positive", "negative", "neutral", "joy", "anger", "sadness", "fear", "surprise"
-        - emotions: a dictionary of specific emotions and their intensity (0.0 to 1.0), e.g., {{"joy": 0.8, "anticipation": 0.2}}
-
-        Text:
-        {text}
-        """
-
-        response = await self.generate_text(
-            prompt=prompt,
-            model_id=model_id or "gemini-2.0-flash", # Flash is sufficient for sentiment
-            task_type="classification",
-            temperature=0.1 # Low temperature for consistent output
-        )
-
-        # Parse JSON from response
-        try:
-            content = response["content"]
-            # basic cleanup if markdown code blocks are used
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
-
-            return json.loads(content.strip())
-        except Exception as e:
-            logger.error(f"Failed to parse sentiment analysis response: {e}")
-            # Fallback
-            return {"score": 0.0, "label": "neutral", "emotions": {}}
-    async def generate_structured(
-        self,
-        prompt: str,
-        response_model: Type['T'],
-        model_id: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None
-    ) -> 'T':
-        """Generate structured JSON output validated against a Pydantic model.
-
-        Args:
-            prompt: Text prompt
-            response_model: Pydantic model class to enforce structure
-            model_id: Optional model ID
-            temperature: Generation temperature
-            max_tokens: Max output tokens
-
-        Returns:
-            Instance of response_model populated with generated data
-        """
-        if not PYDANTIC_AVAILABLE:
-            raise ImportError("Pydantic is required for structured output generation")
-
-        # Get JSON schema from Pydantic model
-        schema = response_model.model_json_schema()
-
-        # Append instructions to prompt
-        structured_prompt = (
-            f"{prompt}\n\n"
-            f"You must output valid JSON that strictly follows this schema:\n"
-            f"```json\n{json.dumps(schema, indent=2)}\n```\n"
-            f"Do not include any markdown formatting (like ```json ... ```) in your response, just the raw JSON string."
-        )
-
-        # Force lower temperature for deterministic structure
-        temp = temperature if temperature is not None else 0.1
-
-        # Call generate_text
-        # We assume the model is capable of JSON generation (Gemini Pro/Flash are)
-        response = await self.generate_text(
-            prompt=structured_prompt,
-            model_id=model_id,
-            temperature=temp,
-            max_tokens=max_tokens,
-            task_type="generation",
-            use_cascading=True
-        )
-
-        content = response["content"].strip()
-
-        # Clean up markdown if present (despite instructions)
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-
-        try:
-            json_data = json.loads(content)
-            return response_model.model_validate(json_data)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {content[:100]}... Error: {e}")
-            raise ValueError(f"LLM failed to generate valid JSON: {e}")
-        except Exception as e:
-            logger.error(f"Failed to validate response against model: {e}")
-            raise ValueError(f"Response validation failed: {e}")
 
 
 # Example usage helper

@@ -203,22 +203,3 @@ class TemporalAnalysisService:
                 results["errors"] += 1
 
         return results
-
-    async def generate_creation_heatmap(
-        self,
-        start_time: datetime,
-        end_time: datetime,
-        granularity: str = "day"
-    ) -> Dict[str, Any]:
-        """Generate a heatmap of memory creation over time.
-
-        Strategy 140: Temporal Heatmaps.
-        """
-        stats = await self.db_client.get_memory_creation_stats(start_time, end_time, granularity)
-
-        return {
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat(),
-            "granularity": granularity,
-            "data": stats
-        }
