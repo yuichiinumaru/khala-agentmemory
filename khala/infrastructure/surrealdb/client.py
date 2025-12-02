@@ -12,13 +12,14 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 try:
-    from surrealdb import Surreal, AsyncSurreal
+    from surrealdb import Surreal
 except ImportError as e:
     raise ImportError(
         "SurrealDB is required. Install with: pip install surrealdb"
     ) from e
 
 from khala.domain.memory.entities import Memory, Entity, Relationship
+from khala.domain.memory.clustering import VectorCentroid
 from khala.domain.memory.value_objects import EmbeddingVector, MemorySource, Sentiment
 from khala.domain.skills.entities import Skill
 from khala.domain.skills.value_objects import SkillType, SkillLanguage, SkillParameter
@@ -56,7 +57,7 @@ class SurrealDBClient:
         self.password = password
         self.max_connections = max_connections
         
-        self._connection_pool: List[AsyncSurreal] = []
+        self._connection_pool: List[Surreal] = []
         self._pool_lock = asyncio.Lock()
         self._initialized = False
     
@@ -70,7 +71,7 @@ class SurrealDBClient:
                 return
             
             # Create initial connection
-            connection = AsyncSurreal(self.url)
+            connection = Surreal(self.url)
             await connection.connect()
             await connection.signin({"username": self.username, "password": self.password})
             
@@ -107,7 +108,7 @@ class SurrealDBClient:
                 connection = self._connection_pool.pop()
             else:
                 # Create new connection if pool is empty
-                connection = AsyncSurreal(self.url)
+                connection = Surreal(self.url)
                 await connection.connect()
                 await connection.signin({"username": self.username, "password": self.password})
                 await connection.use(namespace=self.namespace, database=self.database)
@@ -182,7 +183,15 @@ class SurrealDBClient:
             sentiment: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            project_id: $project_id,
+            tenant_id: $tenant_id,
+            summary_level: $summary_level,
+            parent_summary_id: $parent_summary_id,
+            child_memory_ids: $child_memory_ids
+            branch: $branch,
+            parent_memory: $parent_memory,
+            version: $version
         };
         """
         
@@ -206,6 +215,9 @@ class SurrealDBClient:
             "embedding": memory.embedding.values if memory.embedding else None,
             "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
             "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
+            "embedding_secondary": memory.embedding_secondary.values if memory.embedding_secondary else None,
+            "embedding_small": memory.embedding_small.values if memory.embedding_small else None,
+            "cluster_id": memory.cluster_id,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
             "tags": memory.tags,
@@ -230,6 +242,16 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "project_id": memory.project_id,
+            "tenant_id": memory.tenant_id,
+            "summary_level": memory.summary_level,
+            "parent_summary_id": memory.parent_summary_id,
+            "child_memory_ids": memory.child_memory_ids,
+            "branch": f"branch:{memory.branch_id}" if memory.branch_id else None,
+            "parent_memory": f"memory:{memory.parent_memory_id}" if memory.parent_memory_id else None,
+            "version": memory.version,
+            "complexity": memory.complexity,
+            "pos_tags": memory.pos_tags,
         }
         
         async with self.get_connection() as conn:
@@ -291,6 +313,7 @@ class SurrealDBClient:
             content: $content,
             content_hash: $content_hash,
             embedding: $embedding,
+            embedding_secondary: $embedding_secondary,
             tier: $tier,
             importance: $importance,
             tags: $tags,
@@ -313,7 +336,15 @@ class SurrealDBClient:
             sentiment: $sentiment,
             episode_id: $episode_id,
             confidence: $confidence,
-            source_reliability: $source_reliability
+            source_reliability: $source_reliability,
+            project_id: $project_id,
+            tenant_id: $tenant_id,
+            summary_level: $summary_level,
+            parent_summary_id: $parent_summary_id,
+            child_memory_ids: $child_memory_ids
+            branch: $branch,
+            parent_memory: $parent_memory,
+            version: $version
         };
         """
         
@@ -335,6 +366,9 @@ class SurrealDBClient:
             "content": memory.content,
             "content_hash": content_hash,
             "embedding": memory.embedding.values if memory.embedding else None,
+            "embedding_secondary": memory.embedding_secondary.values if memory.embedding_secondary else None,
+            "embedding_small": memory.embedding_small.values if memory.embedding_small else None,
+            "cluster_id": memory.cluster_id,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
             "tags": memory.tags,
@@ -357,12 +391,91 @@ class SurrealDBClient:
             "episode_id": memory.episode_id,
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
+            "project_id": memory.project_id,
+            "tenant_id": memory.tenant_id,
+            "summary_level": memory.summary_level,
+            "parent_summary_id": memory.parent_summary_id,
+            "child_memory_ids": memory.child_memory_ids,
+            "branch": f"branch:{memory.branch_id}" if memory.branch_id else None,
+            "parent_memory": f"memory:{memory.parent_memory_id}" if memory.parent_memory_id else None,
+            "version": memory.version,
+            "complexity": memory.complexity,
+            "pos_tags": memory.pos_tags,
         }
         
         async with self.get_connection() as conn:
             response = await conn.query(query, params)
             if isinstance(response, str):
                  raise RuntimeError(f"Failed to update memory: {response}")
+
+    async def update_memory_transactional(
+        self,
+        memory: Memory,
+        updates: Dict[str, Any],
+        event: Dict[str, Any]
+    ) -> None:
+        """Update memory with history and events atomically (Task 65).
+
+        Wraps update, history appending, and event logging in a single transaction.
+
+        Args:
+            memory: The memory object to update.
+            updates: Dictionary of fields to update.
+            event: Event object to append to the events list.
+        """
+        # Prepare updates
+        set_clauses = []
+
+        # Handle ID prefix
+        memory_id = memory.id
+        if ":" in memory_id:
+            memory_id = memory_id.split(":")[1]
+
+        params = {"id": memory_id, "event": event}
+
+        # Serialize updates and build SET clauses
+        for key, value in updates.items():
+            if key == "metadata":
+                # Merge metadata instead of replacing
+                set_clauses.append(f"metadata = metadata || ${key}")
+                params[key] = value
+            else:
+                set_clauses.append(f"{key} = ${key}")
+                params[key] = value
+
+        # Always update updated_at
+        set_clauses.append("updated_at = time::now()")
+
+        # Build the transactional query
+        # 1. Capture current version for history (Strategy 60: Document Versioning)
+        #    Use [0] to get the object from the list result
+        # 2. Update the fields
+        # 3. Append to events (Strategy 61: Array-Based Accumulation)
+        query = f"""
+        BEGIN TRANSACTION;
+
+        LET $current_doc = (SELECT * FROM type::thing('memory', $id))[0];
+
+        UPDATE type::thing('memory', $id) SET
+            {', '.join(set_clauses)},
+            versions = array::append(versions ?? [], {{
+                timestamp: time::now(),
+                diff: $current_doc
+            }}),
+            events = array::append(events ?? [], $event);
+
+        COMMIT TRANSACTION;
+        """
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+
+            # Check for errors in transaction
+            if isinstance(response, list):
+                for item in response:
+                    if isinstance(item, dict) and item.get('status') == 'ERR':
+                        logger.error(f"Transaction failed: {item}")
+                        raise RuntimeError(f"Transaction failed: {item.get('detail')}")
     
     async def delete_memory(self, memory_id: str) -> None:
         """Delete a memory by ID."""
@@ -381,7 +494,8 @@ class SurrealDBClient:
             confidence: $confidence,
             embedding: $embedding,
             metadata: $metadata,
-            created_at: $created_at
+            created_at: $created_at,
+            last_seen: $last_seen
         };
         """
 
@@ -393,14 +507,93 @@ class SurrealDBClient:
             "embedding": entity.embedding.values if entity.embedding else None,
             "metadata": entity.metadata,
             "created_at": entity.created_at,
+            "last_seen": entity.last_seen,
         }
 
         async with self.get_connection() as conn:
             await conn.query(query, params)
             return entity.id
 
+    async def update_entity_last_seen(self, entity_id: str, last_seen: Any = None) -> None:
+        """Update the last_seen timestamp of an entity."""
+        if ":" in entity_id:
+            entity_id = entity_id.split(":")[1]
+
+        if last_seen is None:
+            query = "UPDATE type::thing('entity', $id) SET last_seen = time::now();"
+            params = {"id": entity_id}
+        else:
+            query = "UPDATE type::thing('entity', $id) SET last_seen = $last_seen;"
+            params = {"id": entity_id, "last_seen": last_seen}
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+
+    async def get_entity_by_text_and_type(self, text: str, entity_type: str) -> Optional[Entity]:
+        """Get an entity by text and type (unique constraint)."""
+        query = """
+        SELECT * FROM entity
+        WHERE text = $text
+        AND entity_type = $entity_type
+        LIMIT 1;
+        """
+        params = {"text": text, "entity_type": entity_type}
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list) and len(response) > 0:
+                item = response[0]
+                if isinstance(item, dict):
+                    if 'status' in item and 'result' in item:
+                        if item['status'] == 'OK' and item['result']:
+                            return self._deserialize_entity(item['result'][0])
+                    else:
+                        return self._deserialize_entity(item)
+            return None
+
+    def _deserialize_entity(self, data: Dict[str, Any]) -> Entity:
+        """Deserialize database record to Entity object."""
+        from datetime import datetime, timezone
+        from khala.domain.memory.entities import EntityType
+
+        def parse_dt(dt_val: Any) -> datetime:
+            if not dt_val: return datetime.now(timezone.utc)
+            if isinstance(dt_val, str):
+                if dt_val.endswith('Z'): dt_val = dt_val[:-1]
+                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+            return dt_val
+
+        entity_id = str(data["id"])
+        if entity_id.startswith("entity:"):
+            entity_id = entity_id.split(":", 1)[1]
+
+        embedding = None
+        if data.get("embedding"):
+            embedding = EmbeddingVector(data["embedding"])
+
+        entity = Entity(
+            id=entity_id,
+            text=data["text"],
+            entity_type=EntityType(data["entity_type"]),
+            confidence=data.get("confidence", 1.0),
+            embedding=embedding,
+            metadata=data.get("metadata", {}),
+            created_at=parse_dt(data.get("created_at"))
+        )
+        if data.get("last_seen"):
+            entity.last_seen = parse_dt(data.get("last_seen"))
+
+        return entity
+
     async def create_relationship(self, relationship: Relationship) -> str:
         """Create a new relationship in the database."""
+    async def create_relationship(self, relationship: Relationship, bidirectional: bool = False) -> str:
+        """Create a new relationship in the database.
+
+        Args:
+            relationship: The relationship entity to create.
+            bidirectional: If True, automatically creates the inverse edge.
+        """
         # Parse entity IDs to extract UUIDs if they are in record format
         from_uuid = relationship.from_entity_id
         if ":" in from_uuid:
@@ -412,16 +605,17 @@ class SurrealDBClient:
 
         query = """
         CREATE type::thing('relationship', $id) CONTENT {
-        in: type::thing('entity', $from_uuid),
-        out: type::thing('entity', $to_uuid),
-        from_entity_id: $from_entity_id,
-        to_entity_id: $to_entity_id,
-        relation_type: $relation_type,
+            in: type::thing('entity', $from_uuid),
+            out: type::thing('entity', $to_uuid),
+            from_entity_id: $from_entity_id,
+            to_entity_id: $to_entity_id,
+            relation_type: $relation_type,
             strength: $strength,
+            weight: $weight,
             valid_from: $valid_from,
             valid_to: $valid_to,
             transaction_time_start: $transaction_time_start,
-            transaction_time_end: $transaction_time_end,
+            transaction_time_end: $transaction_time_end
         };
         """
 
@@ -433,6 +627,7 @@ class SurrealDBClient:
             "to_entity_id": relationship.to_entity_id,
             "relation_type": relationship.relation_type,
             "strength": relationship.strength,
+            "weight": relationship.weight,
             "valid_from": relationship.valid_from,
             "valid_to": relationship.valid_to,
             "transaction_time_start": relationship.transaction_time_start,
@@ -447,8 +642,80 @@ class SurrealDBClient:
                 if isinstance(response[0], dict) and 'status' in response[0] and response[0]['status'] == 'ERR':
                     logger.error(f"Create relationship failed: {response[0]}")
                     raise RuntimeError(f"Failed to create relationship: {response[0].get('detail', 'Unknown error')}")
+
+            # Handle bidirectional creation
+            if bidirectional:
+                # Create the inverse relationship
+                inverse_query = """
+                CREATE type::thing('relationship', $inverse_id) CONTENT {
+                    in: type::thing('entity', $to_uuid),
+                    out: type::thing('entity', $from_uuid),
+                    from_entity_id: $to_entity_id,
+                    to_entity_id: $from_entity_id,
+                    relation_type: $relation_type,
+                    strength: $strength,
+                    valid_from: $valid_from,
+                    valid_to: $valid_to,
+                    transaction_time_start: $transaction_time_start,
+                    transaction_time_end: $transaction_time_end,
+                    metadata: {
+                        is_inverse: true,
+                        original_relationship_id: $original_id
+                    }
+                };
+                """
+
+                # Generate a new ID for the inverse relationship
+                import uuid
+                inverse_id = str(uuid.uuid4())
+
+                inverse_params = {
+                    "inverse_id": inverse_id,
+                    "original_id": relationship.id,
+                    "from_uuid": from_uuid,
+                    "to_uuid": to_uuid,
+                    "from_entity_id": relationship.from_entity_id,
+                    "to_entity_id": relationship.to_entity_id,
+                    "relation_type": relationship.relation_type,
+                    "strength": relationship.strength,
+                    "valid_from": relationship.valid_from,
+                    "valid_to": relationship.valid_to,
+                    "transaction_time_start": relationship.transaction_time_start,
+                    "transaction_time_end": relationship.transaction_time_end,
+                }
+
+                await conn.query(inverse_query, inverse_params)
                     
             return relationship.id
+
+    async def update_relationship_validity(
+        self,
+        relationship_id: str,
+        valid_from: Optional[Any] = None,
+        valid_to: Optional[Any] = None
+    ) -> None:
+        """Update the validity period of a relationship (Bi-temporal correction)."""
+        if ":" in relationship_id:
+            relationship_id = relationship_id.split(":")[1]
+
+        updates = []
+        params = {"id": relationship_id}
+
+        if valid_from:
+            updates.append("valid_from = $valid_from")
+            params["valid_from"] = valid_from
+
+        if valid_to:
+            updates.append("valid_to = $valid_to")
+            params["valid_to"] = valid_to
+
+        if not updates:
+            return
+
+        query = f"UPDATE type::thing('relationship', $id) SET {', '.join(updates)};"
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
 
     def _build_filter_query(self, filters: Dict[str, Any], params: Dict[str, Any]) -> str:
         """Build WHERE clause segment from filters and update params."""
@@ -499,9 +766,19 @@ class SurrealDBClient:
         user_id: str,
         top_k: int = 10,
         min_similarity: float = 0.6,
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
+        field_name: str = "embedding"
     ) -> List[Dict[str, Any]]:
-        """Search memories using vector similarity."""
+        """Search memories using vector similarity.
+
+        Args:
+            field_name: The embedding field to search (embedding, embedding_secondary, etc)
+        """
+        # Sanitize field name to prevent injection
+        allowed_fields = ["embedding", "embedding_secondary", "embedding_visual", "embedding_code"]
+        if field_name not in allowed_fields:
+            raise ValueError(f"Invalid embedding field name: {field_name}")
+
         params = {
             "user_id": user_id,
             "embedding": embedding.values,
@@ -512,12 +789,12 @@ class SurrealDBClient:
         filter_clause = self._build_filter_query(filters, params)
 
         query = f"""
-        SELECT *, vector::similarity::cosine(embedding, $embedding) AS similarity
+        SELECT *, vector::similarity::cosine({field_name}, $embedding) AS similarity
         FROM memory 
         WHERE user_id = $user_id 
         AND is_archived = false
-        AND embedding != NONE
-        AND vector::similarity::cosine(embedding, $embedding) > $min_similarity
+        AND {field_name} != NONE
+        AND vector::similarity::cosine({field_name}, $embedding) > $min_similarity
         {filter_clause}
         ORDER BY similarity DESC
         LIMIT $top_k;
@@ -608,6 +885,56 @@ class SurrealDBClient:
         query = f"""
         SELECT * FROM relationship
         WHERE 1=1 {filter_clause}
+    async def get_latest_memories(
+        self,
+        user_id: str,
+        limit: int = 100
+    ) -> List[Memory]:
+        """Get latest memories for a user regardless of tier."""
+        query = """
+        SELECT *
+        FROM memory
+        WHERE user_id = $user_id
+        AND is_archived = false
+        AND embedding != NONE
+        ORDER BY created_at DESC
+        LIMIT $limit;
+        """
+
+        params = {
+            "user_id": user_id,
+            "limit": limit,
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list):
+                return [self._deserialize_memory(data) for data in response]
+            return []
+
+    async def find_outliers_by_centroid(
+        self,
+        centroid: List[float],
+        user_id: str,
+        limit: int = 10,
+        max_similarity: float = 0.5
+    ) -> List[Dict[str, Any]]:
+        """Find memories that are least similar to the centroid vector."""
+        params = {
+            "user_id": user_id,
+            "centroid": centroid,
+            "max_similarity": max_similarity,
+            "limit": limit,
+        }
+
+        query = """
+        SELECT *, vector::similarity::cosine(embedding, $centroid) AS similarity
+        FROM memory
+        WHERE user_id = $user_id
+        AND is_archived = false
+        AND embedding != NONE
+        AND vector::similarity::cosine(embedding, $centroid) < $max_similarity
+        ORDER BY similarity ASC
         LIMIT $limit;
         """
 
@@ -669,7 +996,51 @@ class SurrealDBClient:
                     logger.error(f"Error closing connection: {e}")
             self._connection_pool.clear()
             self._initialized = False
-    
+
+    async def get_memory_creation_stats(
+        self,
+        start_time: "datetime",
+        end_time: "datetime",
+        granularity: str = "day"
+    ) -> List[Dict[str, Any]]:
+        """Get memory creation statistics for heatmaps.
+
+        Strategy 140: Temporal Heatmaps.
+
+        Args:
+            start_time: Start of the period
+            end_time: End of the period
+            granularity: 'hour', 'day', 'week'
+        """
+        duration_map = {
+            "hour": "1h",
+            "day": "1d",
+            "week": "1w"
+        }
+        duration = duration_map.get(granularity, "1d")
+
+        query = """
+        SELECT count() AS count, time::floor(created_at, $duration) AS time_bucket
+        FROM memory
+        WHERE created_at >= $start AND created_at <= $end
+        GROUP BY time_bucket
+        ORDER BY time_bucket ASC;
+        """
+
+        params = {
+            "start": start_time.isoformat(),
+            "end": end_time.isoformat(),
+            "duration": duration
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list):
+                 if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                     return response[0]['result']
+                 return response
+            return []
+
     def _deserialize_memory(self, data: Dict[str, Any]) -> Memory:
         """Deserialize database record to Memory object."""
         # Convert timestamp strings back to datetime objects
@@ -705,6 +1076,13 @@ class SurrealDBClient:
         embedding_code = None
         if data.get("embedding_code"):
             embedding_code = EmbeddingVector(data["embedding_code"])
+
+        embedding_secondary = None
+        if data.get("embedding_secondary"):
+            embedding_secondary = EmbeddingVector(data["embedding_secondary"])
+        embedding_small = None
+        if data.get("embedding_small"):
+            embedding_small = EmbeddingVector(data["embedding_small"])
 
         # Reconstruct MemorySource
         source = None
@@ -742,6 +1120,9 @@ class SurrealDBClient:
             embedding=embedding,
             embedding_visual=embedding_visual,
             embedding_code=embedding_code,
+            embedding_secondary=embedding_secondary,
+            embedding_small=embedding_small,
+            cluster_id=data.get("cluster_id"),
             tags=data.get("tags", []),
             category=data.get("category"),
             summary=data.get("summary"),
@@ -763,8 +1144,147 @@ class SurrealDBClient:
             sentiment=sentiment,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
-            source_reliability=data.get("source_reliability", 1.0)
+            source_reliability=data.get("source_reliability", 1.0),
+            project_id=data.get("project_id"),
+            tenant_id=data.get("tenant_id"),
+            summary_level=data.get("summary_level", 0),
+            parent_summary_id=data.get("parent_summary_id"),
+            child_memory_ids=data.get("child_memory_ids", [])
+            branch_id=data.get("branch").split(":")[-1] if data.get("branch") and isinstance(data.get("branch"), str) and ":" in data.get("branch") else (data.get("branch") if isinstance(data.get("branch"), str) else None),
+            parent_memory_id=data.get("parent_memory").split(":")[-1] if data.get("parent_memory") and isinstance(data.get("parent_memory"), str) and ":" in data.get("parent_memory") else (data.get("parent_memory") if isinstance(data.get("parent_memory"), str) else None),
+            version=data.get("version", 1)
+            complexity=data.get("complexity", 0.0)
+            pos_tags=data.get("pos_tags")
         )
+
+    async def save_centroid(self, centroid: VectorCentroid) -> str:
+        """Save a vector centroid."""
+        query = """
+        CREATE type::thing('vector_centroid', $id) CONTENT {
+            cluster_id: $cluster_id,
+            embedding: $embedding,
+            member_count: $member_count,
+            radius: $radius,
+            metadata: $metadata,
+            created_at: $created_at,
+            updated_at: $updated_at
+        };
+        """
+        params = {
+            "id": centroid.cluster_id,
+            "cluster_id": centroid.cluster_id,
+            "embedding": centroid.embedding.values,
+            "member_count": centroid.member_count,
+            "radius": centroid.radius,
+            "metadata": centroid.metadata,
+            "created_at": centroid.created_at.isoformat(),
+            "updated_at": centroid.updated_at.isoformat(),
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if isinstance(response, str):
+                 raise RuntimeError(f"Failed to save centroid: {response}")
+            return centroid.cluster_id
+
+    async def get_all_centroids(self) -> List[VectorCentroid]:
+        """Get all vector centroids."""
+        query = "SELECT * FROM vector_centroid;"
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query)
+            if response and isinstance(response, list):
+                return [self._deserialize_centroid(data) for data in response]
+            return []
+
+    async def update_memory_cluster(self, memory_id: str, cluster_id: str) -> None:
+        """Efficiently update only the cluster_id of a memory."""
+        # Handle memory ID format
+        if memory_id.startswith("memory:"):
+            memory_id = memory_id.split(":", 1)[1]
+
+        query = "UPDATE type::thing('memory', $id) SET cluster_id = $cluster_id, updated_at = time::now();"
+        params = {
+            "id": memory_id,
+            "cluster_id": cluster_id
+        }
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+
+    def _deserialize_centroid(self, data: Dict[str, Any]) -> VectorCentroid:
+        """Deserialize database record to VectorCentroid object."""
+        from datetime import datetime, timezone
+
+        def parse_dt(dt_val: Any) -> datetime:
+            if not dt_val:
+                return datetime.now(timezone.utc)
+            if isinstance(dt_val, str):
+                if dt_val.endswith('Z'):
+                    dt_val = dt_val[:-1]
+                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+            return dt_val
+
+        embedding = None
+        if data.get("embedding"):
+            embedding = EmbeddingVector(data["embedding"])
+
+        return VectorCentroid(
+            embedding=embedding,
+            cluster_id=data.get("cluster_id"),
+            member_count=data.get("member_count", 0),
+            radius=data.get("radius", 0.0),
+            metadata=data.get("metadata", {}),
+            created_at=parse_dt(data.get("created_at")),
+            updated_at=parse_dt(data.get("updated_at"))
+        )
+
+    async def get_memory_facets(self, user_id: str) -> Dict[str, Any]:
+        """Get faceted counts for memories."""
+        query = """
+        SELECT count() as count, tier FROM memory WHERE user_id = $user_id GROUP BY tier;
+        SELECT count() as count, category FROM memory WHERE user_id = $user_id GROUP BY category;
+        SELECT count() as count, metadata.agent_id as agent_id FROM memory WHERE user_id = $user_id GROUP BY metadata.agent_id;
+        """
+
+        async with self.get_connection() as conn:
+            responses = await conn.query(query, {"user_id": user_id})
+
+            facets = {
+                "tier": {},
+                "category": {},
+                "agent_id": {}
+            }
+
+            # Helper to extract items from response list
+            def extract_items(response_item):
+                if isinstance(response_item, dict) and 'result' in response_item:
+                    return response_item['result']
+                if isinstance(response_item, list):
+                    return response_item
+                return []
+
+            if responses and isinstance(responses, list):
+                # Tier
+                if len(responses) > 0:
+                    for item in extract_items(responses[0]):
+                        if 'tier' in item and item['tier']:
+                             facets["tier"][str(item['tier'])] = item['count']
+
+                # Category
+                if len(responses) > 1:
+                     for item in extract_items(responses[1]):
+                        if 'category' in item and item['category']:
+                             facets["category"][str(item['category'])] = item['count']
+
+                # Agent
+                if len(responses) > 2:
+                     for item in extract_items(responses[2]):
+                        val = item.get('agent_id') or item.get('metadata', {}).get('agent_id')
+                        if val:
+                             facets["agent_id"][str(val)] = item['count']
+
+            return facets
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:
         """Create a new search session log.
@@ -823,6 +1343,102 @@ class SurrealDBClient:
             if response and isinstance(response, list):
                 return response
             return []
+
+    async def create_search_feedback(self, session_id: str, memory_id: str, query_text: str, score: float) -> str:
+        """Create a new search feedback record.
+
+        Args:
+            session_id: ID of the search session
+            memory_id: ID of the memory that received feedback
+            query_text: The search query
+            score: Feedback score (e.g. 1.0 for click, -1.0 for negative)
+        """
+        query = """
+        CREATE search_feedback CONTENT {
+            session_id: $session_id,
+            memory_id: $memory_id,
+            query: $query,
+            score: $score,
+            created_at: time::now()
+        };
+        """
+        params = {
+            "session_id": session_id,
+            "memory_id": memory_id,
+            "query": query_text,
+            "score": score
+        }
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list) and len(response) > 0:
+                item = response[0]
+                if isinstance(item, dict):
+                    if 'id' in item:
+                        return item['id']
+                    if 'result' in item and isinstance(item['result'], list) and len(item['result']) > 0:
+                        return item['result'][0].get('id')
+            return ""
+
+    async def get_feedback_for_query(self, query_text: str) -> List[Dict[str, Any]]:
+        """Get aggregated feedback for a query.
+
+        Returns memories that have positive feedback for this query.
+        """
+        # Exact match on query for now
+        query = """
+        SELECT memory_id, math::sum(score) as total_score
+        FROM search_feedback
+        WHERE query = $query
+        GROUP BY memory_id
+        HAVING total_score > 0
+        ORDER BY total_score DESC;
+        """
+        params = {"query": query_text}
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list):
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                    return response[0]['result']
+                return response
+            return []
+    async def get_search_suggestions(self, prefix: str, limit: int = 10) -> List[str]:
+        """Get search suggestions based on past successful queries (Strategy 101)."""
+        # We search for queries starting with the prefix
+        # and we aggregate to get unique queries, perhaps sorting by frequency (count)
+        # SurrealDB doesn't have a simple GROUP BY COUNT on the fly easily without defining a view mostly.
+        # But we can select distinct queries.
+
+        # Using a simple SELECT DISTINCT with basic filtering
+        # Note: 'string::starts_with' is useful here.
+
+        query = """
+        SELECT query, count() as frequency FROM search_session
+        WHERE string::starts_with(string::lowercase(query), string::lowercase($prefix))
+        GROUP BY query
+        ORDER BY frequency DESC
+        LIMIT $limit;
+        """
+
+        params = {
+            "prefix": prefix,
+            "limit": limit
+        }
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+
+            suggestions = []
+            if response and isinstance(response, list):
+                items = response
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                    items = response[0]['result']
+
+                for item in items:
+                    if isinstance(item, dict) and 'query' in item:
+                        suggestions.append(item['query'])
+
+            return suggestions
 
     async def create_skill(self, skill: Skill) -> str:
         """Create a new skill in the database."""
@@ -964,6 +1580,26 @@ class SurrealDBClient:
         query = "DELETE type::thing('skill', $id);"
         params = {"id": skill_id}
         
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+
+    async def update_relationship_weight(self, relationship_id: str, new_weight: float) -> None:
+        """Update the weight of a relationship (Task 68).
+
+        Args:
+            relationship_id: The ID of the relationship to update.
+            new_weight: The new weight value.
+        """
+        if ":" in relationship_id:
+            relationship_id = relationship_id.split(":")[1]
+
+        query = """
+        UPDATE type::thing('relationship', $id)
+        SET weight = $weight,
+            updated_at = time::now();
+        """
+        params = {"id": relationship_id, "weight": new_weight}
+
         async with self.get_connection() as conn:
             await conn.query(query, params)
 
