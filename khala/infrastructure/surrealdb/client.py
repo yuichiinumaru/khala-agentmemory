@@ -59,6 +59,7 @@ class SurrealDBClient:
         
         self._connection_pool: List[AsyncSurreal] = []
         self._pool_lock = asyncio.Lock()
+        self._semaphore = asyncio.Semaphore(max_connections)
         self._initialized = False
     
     async def initialize(self) -> None:
@@ -102,29 +103,38 @@ class SurrealDBClient:
         if not self._initialized:
             await self.initialize()
         
-        connection = None
-        try:
-            if self._connection_pool:
-                connection = self._connection_pool.pop()
-            else:
-                # Create new connection if pool is empty
-                connection = AsyncSurreal(self.url)
-                await connection.connect()
-                await connection.signin({"username": self.username, "password": self.password})
-                await connection.use(namespace=self.namespace, database=self.database)
-            
-            yield connection
-        finally:
-            if connection:
-                # Return connection to pool if not full
-                if len(self._connection_pool) < self.max_connections:
-                    self._connection_pool.append(connection)
-                else:
-                    # Close connection if pool is full
-                    try:
-                        await connection.close()
-                    except Exception as e:
-                        logger.error(f"Error closing connection: {e}")
+        # Use semaphore to limit concurrent active connections
+        async with self._semaphore:
+            connection = None
+            try:
+                # Thread-safe pool access
+                async with self._pool_lock:
+                    if self._connection_pool:
+                        connection = self._connection_pool.pop()
+
+                if not connection:
+                    # Create new connection if pool is empty
+                    connection = AsyncSurreal(self.url)
+                    await connection.connect()
+                    await connection.signin({"username": self.username, "password": self.password})
+                    await connection.use(namespace=self.namespace, database=self.database)
+
+                yield connection
+            finally:
+                if connection:
+                    should_close = False
+                    # Thread-safe pool return
+                    async with self._pool_lock:
+                        if len(self._connection_pool) < self.max_connections:
+                            self._connection_pool.append(connection)
+                        else:
+                            should_close = True
+
+                    if should_close:
+                        try:
+                            await connection.close()
+                        except Exception as e:
+                            logger.error(f"Error closing connection: {e}")
     
     async def create_memory(self, memory: Memory) -> str:
         """Create a new memory in the database."""
@@ -1130,6 +1140,44 @@ class SurrealDBClient:
             if response and isinstance(response, list):
                 return response
             return []
+
+    async def create_training_curve(self, data: Dict[str, Any]) -> str:
+        """Record a training curve point for MarsRL."""
+        query = """
+        CREATE training_curves CONTENT {
+            model_id: $model_id,
+            epoch: $epoch,
+            loss: $loss,
+            accuracy: $accuracy,
+            reward_mean: $reward_mean,
+            created_at: time::now()
+        };
+        """
+        async with self.get_connection() as conn:
+            response = await conn.query(query, data)
+            if isinstance(response, list) and len(response) > 0:
+                if isinstance(response[0], dict) and 'id' in response[0]:
+                    return response[0]['id']
+            return ""
+
+    async def create_agent_reward(self, data: Dict[str, Any]) -> str:
+        """Record agent rewards for MarsRL episode."""
+        query = """
+        CREATE agent_rewards CONTENT {
+            episode_id: $episode_id,
+            timestamp: time::now(),
+            solver: $solver,
+            verifier: $verifier,
+            corrector: $corrector,
+            agreement_score: $agreement_score
+        };
+        """
+        async with self.get_connection() as conn:
+            response = await conn.query(query, data)
+            if isinstance(response, list) and len(response) > 0:
+                if isinstance(response[0], dict) and 'id' in response[0]:
+                    return response[0]['id']
+            return ""
 
     def _deserialize_skill(self, data: Dict[str, Any]) -> Skill:
         """Deserialize database record to Skill object."""

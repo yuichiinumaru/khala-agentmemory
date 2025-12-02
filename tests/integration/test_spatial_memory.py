@@ -85,6 +85,7 @@ async def test_spatial_memory_workflow(spatial_service, db_client):
 
     # Verify updates
     m1 = await db_client.get_memory(mem1_id)
+    print(f"Mem1 location: {m1.location if m1 else 'None'}")
 
     # Wait for indexing/persistence if needed (SurrealDB is usually immediate but good for safety)
 
@@ -95,6 +96,9 @@ async def test_spatial_memory_workflow(spatial_service, db_client):
         longitude=2.2945,
         max_distance_km=5.0
     )
+
+    print(f"Nearby memories: {len(nearby)}")
+    print(f"Nearby data: {nearby}")
 
     assert len(nearby) == 2
     # Handle RecordID objects

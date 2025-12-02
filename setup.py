@@ -15,6 +15,7 @@ setup(
         "redis>=7.0.0",
         "pydantic>=2.12.0",
         "numpy>=2.3.0",
+        "scikit-learn>=1.3.0",
         "asyncio-mqtt>=0.16.0",
         "structlog>=23.0.0",
         "click>=8.0.0",

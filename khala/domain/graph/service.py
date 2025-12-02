@@ -1,8 +1,9 @@
 """Graph service for advanced graph operations."""
 import logging
 import uuid
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone
+import networkx as nx
 
 from khala.domain.memory.entities import Entity, Relationship, EntityType
 from khala.domain.memory.repository import MemoryRepository
@@ -187,6 +188,106 @@ class GraphService:
             logger.error(f"Recursive graph traversal failed: {e}")
 
         return []
+
+    async def calculate_centrality(self, method: str = "degree", limit: int = 1000) -> Dict[str, float]:
+        """
+        Implement Strategy 144: Centrality Analysis.
+        Calculates centrality metrics for entities in the graph.
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+            return {}
+
+        # 1. Fetch graph snapshot
+        # For large graphs, this should be done incrementally or via dedicated graph engine.
+        # Here we do an in-memory snapshot for analysis.
+        query = "SELECT * FROM relationship LIMIT $limit;"
+        params = {"limit": limit}
+
+        graph = nx.Graph() # Undirected for general importance
+
+        async with client.get_connection() as conn:
+            response = await conn.query(query, params)
+            rels = []
+            if response and isinstance(response, list):
+                 if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                     rels = response[0]['result']
+                 else:
+                     rels = response
+
+            for rel in rels:
+                if isinstance(rel, dict):
+                    graph.add_edge(rel['from_entity_id'], rel['to_entity_id'], weight=rel.get('strength', 1.0))
+
+        if not graph.number_of_nodes():
+            return {}
+
+        # 2. Compute Centrality
+        if method == "degree":
+            centrality = nx.degree_centrality(graph)
+        elif method == "betweenness":
+            centrality = nx.betweenness_centrality(graph)
+        elif method == "pagerank":
+            centrality = nx.pagerank(graph)
+        else:
+            raise ValueError(f"Unknown centrality method: {method}")
+
+        return centrality
+
+    async def find_subgraph_isomorphism(self, target_graph: nx.Graph, limit: int = 100) -> List[Dict[str, str]]:
+        """
+        Implement Strategy 146: Subgraph Isomorphism.
+        Finds occurrences of a query graph (pattern) within the memory graph.
+
+        Note: This is computationally expensive (NP-hard). Used for small query patterns.
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+            return []
+
+        # 1. Fetch relevant portion of the main graph
+        # Heuristic: Fetch neighborhood of nodes that match candidate types in target graph
+        # For simplicity in this implementation, we fetch a larger subgraph or use the full snapshot (limited)
+        query = "SELECT * FROM relationship LIMIT $limit;"
+        params = {"limit": limit} # Should be larger for real use
+
+        host_graph = nx.DiGraph() # Directed to match relationships
+
+        async with client.get_connection() as conn:
+             response = await conn.query(query, params)
+             rels = []
+             if response and isinstance(response, list):
+                  if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                      rels = response[0]['result']
+                  else:
+                      rels = response
+
+             for rel in rels:
+                 if isinstance(rel, dict):
+                     # Add edge with attributes for matching
+                     host_graph.add_edge(
+                         rel['from_entity_id'],
+                         rel['to_entity_id'],
+                         relation_type=rel.get('relation_type')
+                     )
+
+        # 2. Use VF2 algorithm (NetworkX implementation)
+        # We need a node_match or edge_match function if we want strict typing
+        # Let's assume edge 'relation_type' must match
+
+        gm = nx.algorithms.isomorphism.GraphMatcher(
+            host_graph,
+            target_graph,
+            edge_match=nx.algorithms.isomorphism.categorical_edge_match('relation_type', None)
+        )
+
+        matches = []
+        # Return first 5 matches to avoid exhaustion
+        for i, subgraph in enumerate(gm.subgraph_isomorphisms_iter()):
+            if i >= 5: break
+            matches.append(subgraph)
+
+        return matches
 
     def _deserialize_relationship(self, data: Dict[str, Any]) -> Relationship:
         """Helper to deserialize relationship data."""

@@ -46,7 +46,12 @@ class TestTraceability:
 
         with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
             mock_conn = AsyncMock()
-            mock_conn.query.return_value = [{"id": memory.id}]
+
+            client.initialize = AsyncMock()
+            client._initialized = True
+            client._connection_pool = [mock_conn]
+
+            mock_conn.query.side_effect = [[], [{"id": memory.id}]]
             mock_surreal.return_value = mock_conn
 
             await client.create_memory(memory)
@@ -88,7 +93,12 @@ class TestTraceability:
 
         with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
             mock_conn = AsyncMock()
-            mock_conn.query.return_value = [{"id": memory.id}]
+
+            client.initialize = AsyncMock()
+            client._initialized = True
+            client._connection_pool = [mock_conn]
+
+            mock_conn.query.side_effect = [[], [{"id": memory.id}]]
             mock_surreal.return_value = mock_conn
 
             await client.create_memory(memory)

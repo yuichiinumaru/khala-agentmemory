@@ -259,6 +259,97 @@ class PromptOptimizationService:
         async with self.db_client.get_connection() as conn:
             await conn.query(query, params)
 
+    async def get_prompt_lineage(self, prompt_id: str) -> List[PromptCandidate]:
+        """
+        Retrieve the ancestral lineage of a prompt.
+        Returns a list of PromptCandidates starting from the given prompt back to the root.
+        """
+        lineage = []
+        current_id = prompt_id
+
+        # Loop until we reach a prompt with no parent or run out of iterations (safety)
+        for _ in range(50):  # Safety limit for depth
+            if not current_id:
+                break
+
+            # If ID format is prompt_candidates:uuid, strip prefix if needed by query,
+            # but usually SurrealDB handles records.
+            # We'll use a direct fetch.
+
+            query = "SELECT * FROM prompt_candidates WHERE id = $id"
+            # Ensure ID format if needed, but assuming simple fetch works with record ID or string
+
+            async with self.db_client.get_connection() as conn:
+                # Need to handle potential prefix issue if passed string doesn't have it but DB does
+                if ":" not in current_id:
+                     # Attempt to format it if it looks like a UUID but missing table
+                     pass
+
+                response = await conn.query(query, {"id": current_id})
+
+                if not response:
+                    break
+
+                items = response
+                if isinstance(response, list) and response and isinstance(response[0], dict) and 'result' in response[0]:
+                     items = response[0]['result']
+
+                if not items:
+                    break
+
+                data = items[0]
+                candidate = self._deserialize_candidate(data)
+                lineage.append(candidate)
+
+                current_id = candidate.parent_id
+
+        return lineage
+
+    async def get_evolution_tree(self, task_id: str) -> Dict[str, Any]:
+        """
+        Retrieve the full evolutionary tree for a task.
+        Returns a nested dictionary structure representing the tree.
+        """
+        query = """
+        SELECT * FROM prompt_candidates
+        WHERE task_id = $task_id
+        ORDER BY generation ASC
+        """
+
+        async with self.db_client.get_connection() as conn:
+            response = await conn.query(query, {"task_id": task_id})
+
+            items = []
+            if isinstance(response, list) and response:
+                if isinstance(response[0], dict) and 'result' in response[0]:
+                    items = response[0]['result']
+                else:
+                    items = response
+
+            if not items:
+                return {}
+
+            candidates = [self._deserialize_candidate(item) for item in items]
+
+            # Build tree
+            # Map by ID
+            node_map = {c.id: {"data": c, "children": []} for c in candidates}
+            roots = []
+
+            for c in candidates:
+                node = node_map[c.id]
+                parent_id = c.parent_id
+
+                # SurrealDB might store parent_id as Record(prompt_candidates:uuid) or just uuid string
+                # Normalize lookup if needed. Assuming string match for now.
+
+                if parent_id and parent_id in node_map:
+                    node_map[parent_id]["children"].append(node)
+                else:
+                    roots.append(node)
+
+            return {"roots": roots, "total_candidates": len(candidates)}
+
     def _deserialize_candidate(self, data: Dict[str, Any]) -> PromptCandidate:
         """Deserialize dict to PromptCandidate."""
         return PromptCandidate(

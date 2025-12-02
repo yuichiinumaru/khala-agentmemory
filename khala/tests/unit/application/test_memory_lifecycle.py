@@ -12,6 +12,7 @@ class TestMemoryLifecycleService(unittest.IsolatedAsyncioTestCase):
         self.repository = MagicMock(spec=MemoryRepository)
         # Mock async methods of the repository
         self.repository.get_by_tier = AsyncMock(return_value=[])
+        self.repository.find_duplicate_groups = AsyncMock(return_value=[])
         self.repository.update = AsyncMock()
         self.repository.create = AsyncMock()
         self.repository.delete = AsyncMock()
@@ -73,10 +74,11 @@ class TestMemoryLifecycleService(unittest.IsolatedAsyncioTestCase):
         m1 = Memory(id="1", user_id="u1", content="same", tier=MemoryTier.WORKING, importance=ImportanceScore(0.5))
         m2 = Memory(id="2", user_id="u1", content="same", tier=MemoryTier.WORKING, importance=ImportanceScore(0.5))
 
-        self.repository.get_by_tier.side_effect = lambda uid, tier, limit: [m1, m2] if tier == "working" else []
+        # Mock find_duplicate_groups to return m1 and m2 as a group
+        self.repository.find_duplicate_groups.return_value = [[m1, m2]]
 
-        self.deduplication_service.find_exact_duplicates.return_value = [m2]
-        self.deduplication_service.find_semantic_duplicates.return_value = []
+        # Mock get_by_tier for semantic search part (empty to avoid interference)
+        self.repository.get_by_tier.return_value = []
 
         count = await self.service.deduplicate_memories("u1")
 

@@ -118,6 +118,7 @@ class SpatialMemoryService:
                         "limit": limit
                     }
                 )
+                print(f"DEBUG: find_nearby_memories result: {result}")
 
                 # Handle case where result is an error string
                 if isinstance(result, str):
@@ -176,11 +177,28 @@ class SpatialMemoryService:
         SELECT * FROM memory
         WHERE location IS NOT NONE
           AND location INSIDE {polygon_json};
+        # Construct Polygon as dict to avoid SDK constructor issues with single-ring polygons
+        polygon_data = {
+            "type": "Polygon",
+            "coordinates": [[
+                [lon, lat] for lon, lat in polygon_coords
+            ]]
+        }
+
+        query = """
+        SELECT * FROM memory
+        WHERE location IS NOT NONE
+          AND location INSIDE <geometry>$polygon;
         """
 
         try:
             async with self.db_client.get_connection() as conn:
-                result = await conn.query(query)
+              
+                result = await conn.query(
+                    query,
+                    {"polygon": polygon_data}
+                )
+                print(f"DEBUG: find_within_region result: {result}")
 
                 if isinstance(result, str):
                     logger.error(f"Query returned error string: {result}")
@@ -212,6 +230,9 @@ class SpatialMemoryService:
         SELECT *
         FROM memory
         WHERE id = type::thing('memory', $id);
+        SELECT id, updated_at, location, versions
+        FROM memory
+        WHERE id = $id;
         """
 
         try:
@@ -244,6 +265,16 @@ class SpatialMemoryService:
                 if memory.get('location'):
                     trajectory.append({
                         "timestamp": to_iso(memory.get('updated_at')),
+                if not result or not result[0]:
+                    return []
+
+                memory = result[0][0]
+                trajectory = []
+
+                # Add current location
+                if memory.get('location'):
+                    trajectory.append({
+                        "timestamp": memory.get('updated_at'),
                         "location": memory.get('location'),
                         "source": "current"
                     })
@@ -254,6 +285,7 @@ class SpatialMemoryService:
                     if ver.get('location'):
                         trajectory.append({
                             "timestamp": to_iso(ver.get('updated_at') or ver.get('created_at')),
+                            "timestamp": ver.get('updated_at') or ver.get('created_at'),
                             "location": ver.get('location'),
                             "source": "history"
                         })

@@ -17,6 +17,7 @@ from khala.domain.memory.services import (
     ConsolidationService,
     ConflictResolutionService
 )
+from khala.application.services.privacy_safety_service import PrivacySafetyService
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
@@ -34,7 +35,8 @@ class MemoryLifecycleService:
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
         consolidation_service: Optional[ConsolidationService] = None,
-        conflict_resolution_service: Optional[ConflictResolutionService] = None
+        conflict_resolution_service: Optional[ConflictResolutionService] = None,
+        privacy_safety_service: Optional[PrivacySafetyService] = None
     ):
         self.repository = repository
         self.gemini_client = gemini_client or GeminiClient()
@@ -43,9 +45,37 @@ class MemoryLifecycleService:
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
         self.conflict_resolution_service = conflict_resolution_service or ConflictResolutionService(repository)
+        self.privacy_safety_service = privacy_safety_service or PrivacySafetyService(self.gemini_client)
 
-    async def ingest_memory(self, memory: Memory) -> str:
-        """Ingest a new memory, performing auto-summarization if needed."""
+    async def ingest_memory(self, memory: Memory, check_privacy: bool = True) -> str:
+        """Ingest a new memory, performing auto-summarization and privacy checks."""
+
+        # Strategy 132: Privacy-Preserving Sanitization
+        if check_privacy and self.privacy_safety_service:
+            sanitization_result = await self.privacy_safety_service.sanitize_content(memory.content)
+            if sanitization_result.was_sanitized:
+                memory.content = sanitization_result.sanitized_text
+                if not memory.metadata:
+                    memory.metadata = {}
+                memory.metadata["sanitization_record"] = {
+                    "was_sanitized": True,
+                    "redacted_items": sanitization_result.redacted_items,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+
+        # Strategy 152: Bias Detection
+        if check_privacy and self.privacy_safety_service:
+            # We don't block ingestion for bias, but we tag it
+            bias_result = await self.privacy_safety_service.detect_bias(memory.content)
+            if bias_result.is_biased:
+                if not memory.metadata:
+                    memory.metadata = {}
+                memory.metadata["bias_analysis"] = {
+                    "score": bias_result.bias_score,
+                    "categories": bias_result.categories,
+                    "analysis": bias_result.analysis,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
 
         # Auto-summarize if content is long (> 500 chars) and summary is missing
         if len(memory.content) > 500 and not memory.summary:
@@ -182,42 +212,61 @@ class MemoryLifecycleService:
         """Find and remove duplicate memories."""
         duplicates_removed = 0
 
-        # Iterate by tier to limit scope for now
-        for tier in MemoryTier:
-            memories = await self.repository.get_by_tier(user_id, tier.value, limit=1000)
-            processed_ids = set()
+        # 1. Exact duplicates (Global)
+        # Using efficient repository method to find all exact content matches
+        try:
+            duplicate_groups = await self.repository.find_duplicate_groups(user_id)
+            for group in duplicate_groups:
+                if len(group) < 2:
+                    continue
+
+                # Keep the oldest one (first in list due to ORDER BY created_at ASC)
+                original = group[0]
+                duplicates = group[1:]
+
+                for dupe in duplicates:
+                    if not dupe.is_archived:
+                        dupe.archive(force=True)
+                        dupe.metadata["duplicate_of"] = original.id
+                        dupe.metadata["deduplication_type"] = "exact"
+                        await self.repository.update(dupe)
+                        duplicates_removed += 1
+                        logger.info(f"Archived exact duplicate {dupe.id} of {original.id}")
+        except Exception as e:
+            logger.error(f"Global exact deduplication failed: {e}")
+
+        # 2. Semantic duplicates (Strategy 90: Vector Deduplication)
+        # We iterate by tier for a partial check of recent memories against each other.
+        # This is an O(N^2) check on the batch, so we limit the batch size.
+
+        processed_ids = set()
+
+        # Focus on active tiers for semantic dupes
+        for tier in [MemoryTier.WORKING, MemoryTier.SHORT_TERM]:
+            memories = await self.repository.get_by_tier(user_id, tier.value, limit=200)
 
             for i, memory in enumerate(memories):
-                if memory.id in processed_ids:
+                if memory.id in processed_ids or not memory.embedding:
+                    continue
+
+                if memory.is_archived:
                     continue
 
                 candidates = memories[i+1:]
 
-                # 1. Exact duplicates
-                exact_dupes = self.deduplication_service.find_exact_duplicates(
+                semantic_dupes = self.deduplication_service.find_semantic_duplicates(
                     memory, candidates
                 )
 
-                # 2. Semantic duplicates (if embeddings exist)
-                semantic_dupes = []
-                if memory.embedding:
-                    semantic_dupes = self.deduplication_service.find_semantic_duplicates(
-                        memory, candidates
-                    )
-
-                all_dupes = set(exact_dupes + semantic_dupes)
-
-                for dupe in all_dupes:
-                    if dupe.id not in processed_ids:
-                        # Simple strategy: Archive the duplicate
-                        if not dupe.is_archived:
-                            # Force archive for duplicates
-                            dupe.archive(force=True)
-                            dupe.metadata["duplicate_of"] = memory.id
-                            await self.repository.update(dupe)
-                            duplicates_removed += 1
-                            processed_ids.add(dupe.id)
-                            logger.debug(f"Marked memory {dupe.id} as duplicate of {memory.id}")
+                for dupe in semantic_dupes:
+                    if dupe.id not in processed_ids and not dupe.is_archived:
+                        dupe.archive(force=True)
+                        dupe.metadata["duplicate_of"] = memory.id
+                        dupe.metadata["deduplication_type"] = "semantic"
+                        await self.repository.update(dupe)
+                        duplicates_removed += 1
+                        processed_ids.add(dupe.id)
+                        logger.info(f"Archived semantic duplicate {dupe.id} of {memory.id}")
 
         return duplicates_removed
 

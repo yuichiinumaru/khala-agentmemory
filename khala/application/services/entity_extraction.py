@@ -23,7 +23,7 @@ except ImportError:
     logging.warning("Google Generative AI not available, entity extraction will be limited")
 
 from ...domain.memory.entities import Memory, Entity, Relationship
-from ...domain.memory.value_objects import ImportanceScore
+from ...domain.memory.value_objects import ImportanceScore, Sentiment
 from ...infrastructure.surrealdb.client import SurrealDBClient
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,12 @@ class ExtractedEntity:
     relationships: List[str] = field(default_factory=list)
     extraction_method: str = "gemini_llm"
     extracted_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+@dataclass
+class IntelligenceResult:
+    """Result of full intelligence extraction."""
+    entities: List[ExtractedEntity]
+    sentiment: Optional[Sentiment] = None
 
 
 @dataclass
@@ -196,43 +202,55 @@ class EntityExtractionService:
             }
         )
 
-    async def extract_entities_from_text(
-        self, 
-        text: str, 
+    async def extract_intelligence_from_text(
+        self,
+        text: str,
         context: Optional[Dict[str, Any]] = None
-    ) -> List[ExtractedEntity]:
-        """Extract entities from text using Gemini API."""
+    ) -> IntelligenceResult:
+        """Extract both entities and sentiment from text using Gemini API."""
         start_time = time.time()
         
         try:
             if self.gemini_client:
-                entities = await self._extract_with_gemini(text, context)
+                result = await self._extract_intelligence_with_gemini(text, context)
             else:
+                # Fallback only does entities regex
                 entities = await self._extract_with_regex(text)
+                result = IntelligenceResult(entities=entities, sentiment=None)
             
             # Filter by confidence threshold
-            filtered_entities = [
-                entity for entity in entities
+            result.entities = [
+                entity for entity in result.entities
                 if entity.confidence >= self.confidence_threshold
             ]
             
             # Update metrics
             execution_time = (time.time() - start_time) * 1000
-            self._update_metrics(filtered_entities, execution_time)
+            self._update_metrics(result.entities, execution_time)
             
-            logger.info(f"Extracted {len(filtered_entities)} entities in {execution_time:.0f}ms")
+            logger.info(f"Extracted intelligence: {len(result.entities)} entities, sentiment={result.sentiment is not None} in {execution_time:.0f}ms")
             
-            return filtered_entities
+            return result
             
         except Exception as e:
-            logger.error(f"Entity extraction failed: {e}")
+            logger.error(f"Intelligence extraction failed: {e}")
             self.metrics["failed_extractions"] += 1
-            return []
+            return IntelligenceResult(entities=[])
+
+    async def extract_entities_from_text(
+        self,
+        text: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> List[ExtractedEntity]:
+        """Extract entities from text using Gemini API."""
+        result = await self.extract_intelligence_from_text(text, context)
+        return result.entities
     
-    async def _extract_with_gemini(self, text: str, context: Optional[Dict[str, Any]]) -> List[ExtractedEntity]:
-        """Extract entities using Gemini API."""
+    async def _extract_intelligence_with_gemini(self, text: str, context: Optional[Dict[str, Any]]) -> IntelligenceResult:
+        """Extract entities and sentiment using Gemini API."""
         if not self.gemini_client:
-            return await self._extract_with_regex(text)
+             entities = await self._extract_with_regex(text)
+             return IntelligenceResult(entities=entities)
         
         # Build extraction prompt
         prompt = self._build_extraction_prompt(text, context)
@@ -245,17 +263,24 @@ class EntityExtractionService:
             
         except gcp_exceptions.GoogleAPICallError as e:
             logger.warning(f"Google API call failed: {e}")
-            return await self._extract_with_regex(text)
+            entities = await self._extract_with_regex(text)
+            return IntelligenceResult(entities=entities)
         except Exception as e:
             logger.error(f"Gemini extraction failed: {e}")
-            return await self._extract_with_regex(text)
+            entities = await self._extract_with_regex(text)
+            return IntelligenceResult(entities=entities)
     
     def _build_extraction_prompt(self, text: str, context: Optional[Dict[str, Any]]) -> str:
         """Build extraction prompt for Gemini."""
         prompt = f"""
-Extract named entities from the following text. Return a JSON array with the following structure:
+Analyze the following text for named entities and sentiment. Return a JSON object with the following structure:
 
 {{
+  "sentiment": {{
+      "score": 0.8,
+      "label": "joy",
+      "emotions": {{ "joy": 0.8, "excitement": 0.6 }}
+  }},
   "entities": [
     {{
       "text": "exact text from input",
@@ -284,23 +309,29 @@ Instructions:
 5. Use exact text spans (no abbreviations)
 6. Focus on proper nouns, technical terms, and domain-specific entities
 7. Include context snippets when helpful
+8. Perform sentiment analysis: score (-1.0 to 1.0), label, and breakdown of specific emotions.
 
 Context Information: {json.dumps(context) if context else {}}
 
-Return only the JSON array, no explanation.
+Return only the JSON object, no explanation.
 """
         
         return prompt
     
-    async def _parse_gemini_response(self, response: str, original_text: str) -> List[ExtractedEntity]:
-        """Parse Gemini JSON response into ExtractedEntity objects."""
+    def _parse_gemini_response(self, response: str, original_text: str) -> Optional[IntelligenceResult]:
+        """Parse Gemini JSON response into IntelligenceResult objects.
+
+        Returns None if parsing completely fails, triggering fallback.
+        """
         entities = []
+        sentiment = None
         
         try:
             # Extract JSON from response
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if not json_match:
-                return await self._extract_with_regex(original_text)
+                 # Return None to trigger regex fallback in caller
+                 return None
             
             response_data = json.loads(json_match.group())
             
@@ -324,14 +355,25 @@ Return only the JSON array, no explanation.
                         logger.warning(f"Failed to parse entity data {entity_data}: {e}")
                         continue
 
+            if "sentiment" in response_data:
+                try:
+                    s_data = response_data["sentiment"]
+                    sentiment = Sentiment(
+                        score=float(s_data.get("score", 0.0)),
+                        label=s_data.get("label", "neutral"),
+                        emotions=s_data.get("emotions", {})
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to parse sentiment data: {e}")
+
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse Gemini JSON response: {e}")
-            return await self._extract_with_regex(original_text)
+            return None
         except Exception as e:
             logger.error(f"Error parsing Gemini response: {e}")
-            return await self._extract_with_regex(original_text)
+            return None
         
-        return entities
+        return IntelligenceResult(entities=entities, sentiment=sentiment)
     
     async def _extract_with_regex(self, text: str) -> List[ExtractedEntity]:
         """Fallback extraction using regex patterns."""
@@ -480,9 +522,39 @@ Return only the JSON array, no explanation.
     
     async def process_memory_entities(self, memory: Memory) -> Tuple[List[Entity], List[Relationship]]:
         """Extract entities from memory and update in database."""
-        # Extract entities
-        extracted_entities = await self.extract_entities_from_memory(memory)
+        # Extract intelligence (entities + sentiment)
+        result = await self.extract_intelligence_from_text(
+            text=memory.content,
+            context={
+                "memory_id": memory.id,
+                "user_id": memory.user_id,
+                "importance": memory.importance_score.value,
+                "tier": memory.tier.value
+            }
+        )
+        extracted_entities = result.entities
         
+        # Update memory with sentiment if found
+        if result.sentiment:
+            memory.sentiment = result.sentiment
+            logger.info(f"Attached sentiment {memory.sentiment.label} ({memory.sentiment.score}) to memory {memory.id}")
+
+            # Strategy 37: Emotion-Driven Memory
+            # Boost importance if sentiment is strong
+            if abs(memory.sentiment.score) >= 0.8:
+                # Boost importance to at least High (0.75) or Very High (0.9)
+                current_imp = memory.importance.value
+                if current_imp < 0.9:
+                    memory.importance = ImportanceScore(0.9)
+                    logger.info(f"Boosted importance of memory {memory.id} to 0.9 due to strong emotion")
+
+            # Save memory update
+            if self.db_client:
+                 try:
+                     await self.db_client.update_memory(memory)
+                 except Exception as e:
+                     logger.warning(f"Failed to update memory with sentiment: {e}")
+
         # Detect relationships
         relationships = self.detect_entity_relationships(extracted_entities, memory.content)
         
