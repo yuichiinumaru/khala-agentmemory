@@ -5,7 +5,7 @@ for search services and optimization strategies.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, ANY
+from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone, timedelta
 import numpy as np
 
@@ -55,15 +55,6 @@ class TestHybridSearchService:
             {"id": "mem2", "content": "Programming guide", "relevance": 0.75}
         ]
         
-        # Mock get_by_id to return a real Memory object (so get_age_hours works)
-        mock_memory = Memory(
-            user_id="user123",
-            content="Content",
-            tier=MemoryTier.WORKING,
-            importance=ImportanceScore.medium()
-        )
-        service.memory_repository.get_by_id.return_value = mock_memory
-
         # Execute search
         session = await service.search(sample_query)
         
@@ -88,15 +79,6 @@ class TestHybridSearchService:
             {"id": "mem1", "content": "Vector result", "similarity": 0.9}
         ]
         
-        # Mock get_by_id
-        mock_memory = Memory(
-            user_id="user123",
-            content="Content",
-            tier=MemoryTier.WORKING,
-            importance=ImportanceScore.medium()
-        )
-        service.memory_repository.get_by_id.return_value = mock_memory
-
         session = await service.search(sample_query, custom_pipeline)
         
         # Verify only vector search was called
@@ -106,12 +88,11 @@ class TestHybridSearchService:
     @pytest.mark.asyncio
     async def test_vector_search_execution(self, service, sample_query):
         """Test vector search execution."""
-        # Use np.array explicitly
-        embedding_values = np.array([0.1] * 768)
+        embedding = EmbeddingVector([0.1] * 768)
         query_with_embedding = Query(
             text="test",
             intent=SearchIntent.FACTUAL,
-            embedding=embedding_values,
+            embedding=embedding.values,
             user_id="user123"
         )
         
@@ -129,7 +110,9 @@ class TestHybridSearchService:
         assert "vector_similarity" in result.reasons
         
         # Verify repository call
-        service.memory_repository.search_by_vector.assert_called_once()
+        service.memory_repository.search_by_vector.assert_called_once_with(
+            embedding, "user123", 10, min_similarity=0.6
+        )
     
     @pytest.mark.asyncio
     async def test_bm25_search_execution(self, service, sample_query):
@@ -147,9 +130,9 @@ class TestHybridSearchService:
         assert result.confidence == 0.78
         assert "text_relevance" in result.reasons
         
-        # Verify repository call - updated to include filters
+        # Verify repository call
         service.memory_repository.search_by_text.assert_called_once_with(
-            "Python programming tutorial", "user123", 10, filters={}
+            "Python programming tutorial", "user123", 10
         )
     
     @pytest.mark.asyncio
@@ -268,11 +251,10 @@ class TestHybridSearchService:
     async def test_context_assembly(self, service, sample_query):
         """Test context assembly with token limits."""
         # Create results with varying content lengths
-        # Assuming limit is 8000 chars (approx 2000 tokens)
         results = [
             SearchResult.create("mem1", "Short content", 0.8),
-            SearchResult.create("mem2", "A" * 40000, 0.7),  # Very long > 10000 tokens approx
-            SearchResult.create("mem3", "B" * 4000, 0.6),
+            SearchResult.create("mem2", "A" * 4000, 0.7),  # ~4000 chars (~1000 tokens)
+            SearchResult.create("mem3", "B" * 4000, 0.6),  # Another 1000 tokens
             SearchResult.create("mem4", "Medium length content", 0.5)
         ]
         
@@ -287,8 +269,9 @@ class TestHybridSearchService:
         context_results = await service._assemble_context(results, sample_query)
         
         # Should include shorter results until token limit is hit
-        assert len(context_results) >= 1  # Should at least fit the short one
-        assert len(context_results) < len(results) # Should definitely not fit the huge one
+        assert len(context_results) >= 2  # Short content + first long content
+        # Should not exceed reasonable limit for demonstration
+        assert len(context_results) < len(results)
 
 
 class TestIntentClassifier:
@@ -379,9 +362,13 @@ class TestSignificanceScorer:
             access_count=5
         )
         
-        # Updated: removed user_context arg
+        user_context = {
+            "recent_searches": ["Python", "machine learning"],
+            "preferred_tiers": ["working", "short_term"]
+        }
+
         significance = await scorer.calculate_significance(
-            memory, 0.7
+            memory, 0.7, user_context
         )
         
         # The basic calculation should still work

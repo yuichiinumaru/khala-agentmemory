@@ -395,29 +395,3 @@ class TestRelationship:
                 valid_from=future,  # Future start
                 valid_to=past       # Past end
             )
-
-    def test_memory_agent_id(self):
-        """Test memory creation with agent_id."""
-        memory = Memory(
-            user_id="user123",
-            content="Agent memory",
-            tier=MemoryTier.WORKING,
-            importance=ImportanceScore.medium(),
-            agent_id="agent_007"
-        )
-        assert memory.agent_id == "agent_007"
-
-    def test_relationship_consensus_fields(self):
-        """Test relationship with consensus fields."""
-        relationship = Relationship(
-            from_entity_id="e1",
-            to_entity_id="e2",
-            relation_type="KNOWS",
-            strength=0.5,
-            agent_id="agent_007",
-            is_consensus=True,
-            consensus_data={"agreement_score": 0.9}
-        )
-        assert relationship.agent_id == "agent_007"
-        assert relationship.is_consensus
-        assert relationship.consensus_data == {"agreement_score": 0.9}

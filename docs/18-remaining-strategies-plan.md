@@ -111,8 +111,8 @@ This document outlines the roadmap for implementing the remaining strategies for
 - [ ] **114. Migration Path Tracking**: Tracking concept movement between agents.
 - [ ] **115. Geospatial Similarity**: Distance-aware search.
 - [ ] **143. Community Detection**: Graph clustering algorithms.
-- [x] **144. Centrality Analysis**: Identifying key influencers in the graph.
-- [x] **145. Pathfinding Algorithms**: Shortest path and A*.
+- [ ] **144. Centrality Analysis**: Identifying key influencers in the graph.
+- [ ] **145. Pathfinding Algorithms**: Shortest path and A*.
 - [ ] **146. Subgraph Isomorphism**: Structural pattern matching.
 
 ### 3.3 System Resilience & Architecture
@@ -125,16 +125,16 @@ This document outlines the roadmap for implementing the remaining strategies for
 - [ ] **137. Conflict Resolution Protocols**: Automated negotiation logic.
 - [ ] **148. Scoped Memories**: Project/Tenant isolation logic.
 - [ ] **150. Recursive Summarization**: Hierarchical summary generation.
-- [x] **151. Anchor Point Navigation**: Keyframe memory identification.
-- [x] **152. Bias Detection**: Analysis of memory sentiment distribution.
+- [ ] **151. Anchor Point Navigation**: Keyframe memory identification.
+- [ ] **152. Bias Detection**: Analysis of memory sentiment distribution.
 - [ ] **156. Version Control**: Branching/Forking logic for memory sets.
 - [ ] **157. Forking Capabilities**: Copy-on-write for memory branches.
-- [x] **158. Merge Conflict Resolution**: UI/Logic for merging branches.
+- [ ] **158. Merge Conflict Resolution**: UI/Logic for merging branches.
 
 ## Phase 4: Deep Research & Experimental (Very High Complexity)
 *Focus: Novel implementations requiring significant R&D.*
 
-- [x] **129. Dream-Inspired Consolidation**: Generative replay during downtime.
+- [ ] **129. Dream-Inspired Consolidation**: Generative replay during downtime.
 - [ ] **130. Counterfactual Simulation**: "What if" scenario generation.
 - [ ] **133. Surprise-Based Learning**: Boosting weights for unexpected data.
 - [ ] **134. Curiosity-Driven Exploration**: Active learning queries.

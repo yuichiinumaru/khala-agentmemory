@@ -11,7 +11,6 @@ from typing import Dict, List, Optional, Any, Callable, Coroutine
 from dataclasses import dataclass
 
 from .jobs.job_processor import JobProcessor, JobPriority
-from ..monitoring.health import HealthMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +28,13 @@ class RecurringTask:
 class BackgroundScheduler:
     """Simple scheduler for recurring background jobs."""
 
-    def __init__(self, job_processor: JobProcessor, health_monitor: Optional[HealthMonitor] = None):
+    def __init__(self, job_processor: JobProcessor):
         """Initialize scheduler.
 
         Args:
             job_processor: JobProcessor instance to submit jobs to.
-            health_monitor: Optional HealthMonitor to check system load before scheduling.
         """
         self.job_processor = job_processor
-        self.health_monitor = health_monitor
         self.tasks: Dict[str, RecurringTask] = {}
         self.is_running = False
         self._scheduler_task: Optional[asyncio.Task] = None
@@ -113,25 +110,6 @@ class BackgroundScheduler:
     async def _trigger_task(self, task: RecurringTask) -> None:
         """Submit the task to the job processor."""
         try:
-            # 106. Consolidation Schedule: Check system load before triggering low priority tasks
-            if self.health_monitor and task.priority == JobPriority.LOW:
-                health_status = await self.health_monitor.check_health()
-                if health_status.get("status") == "degraded":
-                    logger.warning(
-                        f"Skipping task {task.name} due to system load (degraded health). "
-                        f"Details: {health_status.get('components')}"
-                    )
-                    # Reschedule for check in 5 minutes instead of full interval?
-                    # For simplicity, we just skip this run and wait for the loop to pick it up again?
-                    # No, the loop advances next_run only after calling _trigger_task.
-                    # If we return here without doing anything, the loop (in _loop)
-                    # will advance next_run anyway because it calls this, then updates times.
-                    # That is acceptable for "skipping".
-                    # If we want to "postpone" by a short amount, we should probably throw an exception
-                    # or handle it in the caller.
-                    # But skipping a maintenance job once is usually fine.
-                    return
-
             # We might need to fetch dynamic payload data here (e.g. all memory IDs)
             # For now, assume payload contains what's needed or is a command to process "all"
 
@@ -165,9 +143,9 @@ class BackgroundScheduler:
             logger.error(f"Failed to trigger task {task.name}: {e}")
 
 # Factory
-def create_scheduler(job_processor: JobProcessor, health_monitor: Optional[HealthMonitor] = None) -> BackgroundScheduler:
+def create_scheduler(job_processor: JobProcessor) -> BackgroundScheduler:
     """Create and configure the scheduler with default tasks."""
-    scheduler = BackgroundScheduler(job_processor, health_monitor)
+    scheduler = BackgroundScheduler(job_processor)
 
     # Add default maintenance tasks
 
