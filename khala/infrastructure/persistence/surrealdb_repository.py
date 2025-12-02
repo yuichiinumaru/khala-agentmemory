@@ -1,7 +1,8 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import logging
 
 from khala.domain.memory.repository import MemoryRepository
+from khala.domain.memory.entities import Memory, Entity, Relationship
 from khala.domain.memory.entities import Memory, Relationship
 from khala.domain.memory.entities import Memory, Branch
 from khala.domain.memory.value_objects import EmbeddingVector
@@ -131,6 +132,45 @@ class SurrealDBMemoryRepository(MemoryRepository):
             limit=limit
         )
 
+    async def search_by_location(
+        self,
+        location: Dict[str, float],
+        radius_km: float,
+        user_id: str,
+        top_k: int = 10,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[Tuple[Memory, float]]:
+        """
+        Search memories by geospatial location.
+        Returns list of (Memory, distance_in_km).
+        """
+        results = await self.client.search_memories_by_location(
+            location=location,
+            radius_km=radius_km,
+            user_id=user_id,
+            top_k=top_k,
+            filters=filters
+        )
+
+        # results contains 'distance' field (in meters) and memory fields.
+        output = []
+        for data in results:
+            memory = self.client._deserialize_memory(data)
+            distance_m = data.get("distance", 0.0)
+            output.append((memory, distance_m / 1000.0))
+        return output
+
+    async def get_graph_snapshot(
+        self,
+        user_id: Optional[str] = None
+    ) -> Tuple[List[Entity], List[Relationship]]:
+        """Retrieve all entities and relationships."""
+        data = await self.client.get_graph_snapshot(user_id)
+
+        entities = [self.client._deserialize_entity(e) for e in data.get("entities", [])]
+        rels = [self.client._deserialize_relationship(r) for r in data.get("relationships", [])]
+
+        return entities, rels
     async def get_relationships(
         self,
         filters: Optional[Dict[str, Any]] = None,

@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+from typing import List, Optional, Dict, Any, Tuple
+from .entities import Memory, Entity, Relationship
 from typing import List, Optional, Dict, Any
 from .entities import Memory, Relationship
 from .entities import Memory, Branch
@@ -57,7 +59,22 @@ class MemoryRepository(ABC):
     ) -> List[Memory]:
         """Search memories by text (BM25/Full-text)."""
         pass
-        
+
+    @abstractmethod
+    async def search_by_location(
+        self,
+        location: Dict[str, float],
+        radius_km: float,
+        user_id: str,
+        top_k: int = 10,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[Tuple[Memory, float]]:
+        """
+        Search memories by geospatial location.
+        Returns list of (Memory, distance_in_km).
+        """
+        pass
+
     @abstractmethod
     async def get_by_tier(
         self, 
@@ -69,6 +86,11 @@ class MemoryRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_graph_snapshot(
+        self,
+        user_id: Optional[str] = None
+    ) -> Tuple[List[Entity], List[Relationship]]:
+        """Retrieve all entities and relationships (for community detection)."""
     async def get_relationships(
         self,
         filters: Optional[Dict[str, Any]] = None,

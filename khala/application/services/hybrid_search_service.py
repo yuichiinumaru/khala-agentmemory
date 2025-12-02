@@ -60,8 +60,10 @@ class HybridSearchService:
         rrf_k: int = 60,
         vector_weight: float = 1.0,
         bm25_weight: float = 1.0,
+        geo_weight: float = 1.0,
         expand_query: bool = False,
         enable_graph_reranking: bool = False,
+        geospatial: Optional[Dict[str, float]] = None
         enable_ensemble: bool = False
         language: str = "en",
         proximity_search: Optional[Dict[str, Any]] = None
@@ -77,6 +79,9 @@ class HybridSearchService:
             rrf_k: Constant for RRF formula (default 60).
             vector_weight: Weight for vector search results (default 1.0).
             bm25_weight: Weight for BM25 search results (default 1.0).
+            geo_weight: Weight for Geospatial search results (default 1.0).
+            enable_graph_reranking: Whether to apply graph distance reranking (Strategy 121).
+            geospatial: Optional dict with 'lat', 'lon', 'radius_km'.
             expand_query: Whether to expand the query.
             enable_graph_reranking: Whether to apply graph distance reranking (Strategy 121).
             enable_ensemble: Whether to use secondary embedding model (Strategy 89).
@@ -139,6 +144,7 @@ class HybridSearchService:
 
         all_vector_results: List[Memory] = []
         all_bm25_results: List[Memory] = []
+        all_geo_results: List[Memory] = []
         all_ensemble_results: List[Memory] = [] # For Strategy 89
 
         async def _fetch_vector(q_text: str, model_id: Optional[str] = None, field: str = "embedding") -> List[Memory]:
@@ -216,6 +222,29 @@ class HybridSearchService:
                 logger.error(f"BM25 search failed for query '{q_text}': {e}")
                 return []
 
+        async def _fetch_geo() -> List[Memory]:
+            if not geospatial:
+                return []
+            try:
+                radius = geospatial.get("radius_km", 50.0)
+                lat = geospatial.get("lat")
+                lon = geospatial.get("lon")
+                if lat is None or lon is None:
+                    return []
+
+                results_with_dist = await self.memory_repo.search_by_location(
+                    location={"lat": lat, "lon": lon},
+                    radius_km=radius,
+                    user_id=user_id,
+                    top_k=candidate_k,
+                    filters=filters
+                )
+                return [m for m, d in results_with_dist]
+            except Exception as e:
+                logger.error(f"Geospatial search failed: {e}")
+                return []
+
+        # Gather all tasks: 2 tasks per query (Vector + BM25) + 1 Geo task
         # Gather all tasks
         tasks = []
         # Vector search uses expanded_queries (which includes translated query)
@@ -234,8 +263,16 @@ class HybridSearchService:
             if enable_ensemble:
                 tasks.append(_fetch_vector(q, field="embedding_secondary"))
 
+        # Geo search is query independent (for now)
+        tasks.append(_fetch_geo())
+
         results = await asyncio.gather(*tasks)
 
+        # Separate results back into vector and bm25 lists
+        # Order is [V1, B1, V2, B2, ..., Geo]
+        geo_results_idx = len(expanded_queries) * 2
+
+        for i in range(0, geo_results_idx, 2):
         # Separate results
         # If ensemble: [V1, B1, E1, V2, B2, E2 ...]
         # If not: [V1, B1, V2, B2 ...]
@@ -253,6 +290,9 @@ class HybridSearchService:
 
         num_vector_queries = len(expanded_queries)
 
+        all_geo_results = results[geo_results_idx]
+
+        if not all_vector_results and not all_bm25_results:
         for i, res in enumerate(results):
             if i < num_vector_queries:
                 all_vector_results.extend(res)
@@ -266,6 +306,46 @@ class HybridSearchService:
         scores: Dict[str, float] = {}
         memories: Dict[str, Memory] = {}
 
+        # Process Vector Results (Deduplicate first to handle multiple expansions returning same result)
+        seen_vector_ids = set()
+        unique_vector_results = []
+        for m in all_vector_results:
+            if m.id not in seen_vector_ids:
+                seen_vector_ids.add(m.id)
+                unique_vector_results.append(m)
+
+        for rank, memory in enumerate(unique_vector_results):
+            memories[memory.id] = memory
+            scores[memory.id] = scores.get(memory.id, 0.0) + \
+                (vector_weight * (1.0 / (rrf_k + rank + 1)))
+
+        # Process BM25 Results
+        seen_bm25_ids = set()
+        unique_bm25_results = []
+        for m in all_bm25_results:
+            if m.id not in seen_bm25_ids:
+                seen_bm25_ids.add(m.id)
+                unique_bm25_results.append(m)
+
+        for rank, memory in enumerate(unique_bm25_results):
+            memories[memory.id] = memory
+            scores[memory.id] = scores.get(memory.id, 0.0) + \
+                (bm25_weight * (1.0 / (rrf_k + rank + 1)))
+
+        # Process Geo Results
+        seen_geo_ids = set()
+        unique_geo_results = []
+        for m in all_geo_results:
+             if m.id not in seen_geo_ids:
+                 seen_geo_ids.add(m.id)
+                 unique_geo_results.append(m)
+
+        for rank, memory in enumerate(unique_geo_results):
+            memories[memory.id] = memory
+            scores[memory.id] = scores.get(memory.id, 0.0) + \
+                (geo_weight * (1.0 / (rrf_k + rank + 1)))
+
+        # 3. Sort by Score
         def process_results(results_list, weight):
             seen_ids = set()
             unique_results = []

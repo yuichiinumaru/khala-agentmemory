@@ -839,6 +839,77 @@ class SurrealDBClient:
                 return response
             return []
     
+    async def search_memories_by_location(
+        self,
+        location: Dict[str, float],
+        radius_km: float,
+        user_id: str,
+        top_k: int = 10,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """Search memories by geospatial location."""
+        # Convert lat/lon to GeoJSON point
+        point = {
+            "type": "Point",
+            "coordinates": [location["lon"], location["lat"]]
+        }
+
+        params = {
+            "user_id": user_id,
+            "point": point,
+            "radius_m": radius_km * 1000.0,
+            "top_k": top_k
+        }
+
+        filter_clause = self._build_filter_query(filters, params)
+
+        query = f"""
+        SELECT *, geo::distance(location, $point) AS distance
+        FROM memory
+        WHERE user_id = $user_id
+        AND location IS NOT NONE
+        AND geo::distance(location, $point) < $radius_m
+        {filter_clause}
+        ORDER BY distance ASC
+        LIMIT $top_k;
+        """
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list):
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                    return response[0]['result']
+                return response
+            return []
+
+    async def get_graph_snapshot(
+        self,
+        user_id: Optional[str] = None
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Fetch all entities and relationships."""
+        entity_query = "SELECT * FROM entity;"
+        rel_query = "SELECT * FROM relationship WHERE valid_to IS NONE OR valid_to > time::now();"
+
+        async with self.get_connection() as conn:
+            entities_resp = await conn.query(entity_query)
+            rels_resp = await conn.query(rel_query)
+
+            entities = []
+            if entities_resp and isinstance(entities_resp, list):
+                 if len(entities_resp) > 0 and isinstance(entities_resp[0], dict) and 'result' in entities_resp[0]:
+                     entities = entities_resp[0]['result']
+                 else:
+                     entities = entities_resp
+
+            rels = []
+            if rels_resp and isinstance(rels_resp, list):
+                 if len(rels_resp) > 0 and isinstance(rels_resp[0], dict) and 'result' in rels_resp[0]:
+                     rels = rels_resp[0]['result']
+                 else:
+                     rels = rels_resp
+
+            return {"entities": entities, "relationships": rels}
+
     async def get_memories_by_tier(
         self,
         user_id: str,
@@ -1145,6 +1216,45 @@ class SurrealDBClient:
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
             source_reliability=data.get("source_reliability", 1.0),
+            location=data.get("location")
+        )
+
+    def _deserialize_entity(self, data: Dict[str, Any]) -> Entity:
+        """Deserialize database record to Entity object."""
+        from datetime import datetime, timezone
+
+        def parse_dt(dt_val: Any) -> datetime:
+            if not dt_val:
+                return datetime.now(timezone.utc)
+            if isinstance(dt_val, str):
+                if dt_val.endswith('Z'):
+                    dt_val = dt_val[:-1]
+                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+            return dt_val
+
+        # Handle ID
+        entity_id = str(data["id"])
+        if entity_id.startswith("entity:"):
+            entity_id = entity_id.split(":", 1)[1]
+
+        embedding = None
+        if data.get("embedding"):
+            embedding = EmbeddingVector(data["embedding"])
+
+        from khala.domain.memory.entities import Entity, EntityType
+
+        return Entity(
+            id=entity_id,
+            text=data["text"],
+            entity_type=EntityType(data["entity_type"]),
+            confidence=data["confidence"],
+            embedding=embedding,
+            metadata=data.get("metadata", {}),
+            created_at=parse_dt(data["created_at"])
+        )
+
+    def _deserialize_relationship(self, data: Dict[str, Any]) -> Relationship:
+        """Deserialize database record to Relationship object."""
             project_id=data.get("project_id"),
             tenant_id=data.get("tenant_id"),
             summary_level=data.get("summary_level", 0),
@@ -1225,6 +1335,21 @@ class SurrealDBClient:
                 return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
             return dt_val
 
+        # Handle ID
+        rel_id = str(data["id"])
+        if rel_id.startswith("relationship:"):
+            rel_id = rel_id.split(":", 1)[1]
+
+        return Relationship(
+            id=rel_id,
+            from_entity_id=data["from_entity_id"],
+            to_entity_id=data["to_entity_id"],
+            relation_type=data["relation_type"],
+            strength=data["strength"],
+            valid_from=parse_dt(data["valid_from"]),
+            valid_to=parse_dt(data.get("valid_to")),
+            transaction_time_start=parse_dt(data["transaction_time_start"]),
+            transaction_time_end=parse_dt(data.get("transaction_time_end"))
         embedding = None
         if data.get("embedding"):
             embedding = EmbeddingVector(data["embedding"])
