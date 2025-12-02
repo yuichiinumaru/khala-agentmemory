@@ -202,7 +202,9 @@ class SurrealDBClient:
             episode_id: $episode_id,
             confidence: $confidence,
             source_reliability: $source_reliability,
-            location: $location
+            location: $location,
+            versions: $versions,
+            events: $events
         };
         """
         
@@ -262,6 +264,8 @@ class SurrealDBClient:
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
             "location": location_data,
+            "versions": memory.versions,
+            "events": memory.events
         }
         
         async with self.get_connection() as conn:
@@ -347,7 +351,9 @@ class SurrealDBClient:
             episode_id: $episode_id,
             confidence: $confidence,
             source_reliability: $source_reliability,
-            location: $location
+            location: $location,
+            versions: $versions,
+            events: $events
         };
         """
         
@@ -405,6 +411,8 @@ class SurrealDBClient:
             "confidence": memory.confidence,
             "source_reliability": memory.source_reliability,
             "location": location_data,
+            "versions": memory.versions,
+            "events": memory.events
         }
         
         async with self.get_connection() as conn:
@@ -819,7 +827,9 @@ class SurrealDBClient:
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
             source_reliability=data.get("source_reliability", 1.0),
-            location=location
+            location=location,
+            versions=data.get("versions", []),
+            events=data.get("events", [])
         )
 
     async def create_search_session(self, session_data: Dict[str, Any]) -> str:

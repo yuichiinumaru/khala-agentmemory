@@ -50,6 +50,17 @@ class SpatialMemoryService:
             logger.error(f"Memory {memory_id} not found")
             return False
 
+        # Strategy 114: Track history in versions
+        if memory.location:
+            # Create a snapshot of the current state before update
+            # We store a simplified snapshot to avoid massive duplication
+            snapshot = {
+                "updated_at": datetime.now().isoformat(),
+                "location": memory.location.to_geojson(),
+                "change_type": "location_update"
+            }
+            memory.versions.append(snapshot)
+
         # Update location
         memory.location = Location(
             latitude=latitude,
@@ -148,6 +159,24 @@ class SpatialMemoryService:
         if polygon_coords[0] != polygon_coords[-1]:
             polygon_coords.append(polygon_coords[0])
 
+        # Construct Polygon string manually to avoid binding/SDK issues
+        import json
+
+        coords_list = [[lon, lat] for lon, lat in polygon_coords]
+        # Polygon needs nested array: [ [ [x,y], [x,y], ... ] ] (rings)
+        # We assume single exterior ring.
+        polygon_struct = {
+            "type": "Polygon",
+            "coordinates": [coords_list]
+        }
+
+        polygon_json = json.dumps(polygon_struct)
+
+        # Inject JSON literal directly into query
+        query = f"""
+        SELECT * FROM memory
+        WHERE location IS NOT NONE
+          AND location INSIDE {polygon_json};
         # Construct Polygon as dict to avoid SDK constructor issues with single-ring polygons
         polygon_data = {
             "type": "Polygon",
@@ -164,6 +193,7 @@ class SpatialMemoryService:
 
         try:
             async with self.db_client.get_connection() as conn:
+              
                 result = await conn.query(
                     query,
                     {"polygon": polygon_data}
@@ -197,6 +227,9 @@ class SpatialMemoryService:
             List of historical locations with timestamps.
         """
         query = """
+        SELECT *
+        FROM memory
+        WHERE id = type::thing('memory', $id);
         SELECT id, updated_at, location, versions
         FROM memory
         WHERE id = $id;
@@ -205,6 +238,33 @@ class SpatialMemoryService:
         try:
             async with self.db_client.get_connection() as conn:
                 result = await conn.query(query, {"id": memory_id})
+                if not result:
+                    return []
+
+                # Check for QueryResponse wrapper
+                if isinstance(result[0], dict) and 'status' in result[0] and 'result' in result[0]:
+                    # result[0]['result'] is the list of records
+                    records = result[0]['result']
+                else:
+                    # result is likely the list of records itself
+                    records = result
+
+                if not records:
+                    return []
+
+                memory = records[0]
+                trajectory = []
+
+                # Helper to normalize timestamp
+                def to_iso(ts):
+                    if isinstance(ts, datetime):
+                        return ts.isoformat()
+                    return str(ts) if ts else ""
+
+                # Add current location
+                if memory.get('location'):
+                    trajectory.append({
+                        "timestamp": to_iso(memory.get('updated_at')),
                 if not result or not result[0]:
                     return []
 
@@ -224,12 +284,13 @@ class SpatialMemoryService:
                 for ver in versions:
                     if ver.get('location'):
                         trajectory.append({
+                            "timestamp": to_iso(ver.get('updated_at') or ver.get('created_at')),
                             "timestamp": ver.get('updated_at') or ver.get('created_at'),
                             "location": ver.get('location'),
                             "source": "history"
                         })
 
-                # Sort by timestamp
+                # Sort by timestamp (string comparison of ISO dates is safe)
                 trajectory.sort(key=lambda x: x.get('timestamp') or "", reverse=True)
                 return trajectory
 

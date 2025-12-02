@@ -116,32 +116,39 @@ async def test_spatial_memory_workflow(spatial_service, db_client):
     assert len(nearby_london) == 1
     assert str(nearby_london[0]['id']).split(':')[-1] == mem3.id
 
-    # 3. Test Region Query (Strategy 113) - BLOCKED
+    # 3. Test Region Query (Strategy 113)
     # Define polygon around Paris
-    # paris_polygon = [
-    #     (2.2, 48.8), (2.4, 48.8), (2.4, 48.9), (2.2, 48.9), (2.2, 48.8)
-    # ]
+    paris_polygon = [
+        (2.2, 48.8), (2.4, 48.8), (2.4, 48.9), (2.2, 48.9), (2.2, 48.8)
+    ]
 
-    # in_region = await spatial_service.find_within_region(paris_polygon)
-    # assert len(in_region) >= 2 # Might pick up previous test runs if db not cleared, but at least ours
-    # region_ids = [m['id'] for m in in_region]
-    # assert mem1.id in region_ids
-    # assert mem2.id in region_ids
-    # assert mem3.id not in region_ids
+    in_region = await spatial_service.find_within_region(paris_polygon)
+    assert len(in_region) >= 2 # Might pick up previous test runs if db not cleared, but at least ours
+    # Handle RecordID objects
+    region_ids = [str(m['id']).split(':')[-1] for m in in_region]
+    assert mem1.id in region_ids
+    assert mem2.id in region_ids
+    assert mem3.id not in region_ids
 
     # 4. Test Trajectory (Strategy 114)
     # Move Memory 1 slightly
-    await spatial_service.update_memory_location(mem1.id, 48.8590, 2.2950)
+    await spatial_service.update_memory_location(mem1_id, 48.8590, 2.2950)
 
-    trajectory = await spatial_service.get_memory_trajectory(mem1.id)
-    # Depending on how SurrealDB handles versioning (if configured to trigger on update),
-    # we might see history. The schema defines versions array, but logic to populate it
-    # resides in update_memory_transactional usually.
-    # Spatial service uses raw update, so it might not trigger app-level versioning unless
-    # we used client.update_memory.
-    # Let's verify we at least get the current location.
+    trajectory = await spatial_service.get_memory_trajectory(mem1_id)
+
+    # Check if current location is included in trajectory (get_memory_trajectory implementation includes current)
+    # logic: trajectory.append({"source": "current", ...})
+    # If versions empty, at least current should be there?
+
     assert len(trajectory) >= 1
-    assert trajectory[0]['location']['coordinates'] == [2.2950, 48.8590]
+    # Check if location is GeometryPoint (from current) or dict (from history)
+    loc = trajectory[0]['location']
+    if hasattr(loc, 'longitude'):
+        assert loc.longitude == 2.2950
+        assert loc.latitude == 48.8590
+    else:
+        # dict fallback (history might be serialized as dict if not using _deserialize)
+        assert loc['coordinates'] == [2.2950, 48.8590]
 
     # 5. Test Clustering (Strategy 115)
     clusters = await spatial_service.find_spatial_clusters(grid_precision=4)
