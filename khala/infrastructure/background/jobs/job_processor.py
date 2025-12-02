@@ -111,6 +111,8 @@ class JobProcessor:
         # Redis client (fallback to in-memory if not available)
         self.redis_client: Optional[redis.Redis] = None
         self._memory_queue: Queue[JobDefinition] = Queue()
+        self._memory_jobs: Dict[str, JobDefinition] = {}
+        self._memory_results: Dict[str, JobResult] = {}
         
         # Worker management
         self.worker_tasks: List[Task] = []
@@ -266,6 +268,8 @@ class JobProcessor:
             job_data = await self.redis_client.hgetall(f"job:{job_id}")
             if job_data:
                 return self._deserialize_job(job_data)
+        elif job_id in self._memory_jobs:
+            return self._memory_jobs[job_id]
         return None
     
     async def get_job_result(self, job_id: str) -> Optional[JobResult]:
@@ -274,11 +278,14 @@ class JobProcessor:
             result_data = await self.redis_client.hgetall(f"result:{job_id}")
             if result_data:
                 return self._deserialize_result(result_data)
+        elif job_id in self._memory_results:
+            return self._memory_results[job_id]
         return None
     
     async def _store_job_redis(self, job: JobDefinition) -> None:
-        """Store job definition in Redis."""
+        """Store job definition in Redis or memory."""
         if not self.redis_client:
+            self._memory_jobs[job.job_id] = job
             return
         
         serialized = self._serialize_job(job)
@@ -360,6 +367,8 @@ class JobProcessor:
                         "worker_id": worker_id
                     }
                 )
+            else:
+                self._memory_jobs[job.job_id] = job
             
             # Execute job based on type
             result = await self._execute_job(job)
