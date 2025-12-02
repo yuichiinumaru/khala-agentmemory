@@ -16,7 +16,8 @@ from .value_objects import (
     DecayScore, 
     MemoryTier,
     MemorySource,
-    Sentiment
+    Sentiment,
+    Location
 )
 
 
@@ -69,7 +70,7 @@ class Memory:
     # Module 11: Optimization Fields
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)
-    location: Optional[Dict[str, Any]] = field(default=None)
+    location: Optional[Location] = field(default=None)
 
     @property
     def importance_score(self) -> ImportanceScore:
