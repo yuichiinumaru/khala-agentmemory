@@ -49,6 +49,8 @@
 ### Phase 2.2: Advanced Search & Time (Module 11)
 - [ ] **M11.B.1**: **Full-Text Search Enhancements** (Strategies 93-102). *Partial: 98, 99, 100, 101, 102 Complete.*
 - [ ] **M11.B.2**: **Time-Series & Geospatial** (Strategies 103-115).
+    - [x] **113. Concept Cartography**
+    - [x] **114. Migration Path Tracking**
     - [x] Strategy 109: Importance Distribution Analytics.
     - [x] Strategy 110: Graph Evolution Metrics.
 
