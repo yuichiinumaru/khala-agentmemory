@@ -69,7 +69,11 @@ class HybridSearchService:
         
         # Assemble context if requested
         if pipeline.should_execute_stage("context"):
-            results = await self._assemble_context(results, query, limit=pipeline.final_top_k)
+            results = await self._assemble_context(
+                results,
+                query,
+                max_tokens=pipeline.max_context_tokens
+            )
         
         end_time = datetime.now(timezone.utc)
         search_time_ms = (end_time - start_time).total_seconds() * 1000
@@ -127,7 +131,7 @@ class HybridSearchService:
         similarity_threshold: float = 0.6
     ) -> List[SearchResult]:
         """Execute vector similarity search."""
-        if not query.embedding:
+        if query.embedding is None:
             return []
         
         # Convert numpy array to list for database
@@ -323,28 +327,46 @@ class HybridSearchService:
     async def _assemble_context(
         self, 
         results: List[SearchResult], 
-        query: Query
+        query: Query,
+        max_tokens: int = 8000
     ) -> List[SearchResult]:
-        """Assemble context for the results (token management)."""
-        # Implement token counting and dynamic window sizing
-        # This would be more complex in production
+        """Assemble context for the results (token management).
         
-        max_tokens = 8000  # Example limit for Gemini
+        Args:
+            results: List of search results to process.
+            query: The original query (can be used for additional context logic).
+            max_tokens: Maximum tokens allowed in the context.
+
+        Returns:
+            List of SearchResult that fit within the token limit.
+        """
         total_tokens = 0
-        
         context_results = []
         
         for result in results:
-            # Simple token estimation (4 chars per token approximation)
-            content_tokens = len(result.content) // 4
+            content_tokens = self._estimate_tokens(result.content)
             
+            # Strict enforcement: if adding this result exceeds max_tokens, stop.
+            # We prioritize full documents over partial ones for now to ensure integrity.
             if total_tokens + content_tokens <= max_tokens:
                 context_results.append(result)
                 total_tokens += content_tokens
             else:
+                # Limit reached
+                logger.debug(f"Context limit reached ({total_tokens}/{max_tokens}). Stopping assembly.")
                 break
         
         return context_results
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count for text.
+
+        Currently uses a character-based heuristic (4 chars ~= 1 token).
+        In production, this should use the actual tokenizer for the target model.
+        """
+        if not text:
+            return 0
+        return len(text) // 4
     
     def _deduplicate_results(self, results: List[SearchResult]) -> List[SearchResult]:
         """Remove duplicate search results."""
