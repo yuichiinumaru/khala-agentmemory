@@ -61,3 +61,8 @@ class MemoryRepository(ABC):
     ) -> List[Memory]:
         """Retrieve memories by tier."""
         pass
+
+    @abstractmethod
+    async def find_duplicate_groups(self, user_id: str) -> List[List[Memory]]:
+        """Find groups of duplicate memories (exact match)."""
+        pass

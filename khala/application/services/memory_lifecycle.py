@@ -212,42 +212,61 @@ class MemoryLifecycleService:
         """Find and remove duplicate memories."""
         duplicates_removed = 0
 
-        # Iterate by tier to limit scope for now
-        for tier in MemoryTier:
-            memories = await self.repository.get_by_tier(user_id, tier.value, limit=1000)
-            processed_ids = set()
+        # 1. Exact duplicates (Global)
+        # Using efficient repository method to find all exact content matches
+        try:
+            duplicate_groups = await self.repository.find_duplicate_groups(user_id)
+            for group in duplicate_groups:
+                if len(group) < 2:
+                    continue
+
+                # Keep the oldest one (first in list due to ORDER BY created_at ASC)
+                original = group[0]
+                duplicates = group[1:]
+
+                for dupe in duplicates:
+                    if not dupe.is_archived:
+                        dupe.archive(force=True)
+                        dupe.metadata["duplicate_of"] = original.id
+                        dupe.metadata["deduplication_type"] = "exact"
+                        await self.repository.update(dupe)
+                        duplicates_removed += 1
+                        logger.info(f"Archived exact duplicate {dupe.id} of {original.id}")
+        except Exception as e:
+            logger.error(f"Global exact deduplication failed: {e}")
+
+        # 2. Semantic duplicates (Strategy 90: Vector Deduplication)
+        # We iterate by tier for a partial check of recent memories against each other.
+        # This is an O(N^2) check on the batch, so we limit the batch size.
+
+        processed_ids = set()
+
+        # Focus on active tiers for semantic dupes
+        for tier in [MemoryTier.WORKING, MemoryTier.SHORT_TERM]:
+            memories = await self.repository.get_by_tier(user_id, tier.value, limit=200)
 
             for i, memory in enumerate(memories):
-                if memory.id in processed_ids:
+                if memory.id in processed_ids or not memory.embedding:
+                    continue
+
+                if memory.is_archived:
                     continue
 
                 candidates = memories[i+1:]
 
-                # 1. Exact duplicates
-                exact_dupes = self.deduplication_service.find_exact_duplicates(
+                semantic_dupes = self.deduplication_service.find_semantic_duplicates(
                     memory, candidates
                 )
 
-                # 2. Semantic duplicates (if embeddings exist)
-                semantic_dupes = []
-                if memory.embedding:
-                    semantic_dupes = self.deduplication_service.find_semantic_duplicates(
-                        memory, candidates
-                    )
-
-                all_dupes = set(exact_dupes + semantic_dupes)
-
-                for dupe in all_dupes:
-                    if dupe.id not in processed_ids:
-                        # Simple strategy: Archive the duplicate
-                        if not dupe.is_archived:
-                            # Force archive for duplicates
-                            dupe.archive(force=True)
-                            dupe.metadata["duplicate_of"] = memory.id
-                            await self.repository.update(dupe)
-                            duplicates_removed += 1
-                            processed_ids.add(dupe.id)
-                            logger.debug(f"Marked memory {dupe.id} as duplicate of {memory.id}")
+                for dupe in semantic_dupes:
+                    if dupe.id not in processed_ids and not dupe.is_archived:
+                        dupe.archive(force=True)
+                        dupe.metadata["duplicate_of"] = memory.id
+                        dupe.metadata["deduplication_type"] = "semantic"
+                        await self.repository.update(dupe)
+                        duplicates_removed += 1
+                        processed_ids.add(dupe.id)
+                        logger.info(f"Archived semantic duplicate {dupe.id} of {memory.id}")
 
         return duplicates_removed
 
