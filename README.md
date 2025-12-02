@@ -1,165 +1,216 @@
-# KHALA Memory System v2.0
+# KHALA: Knowledge Hierarchical Adaptive Long-term Agent
 
-> *"The Khala is fully integrated. Our thoughts are one."*
+**Status**: Active Development (Phase 3: Optimization & Novelty)
+**Version**: 2.0.1
+**Documentation**: [docs/](docs/)
 
-**Khala** is the ultimate psionic link for your AI agents—a high-performance, graph-based memory system forged in the fires of **SurrealDB**. It transcends simple vector storage, weaving a complex web of **Long-term Memory**, **Semantic Search**, and **Hierarchical Reasoning**.
+Khala is an advanced, memory-centric AI agent architecture powered by **SurrealDB** and **Agno** (formerly Phidata). It implements a comprehensive set of 170 memory, reasoning, and coordination strategies to create a truly long-term, adaptive, and intelligent system.
 
-Just as the Protoss share a unified consciousness, your agents will share a boundless, structured memory, allowing them to recall, reason, and evolve.
-- **Vector Storage**: HNSW-based similarity search.
-- **Graph Memory**: Entity-relationship modeling with graph traversal.
-- **3-Tier Hierarchy**: Working, Short-term, and Long-term memory with auto-promotion.
-- **Hybrid Search**: Vector + Keyword (BM25) + Metadata + Graph Reranking.
-- **Advanced Reasoning**: Mixture of Thought, Multi-Perspective Questions, and Hypothesis Testing.
-- **Skill Library**: Storage and execution of executable skills.
-- **Module 13**: PromptWizard, ARM, LatentMAS, and MarsRL support.
+## 🚀 Features
 
----
+-   **Hybrid Memory System**: Combines Vector (Semantic), Graph (Associative), and Document (Structured) memory.
+-   **Advanced Search**: Hybrid search (Vector + Keyword), Multi-hop Graph traversal, and Temporal queries.
+-   **Cognitive Architecture**: Includes Reflection, Planning, Socratic Questioning, and Hypothesis Testing.
+-   **SurrealDB Native**: leverages SurrealDB v2.0 features (HNSW, Live Queries, Computed Fields).
+-   **Multi-Agent Coordination**: Supports Hierarchical Teams, Debates, and Latent Collaboration.
 
-III## 🌌 System Status (The Psionic Matrix)
-- Python 3.11+
-- SurrealDB (v1.0.0+)
-- Google Gemini API Key (for LLM features)
+## 🛠️ Installation
 
-The grid is active. Construction of the memory core is **86% Complete**.
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/khala.git
+cd khala
 
-| **Module Sector** | **Status** | **Completion** |
-| :--- | :--- | :--- |
-| **Phase 1: Foundation** (Modules 1-10) | **ONLINE** | **100%** |
-| **Phase 2: Optimization** (Module 11) | **WARPING IN** | **Partial** |
-| **Phase 3: Novelty & Research** (Modules 12-13) | **RESEARCHING** | **Partial** |
+# Install dependencies (Editable mode)
+pip install -e .
 
-**Total Strategic Protocols Implemented**: **71 / 82**
-**Psionic Link Stability**: **Stable**
-
----
-
-## 🔮 Capabilities (Tech Tree)
-
-### **Core Nexus (Modules 1-10)**
--   **Vector Storage (HNSW)**: Instant retrieval of semantic concepts.
--   **Graph Memory**: Entity-relationship modeling. *We do not just store data; we understand connections.*
--   **3-Tier Hierarchy**: Working, Short-term, and Long-term memory with auto-promotion logic.
--   **Hybrid Search**: Reciprocal Rank Fusion of Vector + Keyword (BM25) + Metadata + Graph Reranking.
--   **Skill Library**: Executable skills stored as memories.
-
-### **Advanced Upgrades (Modules 11-13)**
--   **Multi-Vector Support** (Strategy 78): Agents now possess separate embeddings for **Visual** and **Code** data.
--   **MarsRL Support** (Strategy 166): The `training_curves` table is laid, paving the way for Reinforcement Learning optimization.
--   **Experimental**: Episodic Memory and Metacognitive Indexing.
-
----
-
-## ⚡ Deployment (Warp In)
-
-### Prerequisites
--   Python 3.11+
--   SurrealDB v1.0.0+ (The Core)
--   Google Gemini API Key (The Oracle)
-
-### Installation
-
-1.  **Install via pip:**
-    ```bash
-    pip install khala-memory
-    ```
-    *Note: Ensure you have a running SurrealDB instance.*
-
-2.  **Configure Environment:**
-    Create a `.env` file or set environment variables:
-    ```env
-    SURREALDB_URL=ws://localhost:8000/rpc
-    SURREALDB_USER=root
-    SURREALDB_PASS=root
-    SURREALDB_NAMESPACE=khala
-    SURREALDB_DATABASE=memories
-    GOOGLE_API_KEY=your_gemini_api_key
-    ```
-
----
-
-## ⚔️ Usage (Commanding the Fleet)
-
-### Basic Usage (Python Library)
-
-```python
-import asyncio
-from khala.infrastructure.surrealdb.client import SurrealDBClient
-from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
-
-async def main():
-    # Establish connection to the Khala
-    client = SurrealDBClient()
-    await client.initialize()
-    
-    # Forge a new memory
-    mem = Memory(
-        user_id="executor_001",
-        content="We must construct additional pylons.",
-        tier=MemoryTier.WORKING,
-        importance=ImportanceScore.very_high(),
-        tags=["strategy", "economy"]
-    )
-    
-    memory_id = await client.create_memory(mem)
-    print(f"Memory forged: {memory_id}")
-
-    # Recall knowledge
-    results = await client.search_memories_by_bm25("pylons", user_id="executor_001")
-    for r in results:
-        print(f"Recalled: {r['content']}")
-    
-    await client.close()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# Verify connection to SurrealDB
+python scripts/check_conn.py
 ```
 
-### Agno Integration
+## 🧪 Testing
 
-Khala seamlessly integrates with the **Agno** agent framework, providing your agents with persistent long-term memory.
-
-```python
-from agno.agent import Agent
-from agno.models.openai import OpenAIChat
-from khala.interface.agno.memory_provider import KhalaMemory
-
-# Initialize Khala Memory Provider
-memory_provider = KhalaMemory(
-    user_id="agent_007",
-    connection_string="ws://localhost:8000/rpc",
-    username="root",
-    password="root"
-)
-
-# Create an Agno Agent with Khala Memory
-agent = Agent(
-    model=OpenAIChat(id="gpt-4o"),
-    memory=memory_provider,
-    description="I am an agent with persistent memory."
-)
-
-# The agent can now save and recall information across sessions
-agent.print_response("My name is Bond. James Bond. Remember that.")
-agent.print_response("What is my name?") 
+```bash
+# Run all tests
+python scripts/run_all_tests.py
 ```
 
----
+## 📋 Strategy Implementation Checklist
 
-## 📜 Documentation (The Archives)
+Based on the latest audit (2024-05-24).
 
-Consult the archives for deeper knowledge:
--   [Implementation Tasks](docs/02-tasks-implementation.md) - The active build order.
--   [Master Strategy List](docs/06-strategies-master.md) - The complete tech tree.
--   [SurrealDB Optimization](docs/11-surrealdb-optimization.md) - Database tuning specifications.
-- `khala/domain`: Core business logic and entities.
-- `khala/infrastructure`: Database clients, external APIs, and repositories.
-- `khala/application`: Use cases and orchestration services.
-- `tests`: Unit and integration tests.
-- `docs`: Comprehensive documentation.
+### 1. Core Strategies (Foundation)
+- [x] 01. Vector Storage (HNSW)
+- [x] 02. Graph Relationships
+- [x] 03. Document Model
+- [ ] 04. RBAC Multi-Tenancy (Partial)
+- [x] 05. LIVE Real-time Subscriptions
+- [x] 06. Hybrid Search
+- [ ] 07. L1/L2/L3 Cache System (Partial)
+- [x] 08. Context Assembly
+- [x] 09. 3-Tier Memory Hierarchy
+- [x] 10. Auto-Promotion Logic
+- [x] 11. Consolidation System
+- [ ] 12. Deduplication (Partial)
+- [x] 13. Background Job Processing
+- [x] 14. Temporal Analysis
+- [x] 15. Entity Extraction (NER)
+- [x] 16. Metadata & Tags System
+- [x] 17. Natural Memory Triggers
+- [x] 18. MCP Interface
+- [x] 19. Multi-Agent Coordination
+- [x] 20. Monitoring & Health Checks
+- [x] 21. Decay Scoring
+- [x] 22. Agent-to-Agent Communication
 
+### 2. Advanced Strategies (Intelligence)
+- [x] 23. LLM Cascading
+- [x] 24. Consistency Signals
+- [x] 25. Mixture of Thought (MoT)
+- [x] 26. Self-Verification Loop
+- [x] 27. Multi-Agent Debate
+- [x] 28. Information Traceability
+- [x] 29. BM25 Full-Text Search
+- [x] 30. Query Intent Classification
+- [x] 31. Significance Scoring
+- [x] 32. Multi-Perspective Questions
+- [x] 33. Topic Change Detection
+- [x] 34. Cross-Session Pattern Recognition
+- [x] 35. Skill Library System
+- [x] 36. Instruction Registry
+- [ ] 37. Emotion-Driven Memory (Partial)
+- [x] 38. Advanced Multi-Index Strategy
+- [x] 39. Audit Logging System
+- [x] 40. Execution-Based Evaluation
+- [x] 41. Bi-temporal Graph Edges
+- [x] 42. Hyperedges
+- [x] 43. Relationship Inheritance
+- [x] 44. Distributed Consolidation
+- [x] 45. Modular Component Architecture
+- [x] 46. Standard Operating Procedures (SOPs)
+- [x] 47. Von Neumann Pattern
+- [ ] 48. Dynamic Context Window (Partial)
+- [x] 49. Multimodal Support
+- [x] 50. Cross-Modal Retrieval
+- [x] 51. AST Code Representation
+- [x] 52. Multi-Step Planning
+- [x] 53. Hierarchical Task Decomposition
+- [x] 54. Hypothesis Testing Framework
+- [x] 55. Context-Aware Tool Selection
+- [ ] 56. Graph Visualization
+- [x] 57. LLM Cost Dashboard
 
+### 3. SurrealDB Optimization
+- [x] 58. Hierarchical Nested Documents
+- [x] 59. Polymorphic Memory Documents
+- [x] 60. Document Versioning
+- [x] 61. Array-Based Accumulation
+- [x] 62. Computed Properties
+- [ ] 63. Conditional Content Fields (Partial)
+- [x] 64. Schema-Flexible Metadata
+- [ ] 65. Document-Level Transactions (Partial)
+- [x] 66. Hyperedge Emulation
+- [x] 67. Temporal Graph (Bi-temporal)
+- [x] 68. Weighted Directed Multigraph
+- [x] 69. Hierarchical Graph
+- [x] 70. Bidirectional Relationship Tracking
+- [x] 71. Recursive Graph Patterns
+- [ ] 72. Agent-Centric Partitioning
+- [ ] 73. Consensus Graph (Partial)
+- [x] 74. Pattern Discovery
+- [ ] 75. Temporal Graph Evolution
+- [x] 76. Explainability Graph
+- [ ] 77. Graph-as-Query
+- [x] 78. Multi-Vector Representations
+- [ ] 79. Vector Quantization
+- [ ] 80. Vector Drift Detection
+- [ ] 81. Vector Clustering & Centroids
+- [ ] 82. Adaptive Vector Dimensions
+- [ ] 83. Vector-Space Anomaly Detection
+- [ ] 84. Vector Interpolation
+- [x] 85. Vector Provenance
+- [ ] 86. Vector-Based Conflict Resolution
+- [x] 87. Vector Search with Filters
+- [ ] 88. Feedback-Loop Vectors
+- [ ] 89. Vector Ensemble
+- [ ] 90. Vector Deduplication (Partial)
+- [x] 91. Vector-Based Forgetting
+- [ ] 92. Vector Attention
+- [x] 93. Phrase Search with Ranking
+- [x] 94. Linguistic Analysis
+- [x] 95. Multilingual Search
+- [x] 96. Typo Tolerance
+- [x] 97. Contextual Search
+- [ ] 98. Faceted Search (Partial)
+- [ ] 99. Advanced Text Analytics
+- [x] 100. Query Expansion
+- [x] 101. Search History Suggestions
+- [x] 102. Semantic-FTS Hybrid
+- [x] 103. Memory Decay Time-Series
+- [x] 104. Agent Activity Timeline
+- [x] 105. System Metrics Time-Series
+- [x] 106. Consolidation Schedule
+- [ ] 107. Debate Outcome Trends
+- [ ] 108. Learning Curve Tracking (Partial)
+- [ ] 109. Importance Distribution
+- [ ] 110. Graph Evolution Metrics
+- [ ] 111. Geospatial Optimization (111-115)
 
----
+### 4. Novel & Experimental
+- [ ] 116. Flows vs Crews Pattern (Partial)
+- [x] 117. Hierarchical Agent Delegation
+- [x] 118. Episodic Data Model
+- [x] 119. Temporal Edge Invalidation
+- [x] 120. Custom Pydantic Entity Types
+- [x] 121. Graph Distance Reranking
+- [ ] 122. Path Lookup Acceleration
+- [x] 123. Parallel Search Execution
+- [x] 124. Multi-Hop Constraints
+- [ ] 125. Human-in-the-Loop Checkpoints
+- [x] 126. Semaphore Concurrency Limiting
+- [x] 127. Structured LLM Output
+- [x] 128. AgentTool Wrappers
+- [ ] 129. Dream-Inspired Consolidation
+- [ ] 130. Counterfactual Simulation
+- [x] 131. Socratic Questioning
+- [ ] 132. Privacy-Preserving Sanitization
+- [ ] 133. Surprise-Based Learning
+- [ ] 134. Curiosity-Driven Exploration
+- [x] 135. Metacognitive Indexing
+- [x] 136. Source Reliability Scoring
+- [x] 137. Conflict Resolution Protocols
+- [ ] 138. Narrative Threading (Partial)
+- [ ] 139. Contextual Bandits
+- [ ] 140. Temporal Heatmaps
+- [x] 141. Keyword Extraction Tagging
+- [ ] 142. Entity Disambiguation (Partial)
+- [ ] 143. Community Detection
+- [ ] 144. Centrality Analysis
+- [x] 145. Pathfinding Algorithms
+- [ ] 146. Subgraph Isomorphism
+- [x] 147. Negative Constraints
+- [ ] 148. Scoped Memories (Partial)
+- [ ] 149. Transient Scratchpads
+- [ ] 150. Recursive Summarization (Partial)
+- [ ] 151. Anchor Point Navigation
+- [ ] 152. Bias Detection
+- [x] 153. Intent-Based Prefetching
+- [x] 154. User Modeling
+- [x] 155. Dependency Mapping
+- [ ] 156. Version Control (Partial)
+- [ ] 157. Forking Capabilities
+- [ ] 158. Merge Conflict Resolution
+- [ ] 159. Self-Healing Index
 
-> *En Taro Adun, Executor.*
-MIT License.
+### 5. Advanced Research Integration
+- [x] 160. Automated Prompt Optimization (PromptWizard)
+- [x] 161. Homogeneous Reasoning Modules (ARM)
+- [x] 162. Knowledge Graph Reasoning (LGKGR)
+- [x] 163. Knowledge Injection (GraphToken)
+- [x] 164. Latent State Collaboration (LatentMAS)
+- [x] 165. Hierarchical RL Teams (FULORA)
+- [ ] 166. Multi-Agent RL Optimization (MarsRL) (Partial)
+- [ ] 167. Network Topology Validation (AgentsNet)
+- [ ] 168. Meta-Reasoning (Dr. MAMR)
+- [x] 169. Reasoning Trace Storage
+- [ ] 170. Prompt Genealogy Tracking
