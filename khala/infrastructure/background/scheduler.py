@@ -176,4 +176,13 @@ def create_scheduler(job_processor: JobProcessor) -> BackgroundScheduler:
         priority=JobPriority.LOW
     )
 
+    # 4. Daily Index Repair (Strategy 159)
+    scheduler.add_task(
+        name="daily_index_repair",
+        job_type="index_repair",
+        interval_seconds=86400, # 24 hours
+        payload={"fix": True, "batch_size": 100},
+        priority=JobPriority.LOW
+    )
+
     return scheduler

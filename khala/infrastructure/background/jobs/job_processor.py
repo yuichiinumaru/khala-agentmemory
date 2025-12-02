@@ -209,7 +209,8 @@ class JobProcessor:
             "decay_scoring": "DecayScoringJob",
             "consolidation": "ConsolidationJob", 
             "deduplication": "DeduplicationJob",
-            "consistency_check": "ConsistencyJob"
+            "consistency_check": "ConsistencyJob",
+            "index_repair": "IndexRepairJob"
         }
     
     async def submit_job(
@@ -413,6 +414,8 @@ class JobProcessor:
                 return await self._execute_deduplication(job)
             elif job.job_type == "consistency_check":
                 return await self._execute_consistency_check(job)
+            elif job.job_type == "index_repair":
+                return await self._execute_index_repair(job)
             else:
                 raise ValueError(f"Unsupported job type: {job.job_type}")
                 
@@ -565,6 +568,39 @@ class JobProcessor:
                 worker_id=job.worker_id
             )
             
+        except Exception as e:
+            execution_time = (time.time() - start_time) * 1000
+            return JobResult(
+                job_id=job.job_id,
+                success=False,
+                result=None,
+                execution_time_ms=execution_time,
+                error=str(e),
+                worker_id=job.worker_id
+            )
+
+    async def _execute_index_repair(self, job: JobDefinition) -> JobResult:
+        """Execute index repair job (Strategy 159)."""
+        start_time = time.time()
+
+        try:
+            from .index_repair_job import IndexRepairJob
+
+            # Using imported GeminiClient from module if needed, or let job handle it
+            # We need to pass clients to the job wrapper
+            repair_job = IndexRepairJob(self.db_client)
+            result_data = await repair_job.execute(job.payload)
+
+            execution_time = (time.time() - start_time) * 1000
+
+            return JobResult(
+                job_id=job.job_id,
+                success=True,
+                result=result_data,
+                execution_time_ms=execution_time,
+                worker_id=job.worker_id
+            )
+
         except Exception as e:
             execution_time = (time.time() - start_time) * 1000
             return JobResult(
