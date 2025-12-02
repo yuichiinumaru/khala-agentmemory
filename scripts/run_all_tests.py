@@ -6,12 +6,13 @@ import os
 
 def run_tests():
     """Discover and run all tests."""
-    # Add current directory to path
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    # Add project root to path (one level up from this script)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, project_root)
     
     # Discover tests in 'tests' directory
     loader = unittest.TestLoader()
-    start_dir = 'tests'
+    start_dir = os.path.join(project_root, 'tests')
     
     if not os.path.exists(start_dir):
         print(f"Tests directory '{start_dir}' not found.")
