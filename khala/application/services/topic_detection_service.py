@@ -3,6 +3,7 @@ import logging
 import json
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.surrealdb.client import SurrealDBClient
+from khala.application.utils import parse_json_safely
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +64,13 @@ class TopicDetectionService:
                 temperature=0.0
             )
 
-            # Parse JSON from response
-            content = response.get("content", "").strip()
-            # Handle potential markdown code blocks
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].strip()
-
-            result = json.loads(content)
-            return result
+            result = parse_json_safely(response.get("content", ""))
+            return result if isinstance(result, dict) else {
+                "changed": False,
+                "reason": "Failed to parse LLM response",
+                "previous_topic": None,
+                "current_topic": None
+            }
 
         except Exception as e:
             logger.error(f"Topic detection failed: {e}")

@@ -16,7 +16,8 @@ from .value_objects import (
     DecayScore, 
     MemoryTier,
     MemorySource,
-    Sentiment
+    Sentiment,
+    MemoryType
 )
 
 
@@ -32,15 +33,30 @@ class Memory:
     
     # Optional attributes with defaults
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    # Task 148: Scoped Memories
+    project_id: Optional[str] = field(default=None)
+    tenant_id: Optional[str] = field(default=None)
+    memory_type: MemoryType = MemoryType.FACT  # Task 59: Polymorphic Memory
     embedding: Optional[EmbeddingVector] = field(default=None)
     # Strategy 78: Multi-Vector
     embedding_visual: Optional[EmbeddingVector] = field(default=None)
     embedding_code: Optional[EmbeddingVector] = field(default=None)
+    # Strategy 89: Vector Ensemble
+    embedding_secondary: Optional[EmbeddingVector] = field(default=None)
+
+    # Strategy 82: Adaptive Vector Dimensions
+    embedding_small: Optional[EmbeddingVector] = field(default=None)
+    # Strategy 81: Vector Clustering
+    cluster_id: Optional[str] = field(default=None)
+
     tags: List[str] = field(default_factory=list)
     category: Optional[str] = field(default=None)
     summary: Optional[str] = field(default=None)
     metadata: Dict[str, Any] = field(default_factory=dict)
     
+    # Strategy 94: Linguistic Analysis
+    pos_tags: Optional[List[Dict[str, str]]] = field(default=None)
+
     # Timestamps
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -69,10 +85,22 @@ class Memory:
     is_anchor: bool = False  # Strategy 151: Anchor Point Navigation
     bias_score: Optional[float] = None  # Strategy 152: Bias Detection (score)
     bias_analysis: Optional[str] = None  # Strategy 152: Bias Detection (details)
+
+    # Task 150: Recursive Summarization
+    summary_level: int = 0
+    parent_summary_id: Optional[str] = None
+    child_memory_ids: List[str] = field(default_factory=list)
+
+    complexity: float = 0.0  # Task 99: Text Analytics
     # Module 11: Optimization Fields
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)
     location: Optional[Dict[str, Any]] = field(default=None)
+
+    # Module 15: Version Control & Branching
+    branch_id: Optional[str] = None
+    parent_memory_id: Optional[str] = None
+    version: int = 1
 
     @property
     def importance_score(self) -> ImportanceScore:
@@ -210,8 +238,9 @@ class Memory:
         age: timedelta = now - self.created_at
         return age.total_seconds() / 3600.0
 
-    def get_age_hours(self) -> float:
+    async def get_age_hours(self) -> float:
         """Public helper for consumers requiring age calculations."""
+        await asyncio.sleep(0)  # Make it a valid coroutine
         return self._get_age_hours()
 
 
@@ -239,6 +268,7 @@ class Entity:
     metadata: Dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_seen: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def __post_init__(self) -> None:
         """Validate entity after creation."""
@@ -247,6 +277,20 @@ class Entity:
         
         if not (0.0 <= self.confidence <= 1.0):
             raise ValueError("Confidence must be in [0.0, 1.0]")
+
+        # Strategy 120: Custom Pydantic Entity Types
+        # Validate metadata if schema exists
+        from khala.domain.memory.schemas import ENTITY_SCHEMAS
+        schema_cls = ENTITY_SCHEMAS.get(self.entity_type.value)
+        if schema_cls and self.metadata:
+            try:
+                # Validate and potentially coerce types
+                validated_model = schema_cls(**self.metadata)
+                # Update metadata with validated values (excluding unset to keep it clean)
+                self.metadata.update(validated_model.model_dump(exclude_unset=True))
+            except Exception as e:
+                # "Enforce strict typing" - we raise ValueError
+                raise ValueError(f"Invalid metadata for entity type {self.entity_type.value}: {e}")
     
     def is_high_confidence(self, threshold: float = 0.8) -> bool:
         """Check if entity has high confidence."""
@@ -261,6 +305,7 @@ class Relationship:
     to_entity_id: str
     relation_type: str
     strength: float
+    weight: float = 1.0  # Strategy 68: Weighted Directed Multigraph
     valid_from: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     valid_to: Optional[datetime] = field(default=None)
     transaction_time_start: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -291,3 +336,20 @@ class Relationship:
     def expire(self) -> None:
         """Mark relationship as expired."""
         self.valid_to = datetime.now(timezone.utc)
+
+
+@dataclass
+class Branch:
+    """Branch entity representing a version control branch."""
+
+    name: str
+    created_by: str  # user_id
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    parent_id: Optional[str] = None
+    description: str = ""
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self) -> None:
+        """Validate branch after creation."""
+        if not self.name.strip():
+            raise ValueError("Branch name cannot be empty")
