@@ -2,6 +2,7 @@ from typing import List, Optional, Dict, Any
 import logging
 
 from khala.domain.memory.repository import MemoryRepository
+from khala.domain.memory.entities import Memory, Relationship
 from khala.domain.memory.entities import Memory, Branch
 from khala.domain.memory.value_objects import EmbeddingVector
 from khala.infrastructure.surrealdb.client import SurrealDBClient
@@ -130,6 +131,41 @@ class SurrealDBMemoryRepository(MemoryRepository):
             limit=limit
         )
 
+    async def get_relationships(
+        self,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 1000
+    ) -> List[Relationship]:
+        """Retrieve relationships based on filters."""
+        results = await self.client.get_relationships(filters=filters, limit=limit)
+        return [self._deserialize_relationship(data) for data in results]
+
+    def _deserialize_relationship(self, data: Dict[str, Any]) -> Relationship:
+        """Helper to deserialize relationship data."""
+        from datetime import datetime, timezone
+
+        def parse_dt(dt_val: Any) -> Optional[datetime]:
+            if not dt_val: return None
+            if isinstance(dt_val, str):
+                if dt_val.endswith('Z'): dt_val = dt_val[:-1]
+                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+            return dt_val
+
+        rel_id = str(data["id"])
+        if rel_id.startswith("relationship:"):
+            rel_id = rel_id.split(":", 1)[1]
+
+        return Relationship(
+            id=rel_id,
+            from_entity_id=data["from_entity_id"],
+            to_entity_id=data["to_entity_id"],
+            relation_type=data["relation_type"],
+            strength=data.get("strength", 0.0),
+            valid_from=parse_dt(data.get("valid_from")) or datetime.now(timezone.utc),
+            valid_to=parse_dt(data.get("valid_to")),
+            transaction_time_start=parse_dt(data.get("transaction_time_start")) or datetime.now(timezone.utc),
+            transaction_time_end=parse_dt(data.get("transaction_time_end"))
+        )
     async def save_branch(self, branch: Branch) -> str:
         """Save a branch entity."""
         # Convert branch entity to dictionary for SurrealDB

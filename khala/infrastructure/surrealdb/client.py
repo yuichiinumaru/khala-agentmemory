@@ -868,6 +868,23 @@ class SurrealDBClient:
                 return [self._deserialize_memory(data) for data in response]
             return []
 
+    async def get_relationships(
+        self,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 1000
+    ) -> List[Dict[str, Any]]:
+        """Get relationships with filtering."""
+        params = {"limit": limit}
+        # Pre-process filters if values are lists (for IN clause)
+        # _build_filter_query handles list as IN, but key must match field.
+
+        filter_clause = self._build_filter_query(filters, params)
+        if filter_clause:
+             filter_clause = "AND " + filter_clause.replace(" AND ", "", 1) if filter_clause.startswith(" AND ") else "AND " + filter_clause
+
+        query = f"""
+        SELECT * FROM relationship
+        WHERE 1=1 {filter_clause}
     async def get_latest_memories(
         self,
         user_id: str,
@@ -924,6 +941,10 @@ class SurrealDBClient:
         async with self.get_connection() as conn:
             response = await conn.query(query, params)
             if response and isinstance(response, list):
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                     if response[0]['status'] == 'OK':
+                        return response[0]['result']
+                # If raw list of dicts (typical for select)
                 return response
             return []
     

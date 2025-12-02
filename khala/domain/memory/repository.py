@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
+from .entities import Memory, Relationship
 from .entities import Memory, Branch
 from .value_objects import EmbeddingVector
 
@@ -68,6 +69,12 @@ class MemoryRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_relationships(
+        self,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 1000
+    ) -> List[Relationship]:
+        """Retrieve relationships based on filters."""
     async def save_branch(self, branch: Branch) -> str:
         """Save a branch entity."""
         pass
