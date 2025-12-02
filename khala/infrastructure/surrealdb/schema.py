@@ -245,6 +245,8 @@ class DatabaseSchema:
         DEFINE FIELD reasoning_step ON reasoning_traces TYPE string;
         DEFINE FIELD group_advantage ON reasoning_traces TYPE float;
         DEFINE FIELD created_at ON reasoning_traces TYPE datetime DEFAULT time::now();
+        """,
+
         # AgentsNet (Module 13.4.2 - Strategy 167)
         "agentsnet_tables": """
         -- Agent Network (Topology/Edges)

@@ -29,9 +29,11 @@ class _DummyBaseSurreal:
 
 _surreal_module = types.ModuleType("surrealdb")
 _surreal_module.Surreal = _DummyBaseSurreal  # type: ignore[attr-defined]
+_surreal_module.AsyncSurreal = _DummyBaseSurreal  # type: ignore[attr-defined]
 
 _surreal_async_module = types.ModuleType("surrealdb.asyncio")
 _surreal_async_module.Surreal = _DummyBaseSurreal  # type: ignore[attr-defined]
+_surreal_async_module.AsyncSurreal = _DummyBaseSurreal  # type: ignore[attr-defined]
 
 sys.modules.setdefault("surrealdb", _surreal_module)
 sys.modules.setdefault("surrealdb.asyncio", _surreal_async_module)
