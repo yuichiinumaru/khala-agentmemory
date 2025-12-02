@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
-from .entities import Memory
+from .entities import Memory, Branch
 from .value_objects import EmbeddingVector
 
 class MemoryRepository(ABC):
@@ -12,6 +12,11 @@ class MemoryRepository(ABC):
     @abstractmethod
     async def create(self, memory: Memory) -> str:
         """Save a new memory."""
+        pass
+
+    @abstractmethod
+    async def save(self, memory: Memory) -> str:
+        """Save a memory (create or update)."""
         pass
         
     @abstractmethod
@@ -60,4 +65,21 @@ class MemoryRepository(ABC):
         limit: int = 100
     ) -> List[Memory]:
         """Retrieve memories by tier."""
+        pass
+
+    @abstractmethod
+    async def save_branch(self, branch: Branch) -> str:
+        """Save a branch entity."""
+        pass
+
+    @abstractmethod
+    async def get_branch_by_id(self, branch_id: str) -> Optional[Branch]:
+        """Retrieve a branch by ID."""
+        pass
+
+    @abstractmethod
+    async def get_branch_by_name(self, name: str) -> Optional[Branch]:
+        """Retrieve a branch by name."""
+    async def get_memory_facets(self, user_id: str) -> Dict[str, Any]:
+        """Get faceted counts for memories (Tier, Category, Agent)."""
         pass

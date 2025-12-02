@@ -90,31 +90,60 @@ class HybridSearchService:
         """Execute the main search pipeline stages."""
         candidate_results = []
         
+        # Prepare tasks for parallel execution
+        tasks = []
+        task_names = []
+
         # Stage 1: Vector search
         if pipeline.should_execute_stage("vector"):
-            vector_results = await self._vector_search(
+            tasks.append(self._vector_search(
                 query, pipeline.vector_top_k,
                 similarity_threshold=pipeline.vector_similarity_threshold
-            )
-            candidate_results.extend(vector_results)
-            logger.debug(f"Vector search found {len(vector_results)} candidates")
+            ))
+            task_names.append("vector")
         
         # Stage 2: BM25 search  
         if pipeline.should_execute_stage("bm25"):
-            bm25_results = await self._bm25_search(query, pipeline.bm25_top_k)
-            candidate_results.extend(bm25_results)
-            logger.debug(f"BM25 search found {len(bm25_results)} candidates")
-        
+            tasks.append(self._bm25_search(query, pipeline.bm25_top_k))
+            task_names.append("bm25")
+
+        # Stage 4: Graph traversal (for pattern searches)
+        # We launch this in parallel but merge it later to preserve filtering logic if needed
+        if pipeline.should_execute_stage("graph"):
+            tasks.append(self._graph_traversal_search(query))
+            task_names.append("graph")
+
+        # Execute parallel searches
+        results_list = await asyncio.gather(*tasks) if tasks else []
+
+        # Process results
+        vector_results = []
+        bm25_results = []
+        graph_results = []
+
+        for name, results in zip(task_names, results_list):
+            if name == "vector":
+                vector_results = results
+                logger.debug(f"Vector search found {len(vector_results)} candidates")
+            elif name == "bm25":
+                bm25_results = results
+                logger.debug(f"BM25 search found {len(bm25_results)} candidates")
+            elif name == "graph":
+                graph_results = results
+                logger.debug(f"Graph search found {len(graph_results)} candidates")
+
+        # Combine Vector and BM25 candidates for filtering
+        base_candidates = vector_results + bm25_results
+
         # Stage 3: Metadata filtering
         if pipeline.should_execute_stage("metadata"):
-            candidate_results = await self._apply_metadata_filters(
-                candidate_results, query.filters
+            base_candidates = await self._apply_metadata_filters(
+                base_candidates, query.filters
             )
         
-        # Stage 4: Graph traversal (for pattern searches)
-        if pipeline.should_execute_stage("graph"):
-            graph_results = await self._graph_traversal_search(query)
-            candidate_results.extend(graph_results)
+        # Combine with Graph results (which are typically not filtered by same metadata or already filtered)
+        # Note: In original logic, graph results were added AFTER metadata filtering of vector/bm25 results.
+        candidate_results = base_candidates + graph_results
         
         # Deduplicate and sort by confidence
         unique_results = self._deduplicate_results(candidate_results)
@@ -135,6 +164,13 @@ class HybridSearchService:
             embedding_vector = EmbeddingVector(query.embedding.tolist())
         else:
             embedding_vector = EmbeddingVector(query.embedding)
+        # Handle both list and numpy array
+        if isinstance(query.embedding, list):
+            embedding_values = query.embedding
+        else:
+            embedding_values = query.embedding.tolist()
+
+        embedding_vector = EmbeddingVector(embedding_values)
         
         # Search using repository with filters
         memory_records = await self.memory_repository.search_by_vector(
@@ -324,7 +360,8 @@ class HybridSearchService:
     async def _assemble_context(
         self, 
         results: List[SearchResult], 
-        query: Query
+        query: Query,
+        limit: int = 10
     ) -> List[SearchResult]:
         """Assemble context for the results (token management)."""
         # Implement token counting and dynamic window sizing
@@ -335,14 +372,24 @@ class HybridSearchService:
         
         context_results = []
         
+        # Sort results by confidence before assembly (if not already sorted)
+        # Assuming sorted input for now
+
+        count = 0
         for result in results:
+            if count >= limit:
+                break
+
             # Simple token estimation (4 chars per token approximation)
             content_tokens = len(result.content) // 4
             
             if total_tokens + content_tokens <= max_tokens and len(context_results) < 3:
                 context_results.append(result)
                 total_tokens += content_tokens
+                count += 1
             else:
+                # If this item doesn't fit, maybe smaller ones will?
+                # For now, strict cutoff
                 break
         
         return context_results
@@ -406,6 +453,9 @@ class SignificanceScorer:
         )
         
         self._scoring_cache[memory.id] = significance
+        # Cache the result
+        self._scoring_cache[memory.id] = significance
+
         return significance
     
     def get_cached_score(self, memory_id: str) -> Optional[SignificanceScore]:
