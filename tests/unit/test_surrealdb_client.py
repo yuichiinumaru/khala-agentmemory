@@ -90,6 +90,12 @@ class TestSurrealDBClient:
         with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
             mock_conn = AsyncMock()
 
+            def query_side_effect(query, params=None):
+                if "SELECT id FROM memory WHERE content_hash" in query:
+                    return []
+                if "CREATE type::thing('memory'" in query:
+                    return [{"id": memory.id}]
+                return [] # Default for init queries
             async def query_side_effect(query, params=None):
                 if "SELECT id FROM memory" in query and "content_hash" in query:
                     return [] # No duplicate
@@ -126,6 +132,11 @@ class TestSurrealDBClient:
                     result = await client.create_memory(memory)
             
             assert result == memory.id
+            
+            # Verify the query parameters - last call should be create
+            call_args = mock_conn.query.call_args
+            query = call_args[0][0]
+            params = call_args[1]
             
             # Find the create call
             create_call = None
