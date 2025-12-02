@@ -6,8 +6,8 @@ defined by their values.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Final, Optional, Dict
-from datetime import datetime
+from typing import List, Final, Optional, Dict, Any
+from datetime import datetime, timezone
 from enum import Enum
 import numpy as np
 
@@ -44,6 +44,34 @@ class EmbeddingVector:
     def from_numpy(cls, array: np.ndarray) -> "EmbeddingVector":
         """Create from numpy array."""
         return cls(values=array.tolist())
+
+    def apply_attention(self, weights: List[float]) -> "EmbeddingVector":
+        """Apply attention weights to the vector.
+
+        This implements Strategy 92: Vector Attention.
+
+        The resulting vector is re-normalized to unit length to ensure
+        compatibility with cosine similarity and value constraints.
+
+        Args:
+            weights: List of weights to apply to each dimension.
+                     Must match vector dimension.
+        """
+        if len(weights) != len(self.values):
+             raise ValueError(
+                f"Weights dimension {len(weights)} does not match vector dimension {len(self.values)}"
+            )
+
+        weighted_values = [v * w for v, w in zip(self.values, weights)]
+
+        # Re-normalize to unit length
+        norm = sum(x**2 for x in weighted_values) ** 0.5
+        if norm > 0:
+            new_values = [x / norm for x in weighted_values]
+        else:
+            new_values = weighted_values
+
+        return EmbeddingVector(values=new_values, dimensions=self.dimensions)
 
 
 @dataclass(frozen=True)
@@ -151,6 +179,15 @@ class MemoryTier(Enum):
         return promotion_map[self]
 
 
+class MemoryType(Enum):
+    """Memory type for polymorphic documents (Task 59)."""
+
+    FACT = "fact"         # Standard declarative memory
+    CODE = "code"         # Code snippets or functions
+    DECISION = "decision" # Recorded decisions with rationale
+    REFLECTION = "reflection" # Meta-analysis or summary
+    CONVERSATION = "conversation" # Dialogue or chat log
+
 @dataclass(frozen=True)
 class MemorySource:
     """Immutable source information for memory traceability (Task 28)."""
@@ -192,3 +229,25 @@ class AbstractionLevel(Enum):
     PATTERN = "pattern"          # Identified trends, repeated occurrences
     PRINCIPLE = "principle"      # General rules, laws, axioms
     META = "meta"                # Information about the system itself
+@dataclass(frozen=True)
+class GeoLocation:
+    """Immutable geospatial location for memory tagging (Task 111)."""
+
+    latitude: float
+    longitude: float
+    address: Optional[str] = None
+    location_type: Optional[str] = "physical"  # e.g. "physical", "virtual"
+
+    def __post_init__(self) -> None:
+        """Validate coordinates."""
+        if not (-90.0 <= self.latitude <= 90.0):
+            raise ValueError(f"Latitude must be in [-90, 90], got {self.latitude}")
+        if not (-180.0 <= self.longitude <= 180.0):
+            raise ValueError(f"Longitude must be in [-180, 180], got {self.longitude}")
+
+    def to_geojson(self) -> Dict[str, Any]:
+        """Convert to GeoJSON Point format (compatible with SurrealDB)."""
+        return {
+            "type": "Point",
+            "coordinates": [self.longitude, self.latitude]
+        }
