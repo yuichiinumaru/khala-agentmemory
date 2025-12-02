@@ -332,19 +332,19 @@ class TestGeminiClient:
         
         # Mock the model
         mock_model = AsyncMock()
-        mock_model.generate_content.return_value = "Cached response"
+        mock_model.generate_content_async.return_value = "Cached response"
         client._models[model.model_id] = mock_model
         
         # First call should hit API
         response1 = await client.generate_text("Test prompt", use_cascading=True)
         assert response1["cache_hit"] is False
-        assert mock_model.generate_content.call_count == 1
+        assert mock_model.generate_content_async.call_count == 1
         
         # Second call should use cache
         response2 = await client.generate_text("Test prompt", use_cascading=True)
         assert response2["cache_hit"] is True
         assert response2["content"] == "Cached response"
-        assert mock_model.generate_content.call_count == 1  # No additional API call
+        assert mock_model.generate_content_async.call_count == 1  # No additional API call
     
     @pytest.mark.asyncio
     async def test_generation_with_specific_model(self, client):
@@ -363,7 +363,7 @@ class TestGeminiClient:
         """Test that generation metrics are properly tracked."""
         # Mock model
         mock_model = AsyncMock()
-        mock_model.generate_content.return_value = "Generated response"
+        mock_model.generate_content_async.return_value = "Generated response"
         client._models["gemini-2.0-flash"] = mock_model
         
         response = await client.generate_text("Test prompt")
@@ -399,7 +399,7 @@ class TestGeminiClient:
         """Test that cost tracking integrates properly with generation."""
         # Mock model
         mock_model = AsyncMock()
-        mock_model.generate_content.return_value = "Response"
+        mock_model.generate_content_async.return_value = "Response"
         client._models["gemini-2.0-flash"] = mock_model
         
         initial_budget = client.get_budget_status()
@@ -473,13 +473,13 @@ class TestGeminiClient:
         
         # Configure mock to fail twice, then succeed
         side_effects = []
-        def generate_content_with_retries(*args, **kwargs):
+        async def generate_content_with_retries(*args, **kwargs):
             if len(side_effects) < 2:
                 side_effects.append(len(side_effects))
                 raise Exception("Temporary failure")
             return MagicMock(text="Success after retries")
         
-        mock_model.generate_content.side_effect = generate_content_with_retries
+        mock_model.generate_content_async.side_effect = generate_content_with_retries
         client._models["gemini-2.0-flash"] = mock_model
         client.max_retries = 3
         client.timeout_seconds = 5
@@ -488,7 +488,7 @@ class TestGeminiClient:
         response = await client.generate_text("Test prompt", model_id="gemini-2.0-flash")
         
         assert response["content"] == "Success after retries"
-        assert mock_model.generate_content.call_count == 3  # Initial call + 2 retries
+        assert mock_model.generate_content_async.call_count == 3  # Initial call + 2 retries
     
     def test_disable_cascading(self, client):
         """Test client with cascading disabled."""
