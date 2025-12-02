@@ -25,10 +25,10 @@ class QueryExpansionService:
         prompt = f"""
         You are an expert search query optimizer.
         Your task is to generate {num_expansions} alternative search queries for the following user input.
-        These alternatives should cover:
-        1. Synonyms and related concepts.
-        2. Different phrasings or perspectives.
-        3. More specific or broader interpretations if the query is ambiguous.
+        These alternatives should cover exactly these 3 perspectives:
+        1. Fact-based: Focus on specific data, definitions, or verified facts.
+        2. Summary-oriented: Focus on obtaining an overview or high-level summary.
+        3. Deep Analysis: Focus on "why", "how", underlying reasons, and complex relationships.
 
         User Query: "{query}"
 

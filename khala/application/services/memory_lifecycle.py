@@ -5,10 +5,12 @@ promotion, decay, consolidation, deduplication, and archival.
 """
 
 import logging
+import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
 from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
+from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore, EmbeddingVector
 from khala.domain.memory.repository import MemoryRepository
 from khala.domain.memory.services import (
     MemoryService,
@@ -18,9 +20,22 @@ from khala.domain.memory.services import (
 )
 from khala.domain.approval.entities import ApprovalActionType, ApprovalStatus
 from khala.application.services.approval_service import ApprovalService
+from khala.application.services.surprise_service import SurpriseService
+from khala.domain.ports.embedding_service import EmbeddingService
+from khala.application.services.text_analytics_service import TextAnalyticsService
+from khala.application.services.significance_scorer import SignificanceScorer
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
+
+# Task 141: Keyword Extraction Tagging
+try:
+    import yake
+    YAKE_AVAILABLE = True
+except ImportError:
+    YAKE_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("YAKE not installed. Falling back to LLM for keyword extraction.")
 
 logger = logging.getLogger(__name__)
 
@@ -31,23 +46,73 @@ class MemoryLifecycleService:
         self,
         repository: MemoryRepository,
         gemini_client: Optional[GeminiClient] = None,
+        embedding_service: Optional[EmbeddingService] = None,
         memory_service: Optional[MemoryService] = None,
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
         consolidation_service: Optional[ConsolidationService] = None,
         approval_service: Optional[ApprovalService] = None
+        surprise_service: Optional[SurpriseService] = None
+        text_analytics_service: Optional[TextAnalyticsService] = None
+        significance_scorer: Optional[SignificanceScorer] = None
     ):
         self.repository = repository
         self.gemini_client = gemini_client or GeminiClient()
+        self.embedding_service = embedding_service or self.gemini_client
         self.memory_service = memory_service or MemoryService()
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
         self.approval_service = approval_service
+        self.surprise_service = surprise_service or SurpriseService(self.gemini_client)
+        self.text_analytics_service = text_analytics_service or TextAnalyticsService()
 
     async def ingest_memory(self, memory: Memory) -> str:
-        """Ingest a new memory, performing auto-summarization if needed."""
+        """Ingest a new memory, performing auto-summarization and embedding generation."""
 
+        # Calculate complexity if missing
+        if not memory.complexity:
+            memory.complexity = self.text_analytics_service.calculate_complexity(memory.content)
+
+        self.significance_scorer = significance_scorer or SignificanceScorer(self.gemini_client)
+
+    async def ingest_memory(self, memory: Memory) -> str:
+        """Ingest a new memory, performing auto-summarization and tagging if needed."""
+
+        """Ingest a new memory, performing auto-summarization and sentiment analysis if needed."""
+
+        # Task 63: Conditional Content Fields (Snippet, Summary, Full)
+        # Generate snippet if missing
+        if not memory.metadata.get("snippet"):
+             memory.metadata["snippet"] = memory.content[:100] + "..." if len(memory.content) > 100 else memory.content
+
+        # Auto-summarize if content is long (> 1000 chars as per Strategy 63) and summary is missing
+        # Strategy 63: Tiny (Snippet), Small (Summary), Full (Content)
+        if len(memory.content) > 1000 and not memory.summary:
+        """Ingest a new memory, performing auto-summarization and significance scoring."""
+
+        # 1. Natural Triggers & Significance Scoring
+        # Check for natural triggers
+        triggers = [
+            r"remember that", r"don'?t forget", r"remind me",
+            r"keep in mind", r"important:", r"note that"
+        ]
+        has_trigger = any(re.search(t, memory.content, re.IGNORECASE) for t in triggers)
+
+        # Calculate base score
+        score = await self.significance_scorer.score_memory(memory.content, memory.metadata)
+
+        # Apply trigger boost
+        if has_trigger:
+            score = max(score, 0.9)  # Boost to high importance
+            if memory.metadata is None:
+                memory.metadata = {}
+            memory.metadata["trigger_detected"] = True
+
+        # Update memory importance
+        memory.importance = score
+
+        # 2. Auto-summarization
         # Auto-summarize if content is long (> 500 chars) and summary is missing
         if len(memory.content) > 500 and not memory.summary:
             try:
@@ -62,7 +127,140 @@ class MemoryLifecycleService:
             except Exception as e:
                 logger.warning(f"Failed to auto-summarize memory: {e}")
 
+        # Strategy 133: Surprise-Based Learning
+        # Only calculate if we have an embedding to find context
+        if memory.embedding:
+            try:
+                # Fetch context (top 5 similar memories)
+                # Note: Assuming repository returns List[Memory] as per interface
+                context_results = await self.repository.search_by_vector(
+                    embedding=memory.embedding,
+                    user_id=memory.user_id,
+                    top_k=5,
+                    min_similarity=0.6
+                )
+
+                score, reason = await self.surprise_service.calculate_surprise(memory, context_results)
+                self.surprise_service.apply_surprise_boost(memory, score, reason)
+
+            except Exception as e:
+                logger.warning(f"Failed to calculate surprise score: {e}")
+        # Generate Primary Embedding if missing
+        if not memory.embedding and self.embedding_service:
+            try:
+                emb = await self.embedding_service.get_embedding(memory.content)
+                if emb:
+                    memory.embedding = EmbeddingVector(values=emb)
+            except Exception as e:
+                logger.error(f"Failed to generate primary embedding: {e}")
+
+        # Generate Secondary Embedding (Vector Ensemble) if missing
+        if not memory.embedding_secondary and self.embedding_service:
+            try:
+                # Assuming embedding_service is GeminiClient or has similar interface capability
+                # We cast to GeminiClient to access specific model support if possible
+                # Or just use a generic way if we added it to interface.
+                # For now, relying on GeminiClient specific method as it is default.
+                if isinstance(self.embedding_service, GeminiClient):
+                    emb = await self.embedding_service.generate_embeddings(
+                        [memory.content],
+                        model_id="text-embedding-004"
+                    )
+                    if emb:
+                         memory.embedding_secondary = EmbeddingVector(values=emb[0])
+            except Exception as e:
+                logger.error(f"Failed to generate secondary embedding: {e}")
+        # Task 141: Keyword Extraction Tagging
+        if not memory.tags:
+            try:
+                extracted_tags = await self._extract_keywords(memory.content)
+                if extracted_tags:
+                    # Deduplicate and add to memory
+                    current_tags = set(memory.tags)
+                    for tag in extracted_tags:
+                        if tag not in current_tags:
+                            memory.tags.append(tag)
+                            current_tags.add(tag)
+            except Exception as e:
+                logger.warning(f"Failed to extract keywords: {e}")
+        # Task 37: Emotion-Driven Memory
+        # Analyze sentiment if not provided in metadata
+        if "sentiment" not in memory.metadata:
+            try:
+                sentiment_data = await self.gemini_client.analyze_sentiment(memory.content)
+
+                # Store in metadata as requested
+                memory.metadata["sentiment"] = {
+                    "score": sentiment_data.get("score", 0.0),
+                    "label": sentiment_data.get("label", "neutral"),
+                    "emotions": sentiment_data.get("emotions", {})
+                }
+
+                # Strategy 37 also implies prioritizing emotionally resonant memories.
+                # We can boost importance if sentiment is strong (e.g. |score| > 0.8)
+                score = memory.metadata["sentiment"]["score"]
+                if abs(score) > 0.8:
+                    # Boost importance slightly, but clamp to 1.0
+                    new_importance = min(1.0, memory.importance.value + 0.1)
+                    # We need to recreate ImportanceScore as it is frozen
+                    from khala.domain.memory.value_objects import ImportanceScore
+                    memory.importance = ImportanceScore(new_importance)
+
+            except Exception as e:
+                logger.warning(f"Failed to analyze sentiment for memory: {e}")
+
         return await self.repository.create(memory)
+
+    async def _extract_keywords(self, text: str, max_keywords: int = 5) -> List[str]:
+        """Extract keywords from text using YAKE or LLM."""
+        if not text or len(text.strip()) < 10:
+            return []
+
+        # 1. Try YAKE first (Fast, Local)
+        if YAKE_AVAILABLE:
+            try:
+                # Initialize YAKE keyword extractor
+                kw_extractor = yake.KeywordExtractor(
+                    lan="en",
+                    n=2,  # Max ngram size
+                    dedupLim=0.9,
+                    top=max_keywords,
+                    features=None
+                )
+                keywords = kw_extractor.extract_keywords(text)
+                # YAKE returns (keyword, score) tuples. Lower score is better.
+                return [kw for kw, score in keywords]
+            except Exception as e:
+                logger.warning(f"YAKE extraction failed: {e}")
+
+        # 2. Fallback to LLM (Slower, Costlier, but Smarter)
+        try:
+            prompt = f"""
+            Extract exactly {max_keywords} relevant keywords or short key-phrases from the text below.
+            Return them as a comma-separated list.
+
+            Text:
+            {text}
+
+            Keywords:
+            """
+
+            response = await self.gemini_client.generate_text(
+                prompt=prompt,
+                task_type="generation",
+                model_id=ModelRegistry.get_model("gemini-2.0-flash").model_id
+            )
+
+            content = response.get("content", "").strip()
+            if content:
+                # Split by comma and clean
+                keywords = [k.strip() for k in content.split(",") if k.strip()]
+                return keywords[:max_keywords]
+
+        except Exception as e:
+            logger.error(f"LLM keyword extraction failed: {e}")
+
+        return []
 
     async def run_lifecycle_job(self, user_id: str) -> Dict[str, int]:
         """Run all lifecycle tasks for a user.
@@ -184,16 +382,37 @@ class MemoryLifecycleService:
                 )
 
                 # 2. Semantic duplicates (if embeddings exist)
+                # Strategy 90: Aggressive semantic deduplication check (>0.98)
+                # We can perform a standard check and then refine, or just use one check.
+                # Here we use the standard threshold but we could make it configurable.
                 semantic_dupes = []
+                aggressive_dupes = []
+
                 if memory.embedding:
+                    # Standard check (0.95)
                     semantic_dupes = self.deduplication_service.find_semantic_duplicates(
-                        memory, candidates
+                        memory, candidates, threshold=0.95
+                    )
+
+                    # Aggressive check (0.98) - subset of standard check
+                    aggressive_dupes = self.deduplication_service.find_semantic_duplicates(
+                        memory, semantic_dupes, threshold=0.98
                     )
 
                 all_dupes = set(exact_dupes + semantic_dupes)
 
+                # Identify aggressive dupes for merging
+                aggressive_ids = {d.id for d in aggressive_dupes}
+                aggressive_ids.update({d.id for d in exact_dupes}) # Treat exact dupes as aggressive too
+
                 for dupe in all_dupes:
                     if dupe.id not in processed_ids:
+                        # Strategy 90: Merge logic for aggressive duplicates
+                        if dupe.id in aggressive_ids:
+                             self.deduplication_service.merge_memories(target=memory, source=dupe)
+                             # Save the updated target (memory)
+                             await self.repository.update(memory)
+
                         # Simple strategy: Archive the duplicate
                         if not dupe.is_archived:
                             # Force archive for duplicates
