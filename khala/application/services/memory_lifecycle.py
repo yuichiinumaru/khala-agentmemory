@@ -17,6 +17,7 @@ from khala.domain.memory.services import (
     ConsolidationService,
     ConflictResolutionService
 )
+from khala.application.services.privacy_safety_service import PrivacySafetyService
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
@@ -34,7 +35,8 @@ class MemoryLifecycleService:
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
         consolidation_service: Optional[ConsolidationService] = None,
-        conflict_resolution_service: Optional[ConflictResolutionService] = None
+        conflict_resolution_service: Optional[ConflictResolutionService] = None,
+        privacy_safety_service: Optional[PrivacySafetyService] = None
     ):
         self.repository = repository
         self.gemini_client = gemini_client or GeminiClient()
@@ -43,9 +45,37 @@ class MemoryLifecycleService:
         self.deduplication_service = deduplication_service or DeduplicationService()
         self.consolidation_service = consolidation_service or ConsolidationService()
         self.conflict_resolution_service = conflict_resolution_service or ConflictResolutionService(repository)
+        self.privacy_safety_service = privacy_safety_service or PrivacySafetyService(self.gemini_client)
 
-    async def ingest_memory(self, memory: Memory) -> str:
-        """Ingest a new memory, performing auto-summarization if needed."""
+    async def ingest_memory(self, memory: Memory, check_privacy: bool = True) -> str:
+        """Ingest a new memory, performing auto-summarization and privacy checks."""
+
+        # Strategy 132: Privacy-Preserving Sanitization
+        if check_privacy and self.privacy_safety_service:
+            sanitization_result = await self.privacy_safety_service.sanitize_content(memory.content)
+            if sanitization_result.was_sanitized:
+                memory.content = sanitization_result.sanitized_text
+                if not memory.metadata:
+                    memory.metadata = {}
+                memory.metadata["sanitization_record"] = {
+                    "was_sanitized": True,
+                    "redacted_items": sanitization_result.redacted_items,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+
+        # Strategy 152: Bias Detection
+        if check_privacy and self.privacy_safety_service:
+            # We don't block ingestion for bias, but we tag it
+            bias_result = await self.privacy_safety_service.detect_bias(memory.content)
+            if bias_result.is_biased:
+                if not memory.metadata:
+                    memory.metadata = {}
+                memory.metadata["bias_analysis"] = {
+                    "score": bias_result.bias_score,
+                    "categories": bias_result.categories,
+                    "analysis": bias_result.analysis,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
 
         # Auto-summarize if content is long (> 500 chars) and summary is missing
         if len(memory.content) > 500 and not memory.summary:
