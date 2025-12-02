@@ -222,6 +222,13 @@ class Sentiment:
             raise ValueError("Sentiment label cannot be empty")
 
 
+class AbstractionLevel(Enum):
+    """Abstraction levels for hierarchical graph (Strategy 69)."""
+
+    OBSERVATION = "observation"  # Raw facts, sensor data
+    PATTERN = "pattern"          # Identified trends, repeated occurrences
+    PRINCIPLE = "principle"      # General rules, laws, axioms
+    META = "meta"                # Information about the system itself
 @dataclass(frozen=True)
 class GeoLocation:
     """Immutable geospatial location for memory tagging (Task 111)."""

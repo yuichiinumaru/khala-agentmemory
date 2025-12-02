@@ -17,6 +17,7 @@ from .value_objects import (
     MemoryTier,
     MemorySource,
     Sentiment,
+    AbstractionLevel
     GeoLocation
     MemoryType
 )
@@ -99,6 +100,7 @@ class Memory:
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)
     location: Optional[Dict[str, Any]] = field(default=None)
+    abstraction_level: AbstractionLevel = field(default=AbstractionLevel.OBSERVATION)
     geo_location: Optional[GeoLocation] = field(default=None)  # Task 111: Agent Location Context
 
     # Module 15: Version Control & Branching
@@ -272,6 +274,7 @@ class Entity:
     metadata: Dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    abstraction_level: AbstractionLevel = field(default=AbstractionLevel.OBSERVATION)
     last_seen: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def __post_init__(self) -> None:
@@ -351,6 +354,22 @@ class Relationship:
 
 
 @dataclass
+class Hyperedge:
+    """Hyperedge representing an N-way relationship (Strategy 66)."""
+
+    participants: List[str]  # List of entity/memory IDs
+    relation_type: str
+    properties: Dict[str, Any] = field(default_factory=dict)
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self) -> None:
+        """Validate hyperedge."""
+        if not self.participants:
+            raise ValueError("Hyperedge must have participants")
+        if not self.relation_type.strip():
+            raise ValueError("Relation type cannot be empty")
 class Branch:
     """Branch entity representing a version control branch."""
 
