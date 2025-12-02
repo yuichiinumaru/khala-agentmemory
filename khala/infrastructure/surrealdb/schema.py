@@ -162,6 +162,13 @@ class DatabaseSchema:
         DEFINE FIELD created_at ON training_curves TYPE datetime;
         """,
 
+        # Dr. MAMR Tables (Strategy 168)
+        "dr_mamr_tables": """
+        DEFINE TABLE reasoning_traces SCHEMAFULL;
+        DEFINE FIELD meta_decision ON reasoning_traces TYPE string;
+        DEFINE FIELD reasoning_step ON reasoning_traces TYPE string;
+        DEFINE FIELD group_advantage ON reasoning_traces TYPE float;
+        DEFINE FIELD created_at ON reasoning_traces TYPE datetime DEFAULT time::now();
         # AgentsNet (Module 13.4.2 - Strategy 167)
         "agentsnet_tables": """
         -- Agent Network (Topology/Edges)
@@ -419,6 +426,7 @@ class DatabaseSchema:
             "skill_table",
             "lgkgr_tables",
             "latent_mas_tables",
+            "dr_mamr_tables",
             "agentsnet_tables",
             # MarsRL table
             # "rbac_permissions",
