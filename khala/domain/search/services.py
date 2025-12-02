@@ -365,9 +365,10 @@ class HybridSearchService:
     ) -> List[SearchResult]:
         """Assemble context for the results (token management)."""
         # Implement token counting and dynamic window sizing
-        # This would be more complex in production
+        # Task 48: Dynamic Context Window
         
-        max_tokens = 8000  # Example limit for Gemini
+        # Determine token limit based on task complexity
+        max_tokens = self._calculate_dynamic_token_limit(query)
         total_tokens = 0
         
         context_results = []
@@ -377,6 +378,9 @@ class HybridSearchService:
 
         count = 0
         for result in results:
+            # Improved token estimation (approx 1.3 tokens per word, or 4 chars per token)
+            # A more robust estimation:
+            content_tokens = int(len(result.content) / 3.5) # slightly conservative estimate
             if count >= limit:
                 break
 
@@ -388,11 +392,42 @@ class HybridSearchService:
                 total_tokens += content_tokens
                 count += 1
             else:
+                # Optional: truncate the last result to fit remaining tokens
+                remaining_tokens = max_tokens - total_tokens
+                if remaining_tokens > 50: # Only include if substantial content fits
+                     # This requires modifying the result content which might not be desired for search results
+                     # For now, we just stop.
+                     pass
                 # If this item doesn't fit, maybe smaller ones will?
                 # For now, strict cutoff
                 break
         
+        logger.debug(f"Assembled context with {len(context_results)} results, approx {total_tokens} tokens (Limit: {max_tokens})")
         return context_results
+
+    def _calculate_dynamic_token_limit(self, query: Query) -> int:
+        """Calculate token limit based on task complexity (Strategy 48)."""
+        # Base limit
+        limit = 8000
+
+        # Check Modality
+        if query.modality == SearchModality.CODE:
+             limit = 16000
+
+        # Adjust based on intent
+        if query.intent == SearchIntent.ANALYSIS:
+            limit = max(limit, 32000) # Deep analysis needs more context
+        elif query.intent == SearchIntent.FACTUAL:
+            limit = 4000  # Facts are usually concise
+        elif query.intent == SearchIntent.PATTERN:
+             limit = max(limit, 12000)
+
+        # Adjust based on query complexity (heuristic)
+        # e.g., if query is very long or has many filters
+        if len(query.text) > 200:
+            limit += 2000
+
+        return limit
     
     def _deduplicate_results(self, results: List[SearchResult]) -> List[SearchResult]:
         """Remove duplicate search results."""
