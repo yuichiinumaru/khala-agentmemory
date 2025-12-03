@@ -19,10 +19,12 @@
 ### Module 11: SurrealDB Advanced Optimization
 *Status: Implementation Broken / Incomplete*
 - [ ] **M11.C.1 Geospatial**: Fix critical syntax errors and bugs in `spatial_memory_service.py` (Strategies 111-115).
+- [ ] **M11.C.2 Vector Ops Refactor**: Refactor `AdvancedVectorService` to fix N+1 query performance issues and potential SQL injection risks (Strategies 79-84).
 
 ### Module 14: Advanced Graph Algorithms (Optimization)
-- [ ] **Graph Analysis**: Implement Strategy 143 (Community Detection).
+- [ ] **Graph Analysis**: Implement Strategy 143 (Community Detection) in `GraphService`.
 - [ ] **Novelty**: Implement Strategy 151 (Anchor Point Navigation) - Missing Service.
+- [ ] **Multimodal**: Implement Strategy 50 (Cross-Modal Retrieval) & 78 (Multi-Vector) - Logic missing in `MultimodalService`.
 
 ### Module 15: Version Control & Learning
 *Status: Missing Logic*
