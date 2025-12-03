@@ -154,7 +154,7 @@ Based on the latest audit (2025-12-03).
 - [ ] 108. Learning Curve Tracking (Partial)
 - [ ] 109. Importance Distribution
 - [ ] 110. Graph Evolution Metrics
-- [ ] 111. Geospatial Optimization (111-115)
+- [x] 111. Geospatial Optimization (111-115)
 
 ### 4. Novel & Experimental
 - [ ] 116. Flows vs Crews Pattern (Partial)
@@ -181,10 +181,10 @@ Based on the latest audit (2025-12-03).
 - [x] 137. Conflict Resolution Protocols
 - [ ] 138. Narrative Threading (Partial)
 - [ ] 139. Contextual Bandits
-- [ ] 140. Temporal Heatmaps
+- [x] 140. Temporal Heatmaps
 - [x] 141. Keyword Extraction Tagging
 - [ ] 142. Entity Disambiguation (Partial)
-- [ ] 143. Community Detection
+- [x] 143. Community Detection
 - [x] 144. Centrality Analysis
 - [x] 145. Pathfinding Algorithms
 - [x] 146. Subgraph Isomorphism

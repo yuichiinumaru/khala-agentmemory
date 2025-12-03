@@ -6,10 +6,10 @@ functionality for spatial memory organization, proximity search, and trajectory 
 
 from typing import List, Dict, Any, Optional, Tuple
 import logging
+import json
 from datetime import datetime
 
 from khala.domain.memory.value_objects import Location
-from khala.domain.memory.entities import Memory
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,6 @@ class SpatialMemoryService:
         # Strategy 114: Track history in versions
         if memory.location:
             # Create a snapshot of the current state before update
-            # We store a simplified snapshot to avoid massive duplication
             snapshot = {
                 "updated_at": datetime.now().isoformat(),
                 "location": memory.location.to_geojson(),
@@ -118,23 +117,13 @@ class SpatialMemoryService:
                         "limit": limit
                     }
                 )
-                print(f"DEBUG: find_nearby_memories result: {result}")
 
-                # Handle case where result is an error string
-                if isinstance(result, str):
-                    logger.error(f"Query returned error string: {result}")
-                    return []
-
-                if result and isinstance(result, list):
-                    # Check if the first item is a result dict or list of records
-                    if len(result) > 0:
-                        first = result[0]
-                        # Check if it looks like a QueryResponse wrapper
-                        if isinstance(first, dict) and 'status' in first and 'result' in first:
-                            return first['result']
-                        # Otherwise assume it is the list of records itself
-                        return result
-
+                # Handle SurrealDB response format
+                if isinstance(result, list) and len(result) > 0:
+                    first = result[0]
+                    if isinstance(first, dict) and 'status' in first and 'result' in first:
+                        return first['result']
+                    return result
                 return []
         except Exception as e:
             logger.error(f"Failed to find nearby memories: {e}")
@@ -153,63 +142,41 @@ class SpatialMemoryService:
         Returns:
             List of memories inside the region.
         """
-        from surrealdb.data.types.geometry import GeometryPolygon, GeometryLine, GeometryPoint
-
         # Ensure polygon is closed
+        if not polygon_coords:
+            return []
+
         if polygon_coords[0] != polygon_coords[-1]:
             polygon_coords.append(polygon_coords[0])
 
-        # Construct Polygon string manually to avoid binding/SDK issues
-        import json
-
         coords_list = [[lon, lat] for lon, lat in polygon_coords]
-        # Polygon needs nested array: [ [ [x,y], [x,y], ... ] ] (rings)
-        # We assume single exterior ring.
+
+        # Construct GeoJSON Polygon structure
+        # Note: GeoJSON coordinates for Polygon are [ [ [x,y], ... ] ] (array of rings)
         polygon_struct = {
             "type": "Polygon",
             "coordinates": [coords_list]
         }
 
+        # Serialize to JSON string to inject directly
+        # This bypasses potential SDK binding issues with complex geometry types
         polygon_json = json.dumps(polygon_struct)
 
-        # Inject JSON literal directly into query
         query = f"""
         SELECT * FROM memory
         WHERE location IS NOT NONE
           AND location INSIDE {polygon_json};
-        # Construct Polygon as dict to avoid SDK constructor issues with single-ring polygons
-        polygon_data = {
-            "type": "Polygon",
-            "coordinates": [[
-                [lon, lat] for lon, lat in polygon_coords
-            ]]
-        }
-
-        query = """
-        SELECT * FROM memory
-        WHERE location IS NOT NONE
-          AND location INSIDE <geometry>$polygon;
         """
 
         try:
             async with self.db_client.get_connection() as conn:
-              
-                result = await conn.query(
-                    query,
-                    {"polygon": polygon_data}
-                )
-                print(f"DEBUG: find_within_region result: {result}")
+                result = await conn.query(query)
 
-                if isinstance(result, str):
-                    logger.error(f"Query returned error string: {result}")
-                    return []
-
-                if result and isinstance(result, list):
-                    if len(result) > 0:
-                        first = result[0]
-                        if isinstance(first, dict) and 'status' in first and 'result' in first:
-                            return first['result']
-                        return result
+                if isinstance(result, list) and len(result) > 0:
+                    first = result[0]
+                    if isinstance(first, dict) and 'status' in first and 'result' in first:
+                        return first['result']
+                    return result
                 return []
         except Exception as e:
             logger.error(f"Failed to find memories in region: {e}")
@@ -226,28 +193,27 @@ class SpatialMemoryService:
         Returns:
             List of historical locations with timestamps.
         """
+        # Normalize ID
+        if "memory:" in memory_id:
+            memory_id = memory_id.split("memory:")[1]
+
         query = """
-        SELECT *
-        FROM memory
-        WHERE id = type::thing('memory', $id);
         SELECT id, updated_at, location, versions
         FROM memory
-        WHERE id = $id;
+        WHERE id = type::thing('memory', $id);
         """
 
         try:
             async with self.db_client.get_connection() as conn:
                 result = await conn.query(query, {"id": memory_id})
-                if not result:
-                    return []
 
-                # Check for QueryResponse wrapper
-                if isinstance(result[0], dict) and 'status' in result[0] and 'result' in result[0]:
-                    # result[0]['result'] is the list of records
-                    records = result[0]['result']
-                else:
-                    # result is likely the list of records itself
-                    records = result
+                records = []
+                if isinstance(result, list) and len(result) > 0:
+                    first = result[0]
+                    if isinstance(first, dict) and 'status' in first and 'result' in first:
+                        records = first['result']
+                    else:
+                        records = result
 
                 if not records:
                     return []
@@ -265,16 +231,6 @@ class SpatialMemoryService:
                 if memory.get('location'):
                     trajectory.append({
                         "timestamp": to_iso(memory.get('updated_at')),
-                if not result or not result[0]:
-                    return []
-
-                memory = result[0][0]
-                trajectory = []
-
-                # Add current location
-                if memory.get('location'):
-                    trajectory.append({
-                        "timestamp": memory.get('updated_at'),
                         "location": memory.get('location'),
                         "source": "current"
                     })
@@ -285,12 +241,11 @@ class SpatialMemoryService:
                     if ver.get('location'):
                         trajectory.append({
                             "timestamp": to_iso(ver.get('updated_at') or ver.get('created_at')),
-                            "timestamp": ver.get('updated_at') or ver.get('created_at'),
                             "location": ver.get('location'),
                             "source": "history"
                         })
 
-                # Sort by timestamp (string comparison of ISO dates is safe)
+                # Sort by timestamp (descending)
                 trajectory.sort(key=lambda x: x.get('timestamp') or "", reverse=True)
                 return trajectory
 
@@ -326,7 +281,13 @@ class SpatialMemoryService:
         try:
             async with self.db_client.get_connection() as conn:
                 result = await conn.query(query, {"prec": grid_precision})
-                return result[0] if result else []
+
+                if isinstance(result, list) and len(result) > 0:
+                    first = result[0]
+                    if isinstance(first, dict) and 'status' in first and 'result' in first:
+                        return first['result']
+                    return result
+                return []
         except Exception as e:
             logger.error(f"Failed to find spatial clusters: {e}")
             return []
