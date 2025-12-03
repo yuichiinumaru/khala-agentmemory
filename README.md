@@ -192,7 +192,7 @@ Based on the latest audit (2025-12-03).
 - [ ] 148. Scoped Memories (Partial)
 - [ ] 149. Transient Scratchpads
 - [ ] 150. Recursive Summarization (Partial)
-- [ ] 151. Anchor Point Navigation
+- [x] 151. Anchor Point Navigation
 - [x] 152. Bias Detection
 - [x] 153. Intent-Based Prefetching
 - [x] 154. User Modeling

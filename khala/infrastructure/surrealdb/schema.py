@@ -64,6 +64,7 @@ class DatabaseSchema:
         DEFINE FIELD verification_issues ON memory TYPE array<string>;
         DEFINE FIELD debate_consensus ON memory TYPE option<object>;
         DEFINE FIELD is_archived ON memory TYPE bool DEFAULT false;
+        DEFINE FIELD is_anchor ON memory TYPE bool DEFAULT false; -- Strategy 151
         DEFINE FIELD decay_score ON memory VALUE fn::decay_score(0.0, $importance, 30.0);
         
         -- Tier 6: Advanced Metadata
@@ -114,6 +115,7 @@ class DatabaseSchema:
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
+        DEFINE INDEX anchor_index ON memory FIELDS is_anchor;
         """,
         
         # Advanced Vector Ops Tables (Module 11.C.2)
