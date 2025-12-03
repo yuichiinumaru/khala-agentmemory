@@ -112,6 +112,20 @@ class ModelRegistry:
             top_p=0.0,
             top_k=1
         ),
+
+        # Multimodal Embedding model
+        "multimodal-embedding-001": GeminiModel(
+            name="Gemini Multimodal Embedding 001",
+            tier=ModelTier.FAST,
+            model_id="multimodal-embedding-001",
+            cost_per_million_tokens=5.0, # Estimate
+            max_tokens=2048,
+            supports_embeddings=True,
+            embedding_dimensions=1408, # Standard for multimodal
+            temperature=0.0,
+            top_p=0.0,
+            top_k=1
+        ),
     }
     
     @classmethod
