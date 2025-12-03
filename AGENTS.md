@@ -2,7 +2,7 @@
 
 **Project**: KHALA (Knowledge Hierarchical Adaptive Long-term Agent)
 **Version**: 2.0.1 (Forge v2 Compliant)
-**Status**: Advanced Implementation Phase (~75% Complete)
+**Status**: Advanced Implementation Phase (Audit: Critical Issues Found in Module 11/15)
 
 ---
 
@@ -19,7 +19,7 @@
 
 KHALA is an advanced memory system for AI agents, built on **SurrealDB** and **Agno**.
 
--   **Current State**: Modules 01-10 are complete. Focus is on Module 11 (SurrealDB Optimizations) and Module 12 (Novel/Experimental).
+-   **Current State**: Modules 01-10 are complete. Module 11 (Spatial) is broken. Module 15 (Version Control) is missing.
 -   **Architecture**: Domain-Driven Design (DDD).
     -   `khala/domain/`: Pure entities/logic.
     -   `khala/application/`: Services/orchestration.
