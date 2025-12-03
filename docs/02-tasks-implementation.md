@@ -17,15 +17,16 @@
 ## 🔴 UNIMPLEMENTED / MISSING (Research & Novelty)
 
 ### Module 11: SurrealDB Advanced Optimization
-*Status: Unimplemented Features*
-- [ ] **M11.C.1 Geospatial**: Implement Strategies 111-115 (Spatial Memory).
+*Status: Implementation Broken / Incomplete*
+- [ ] **M11.C.1 Geospatial**: Fix critical syntax errors and bugs in `spatial_memory_service.py` (Strategies 111-115).
 
 ### Module 14: Advanced Graph Algorithms (Optimization)
 - [ ] **Graph Analysis**: Implement Strategy 143 (Community Detection).
-- [ ] **Novelty**: Implement Strategy 151 (Anchor Point Navigation).
+- [ ] **Novelty**: Implement Strategy 151 (Anchor Point Navigation) - Missing Service.
 
 ### Module 15: Version Control & Learning
 *Status: Missing Logic*
+- [ ] **Version Control**: Implement Strategy 156 (BranchService) - Missing Service.
 - [ ] **Advanced Versioning**: Implement Strategy 157 (Forking Capabilities) & 158 (Merge Conflict Resolution).
 - [ ] **Adaptive Learning**: Implement Strategy 139 (Contextual Bandits) & 140 (Temporal Heatmaps).
 
