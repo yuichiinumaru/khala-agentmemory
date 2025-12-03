@@ -16,10 +16,6 @@
 
 ## 🔴 UNIMPLEMENTED / MISSING (Research & Novelty)
 
-### Module 11: SurrealDB Advanced Optimization
-*Status: Unimplemented Features*
-- [ ] **M11.C.1 Geospatial**: Implement Strategies 111-115 (Spatial Memory).
-
 ### Module 14: Advanced Graph Algorithms (Optimization)
 - [ ] **Graph Analysis**: Implement Strategy 143 (Community Detection).
 - [ ] **Novelty**: Implement Strategy 151 (Anchor Point Navigation).
@@ -44,6 +40,7 @@
 - [x] Nested Docs, Polymorphism, Versioning.
 - [x] Graph Schemas (Hyperedges, Bi-temporal).
 - [x] **Advanced Vector Ops** (Strategies 79-84): Quantization, Drift, Clustering, Interpolation, Anomaly Detection.
+- [x] **Geospatial** (Strategies 111-115): Location, Region Search, Trajectory.
 
 ### Novel Architectures (Strategies 116-159)
 - [x] **Dream & Simulation** (Strategies 129, 130): Dream Consolidation, Counterfactuals.

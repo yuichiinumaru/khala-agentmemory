@@ -118,7 +118,6 @@ class SpatialMemoryService:
                         "limit": limit
                     }
                 )
-                print(f"DEBUG: find_nearby_memories result: {result}")
 
                 # Handle case where result is an error string
                 if isinstance(result, str):
@@ -159,24 +158,6 @@ class SpatialMemoryService:
         if polygon_coords[0] != polygon_coords[-1]:
             polygon_coords.append(polygon_coords[0])
 
-        # Construct Polygon string manually to avoid binding/SDK issues
-        import json
-
-        coords_list = [[lon, lat] for lon, lat in polygon_coords]
-        # Polygon needs nested array: [ [ [x,y], [x,y], ... ] ] (rings)
-        # We assume single exterior ring.
-        polygon_struct = {
-            "type": "Polygon",
-            "coordinates": [coords_list]
-        }
-
-        polygon_json = json.dumps(polygon_struct)
-
-        # Inject JSON literal directly into query
-        query = f"""
-        SELECT * FROM memory
-        WHERE location IS NOT NONE
-          AND location INSIDE {polygon_json};
         # Construct Polygon as dict to avoid SDK constructor issues with single-ring polygons
         polygon_data = {
             "type": "Polygon",
@@ -193,12 +174,10 @@ class SpatialMemoryService:
 
         try:
             async with self.db_client.get_connection() as conn:
-              
                 result = await conn.query(
                     query,
                     {"polygon": polygon_data}
                 )
-                print(f"DEBUG: find_within_region result: {result}")
 
                 if isinstance(result, str):
                     logger.error(f"Query returned error string: {result}")
@@ -227,9 +206,6 @@ class SpatialMemoryService:
             List of historical locations with timestamps.
         """
         query = """
-        SELECT *
-        FROM memory
-        WHERE id = type::thing('memory', $id);
         SELECT id, updated_at, location, versions
         FROM memory
         WHERE id = $id;
@@ -242,12 +218,14 @@ class SpatialMemoryService:
                     return []
 
                 # Check for QueryResponse wrapper
-                if isinstance(result[0], dict) and 'status' in result[0] and 'result' in result[0]:
-                    # result[0]['result'] is the list of records
-                    records = result[0]['result']
+                if isinstance(result, list) and len(result) > 0:
+                    first = result[0]
+                    if isinstance(first, dict) and 'status' in first and 'result' in first:
+                        records = first['result']
+                    else:
+                        records = result
                 else:
-                    # result is likely the list of records itself
-                    records = result
+                    return []
 
                 if not records:
                     return []
@@ -265,16 +243,6 @@ class SpatialMemoryService:
                 if memory.get('location'):
                     trajectory.append({
                         "timestamp": to_iso(memory.get('updated_at')),
-                if not result or not result[0]:
-                    return []
-
-                memory = result[0][0]
-                trajectory = []
-
-                # Add current location
-                if memory.get('location'):
-                    trajectory.append({
-                        "timestamp": memory.get('updated_at'),
                         "location": memory.get('location'),
                         "source": "current"
                     })
@@ -285,7 +253,6 @@ class SpatialMemoryService:
                     if ver.get('location'):
                         trajectory.append({
                             "timestamp": to_iso(ver.get('updated_at') or ver.get('created_at')),
-                            "timestamp": ver.get('updated_at') or ver.get('created_at'),
                             "location": ver.get('location'),
                             "source": "history"
                         })

@@ -11,6 +11,9 @@ mock_surreal_module = MagicMock()
 mock_surreal_module.AsyncSurreal = MagicMock
 mock_surreal_module.Surreal = MagicMock
 sys.modules["surrealdb"] = mock_surreal_module
+sys.modules["surrealdb.data"] = MagicMock()
+sys.modules["surrealdb.data.types"] = MagicMock()
+sys.modules["surrealdb.data.types.geometry"] = MagicMock()
 
 def random_string(length=10):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
