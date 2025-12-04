@@ -115,7 +115,7 @@ class KnowledgeGraphReasoningService:
         return paths[0], response.text
 
     async def _save_trace(self, start: str, query: str, path: ReasoningPath, explanation: str) -> None:
-        """Save reasoning trace to DB."""
+        """Save reasoning trace to DB (Strategy 76: Explainability Graph)."""
         query_sql = """
         CREATE reasoning_paths CONTENT {
             query_entity: $start,
@@ -127,10 +127,15 @@ class KnowledgeGraphReasoningService:
             created_at: time::now()
         };
         """
+        # Structure the path as a list of objects with node/edge details
+        structured_path = []
+        for i, node in enumerate(path.nodes):
+            structured_path.append({"node": node, "step": i})
+
         params = {
             "start": start,
             "end": path.nodes[-1] if path.nodes else "",
-            "path": [{"node": n} for n in path.nodes],
+            "path": structured_path,
             "explanation": explanation
         }
         async with self.db_client.get_connection() as conn:

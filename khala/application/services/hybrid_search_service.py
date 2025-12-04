@@ -5,6 +5,7 @@ from khala.domain.memory.repository import MemoryRepository
 from khala.domain.ports.embedding_service import EmbeddingService
 from khala.domain.memory.entities import Memory, EmbeddingVector
 from khala.application.services.query_expansion_service import QueryExpansionService
+from khala.application.services.translation_service import TranslationService
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 
 logger = logging.getLogger(__name__)
@@ -18,11 +19,13 @@ class HybridSearchService:
         memory_repository: MemoryRepository,
         embedding_service: EmbeddingService,
         query_expansion_service: Optional[QueryExpansionService] = None,
+        translation_service: Optional[TranslationService] = None,
         db_client: Optional[SurrealDBClient] = None
     ):
         self.memory_repo = memory_repository
         self.embedding_service = embedding_service
         self.query_expansion_service = query_expansion_service
+        self.translation_service = translation_service
         self.db_client = db_client
 
     async def search(
@@ -35,7 +38,8 @@ class HybridSearchService:
         vector_weight: float = 1.0,
         bm25_weight: float = 1.0,
         expand_query: bool = False,
-        enable_graph_reranking: bool = False
+        enable_graph_reranking: bool = False,
+        context: Optional[Dict[str, Any]] = None
     ) -> List[Memory]:
         """
         Perform hybrid search using Reciprocal Rank Fusion (RRF).
@@ -49,14 +53,26 @@ class HybridSearchService:
             vector_weight: Weight for vector search results (default 1.0).
             bm25_weight: Weight for BM25 search results (default 1.0).
             enable_graph_reranking: Whether to apply graph distance reranking (Strategy 121).
+            context: Contextual parameters for boosting (Strategy 97).
 
         Returns:
             List of unique Memory objects sorted by RRF score.
         """
-        # 0. Query Expansion
-        expanded_queries = [query]
+        # 0. Multilingual Support (Strategy 95)
+        # Check if translation is needed
+        search_query = query
+        if self.translation_service:
+            # We only attempt translation if the query seems non-English or we want robust handling
+            # Ideally this is user-configurable, but we'll do auto-detect.
+            trans_result = await self.translation_service.detect_and_translate(query)
+            if trans_result.get("was_translated"):
+                search_query = trans_result.get("translated_text")
+                logger.info(f"Translated query: '{query}' -> '{search_query}' ({trans_result.get('detected_language')})")
+
+        # 0.1 Query Expansion
+        expanded_queries = [search_query]
         if expand_query and self.query_expansion_service:
-            expanded_queries = await self.query_expansion_service.expand_query(query)
+            expanded_queries = await self.query_expansion_service.expand_query(search_query)
 
         # 1. Fetch candidates in parallel for all queries
         # We fetch top_k * 2 candidates from each source to ensure good fusion overlap
@@ -156,7 +172,45 @@ class HybridSearchService:
         if not client_to_use and hasattr(self.memory_repo, 'client'):
             client_to_use = self.memory_repo.client
 
-        if enable_graph_reranking and client_to_use and final_results:
+        # 4. Contextual Boosting (Strategy 97)
+        # Apply boosts based on context (time, location, etc.)
+        context_boost_scores = [0.0] * len(final_results)
+        if context:
+            try:
+                from datetime import datetime
+                # Temporal Proximity
+                current_time = context.get('current_time')
+                if current_time:
+                     # If current_time is passed as datetime
+                    if isinstance(current_time, str):
+                        current_time = datetime.fromisoformat(current_time)
+
+                    for i, m in enumerate(final_results):
+                        # Boost recent memories
+                        if m.created_at:
+                            age_seconds = (current_time - m.created_at).total_seconds()
+                            if age_seconds < 3600: # 1 hour
+                                context_boost_scores[i] += 0.2
+                            elif age_seconds < 86400: # 1 day
+                                context_boost_scores[i] += 0.1
+
+                # Location Proximity (if both have location)
+                # This requires calculating distance, which is expensive here.
+                # We assume SurrealDB handled geospatial filtering if 'filters' were used.
+                # Here we might just boost if location metadata matches vaguely.
+
+                # Boost if in same episode
+                active_episode_id = context.get('episode_id')
+                if active_episode_id:
+                     for i, m in enumerate(final_results):
+                         if m.episode_id == active_episode_id:
+                             context_boost_scores[i] += 0.15
+
+            except Exception as e:
+                logger.warning(f"Contextual boosting failed: {e}")
+
+
+        if (enable_graph_reranking and client_to_use and final_results) or any(s > 0 for s in context_boost_scores):
             try:
                 # Use the top result as the "Anchor"
                 anchor_id = final_results[0].id
@@ -168,51 +222,53 @@ class HybridSearchService:
                 anchor_episode = final_results[0].episode_id
                 connected_ids = set()
 
-                # If we had Memory-Memory links in relationship table, we could query them.
-                # Assuming 'relationship' table links entities. If Memory IDs are used as Entity IDs or
-                # mapped, we can query. For now, we'll try to fetch direct neighbors.
+                if enable_graph_reranking:
+                    # If we had Memory-Memory links in relationship table, we could query them.
+                    # Assuming 'relationship' table links entities. If Memory IDs are used as Entity IDs or
+                    # mapped, we can query. For now, we'll try to fetch direct neighbors.
 
-                # We need to handle the ID format (strip 'memory:' if present)
-                clean_anchor_id = anchor_id
-                if ":" in clean_anchor_id:
-                    clean_anchor_id = clean_anchor_id.split(":")[1]
+                    # We need to handle the ID format (strip 'memory:' if present)
+                    clean_anchor_id = anchor_id
+                    if ":" in clean_anchor_id:
+                        clean_anchor_id = clean_anchor_id.split(":")[1]
 
-                query_graph = """
-                SELECT from_entity_id, to_entity_id FROM relationship
-                WHERE from_entity_id = $anchor OR to_entity_id = $anchor
-                LIMIT 50;
-                """
+                    query_graph = """
+                    SELECT from_entity_id, to_entity_id FROM relationship
+                    WHERE from_entity_id = $anchor OR to_entity_id = $anchor
+                    LIMIT 50;
+                    """
 
-                # We use a raw query via client if possible, or skip if client doesn't expose raw query easily here
-                # accessing client_to_use.get_connection()
-                async with client_to_use.get_connection() as conn:
-                    graph_resp = await conn.query(query_graph, {"anchor": clean_anchor_id})
-                    if graph_resp and isinstance(graph_resp, list):
-                         items = graph_resp
-                         if len(graph_resp) > 0 and isinstance(graph_resp[0], dict) and 'result' in graph_resp[0]:
-                             items = graph_resp[0]['result']
+                    # We use a raw query via client if possible, or skip if client doesn't expose raw query easily here
+                    # accessing client_to_use.get_connection()
+                    async with client_to_use.get_connection() as conn:
+                        graph_resp = await conn.query(query_graph, {"anchor": clean_anchor_id})
+                        if graph_resp and isinstance(graph_resp, list):
+                            items = graph_resp
+                            if len(graph_resp) > 0 and isinstance(graph_resp[0], dict) and 'result' in graph_resp[0]:
+                                items = graph_resp[0]['result']
 
-                         for item in items:
-                             if isinstance(item, dict):
-                                 if item.get('from_entity_id') != clean_anchor_id:
-                                     connected_ids.add(item.get('from_entity_id'))
-                                 if item.get('to_entity_id') != clean_anchor_id:
-                                     connected_ids.add(item.get('to_entity_id'))
+                            for item in items:
+                                if isinstance(item, dict):
+                                    if item.get('from_entity_id') != clean_anchor_id:
+                                        connected_ids.add(item.get('from_entity_id'))
+                                    if item.get('to_entity_id') != clean_anchor_id:
+                                        connected_ids.add(item.get('to_entity_id'))
 
                 # Apply Boosting
                 # Logic:
                 # 1. Same Episode: +15% score
                 # 2. Graph Neighbor: +10% score
+                # 3. Context Boost: +Variable
 
                 reranked_scores = []
-                for m in final_results:
+                for i, m in enumerate(final_results):
                     # Base score is inverted rank (higher is better)
                     # We can't easily modify the RRF score directly as it's not passed down.
                     # But we can re-sort.
 
-                    boost_score = 0.0
+                    boost_score = context_boost_scores[i]
 
-                    # Episode Boost
+                    # Episode Boost (if not already handled by context)
                     if anchor_episode and m.episode_id == anchor_episode:
                         boost_score += 0.15
 
@@ -236,7 +292,7 @@ class HybridSearchService:
 
                 final_results = [m for m, score in zipped]
 
-                logger.debug(f"Graph reranking applied. Anchor: {anchor_id}, Connected: {len(connected_ids)}")
+                logger.debug(f"Graph/Context reranking applied. Anchor: {anchor_id}, Connected: {len(connected_ids)}")
 
             except Exception as e:
                 logger.warning(f"Graph reranking failed: {e}")
