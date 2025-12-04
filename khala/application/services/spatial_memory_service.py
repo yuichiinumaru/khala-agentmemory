@@ -118,6 +118,21 @@ class SpatialMemoryService:
                     }
                 )
 
+                # Handle case where result is an error string
+                if isinstance(result, str):
+                    logger.error(f"Query returned error string: {result}")
+                    return []
+
+                if result and isinstance(result, list):
+                    # Check if the first item is a result dict or list of records
+                    if len(result) > 0:
+                        first = result[0]
+                        # Check if it looks like a QueryResponse wrapper
+                        if isinstance(first, dict) and 'status' in first and 'result' in first:
+                            return first['result']
+                        # Otherwise assume it is the list of records itself
+                        return result
+
                 # Handle SurrealDB response format
                 if isinstance(result, list) and len(result) > 0:
                     first = result[0]
@@ -149,6 +164,18 @@ class SpatialMemoryService:
         if polygon_coords[0] != polygon_coords[-1]:
             polygon_coords.append(polygon_coords[0])
 
+        # Construct Polygon as dict to avoid SDK constructor issues with single-ring polygons
+        polygon_data = {
+            "type": "Polygon",
+            "coordinates": [[
+                [lon, lat] for lon, lat in polygon_coords
+            ]]
+        }
+
+        query = """
+        SELECT * FROM memory
+        WHERE location IS NOT NONE
+          AND location INSIDE <geometry>$polygon;
         coords_list = [[lon, lat] for lon, lat in polygon_coords]
 
         # Construct GeoJSON Polygon structure
@@ -171,6 +198,10 @@ class SpatialMemoryService:
         try:
             async with self.db_client.get_connection() as conn:
                 result = await conn.query(query)
+                result = await conn.query(
+                    query,
+                    {"polygon": polygon_data}
+                )
 
                 if isinstance(result, list) and len(result) > 0:
                     first = result[0]
@@ -207,6 +238,7 @@ class SpatialMemoryService:
             async with self.db_client.get_connection() as conn:
                 result = await conn.query(query, {"id": memory_id})
 
+                # Check for QueryResponse wrapper
                 records = []
                 if isinstance(result, list) and len(result) > 0:
                     first = result[0]
@@ -214,6 +246,8 @@ class SpatialMemoryService:
                         records = first['result']
                     else:
                         records = result
+                else:
+                    return []
 
                 if not records:
                     return []

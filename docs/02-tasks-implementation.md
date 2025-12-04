@@ -60,6 +60,7 @@
 - [x] Nested Docs, Polymorphism, Versioning.
 - [x] Graph Schemas (Hyperedges, Bi-temporal).
 - [x] **Advanced Vector Ops** (Strategies 79-84): Quantization, Drift, Clustering, Interpolation, Anomaly Detection.
+- [x] **Geospatial** (Strategies 111-115): Location, Region Search, Trajectory.
 
 ### Novel Architectures (Strategies 116-159)
 - [x] **Dream & Simulation** (Strategies 129, 130): Dream Consolidation, Counterfactuals.

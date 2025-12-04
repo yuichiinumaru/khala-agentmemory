@@ -20,6 +20,8 @@ setup(
         "structlog>=23.0.0",
         "click>=8.0.0",
         "rich>=13.0.0",
+        "networkx>=3.0.0",
+        "fastapi>=0.109.0",
     ],
     extras_require={
         "dev": [
