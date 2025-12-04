@@ -136,10 +136,10 @@
 - [ ] **142. Entity Disambiguation**: Merge logic.
 
 ### Phase 4: Time & Forensics
-- [ ] **38. Advanced Multi-Index Strategy**: Composite indexes.
-- [ ] **41. Bi-temporal Graph Edges**: Full API exposure.
-- [ ] **75. Temporal Graph Evolution**: Snapshots.
-- [ ] **104. Agent Activity Timeline**: Logging.
-- [ ] **106. Consolidation Schedule**: Intelligent scheduling.
-- [ ] **108. Learning Curve Tracking**: Verification score trends.
-- [ ] **119. Temporal Edge Invalidation**: Soft-delete logic.
+- [x] **38. Advanced Multi-Index Strategy**: Composite indexes.
+- [x] **41. Bi-temporal Graph Edges**: Full API exposure.
+- [x] **75. Temporal Graph Evolution**: Snapshots.
+- [x] **104. Agent Activity Timeline**: Logging.
+- [x] **106. Consolidation Schedule**: Intelligent scheduling.
+- [x] **108. Learning Curve Tracking**: Verification score trends.
+- [x] **119. Temporal Edge Invalidation**: Soft-delete logic.

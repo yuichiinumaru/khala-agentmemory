@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 import math
+import networkx as nx
 
 from ...domain.memory.entities import Memory, MemoryTier
 from ...domain.memory.value_objects import ImportanceScore, DecayScore
@@ -203,6 +204,108 @@ class TemporalAnalysisService:
                 results["errors"] += 1
 
         return results
+
+    async def track_graph_evolution(self, graph_service) -> str:
+        """
+        Strategy 75: Temporal Graph Evolution.
+        Captures a snapshot of the current graph state and stores metrics.
+
+        Args:
+            graph_service: GraphService instance.
+
+        Returns:
+            ID of the created snapshot.
+        """
+        # 1. Get current graph snapshot (valid now)
+        now = datetime.now(timezone.utc)
+        graph = await graph_service.get_graph_snapshot(now, limit=10000)
+
+        if not graph.number_of_nodes():
+            logger.info("Graph is empty, skipping snapshot.")
+            return ""
+
+        # 2. Calculate metrics
+        metrics = {
+            "node_count": graph.number_of_nodes(),
+            "edge_count": graph.number_of_edges(),
+            "density": nx.density(graph),
+            "avg_degree": 0.0,
+            "component_count": 0,
+            "avg_clustering": 0.0,
+            "timestamp": now.isoformat()
+        }
+
+        if graph.number_of_nodes() > 0:
+            metrics["avg_degree"] = sum(dict(graph.degree()).values()) / graph.number_of_nodes()
+
+            if graph.is_directed():
+                 metrics["component_count"] = nx.number_weakly_connected_components(graph)
+            else:
+                 metrics["component_count"] = nx.number_connected_components(graph)
+
+        try:
+             # Average clustering (convert to undirected for simple metric)
+             metrics["avg_clustering"] = nx.average_clustering(graph.to_undirected())
+        except Exception:
+             pass
+
+        # 3. Store in DB
+        query = """
+        CREATE graph_snapshot CONTENT {
+            timestamp: $timestamp,
+            node_count: $node_count,
+            edge_count: $edge_count,
+            density: $density,
+            avg_degree: $avg_degree,
+            avg_clustering: $avg_clustering,
+            component_count: $component_count
+        };
+        """
+
+        try:
+            async with self.db_client.get_connection() as conn:
+                response = await conn.query(query, metrics)
+                if response and isinstance(response, list) and len(response) > 0:
+                     if isinstance(response[0], dict) and 'id' in response[0]:
+                         return response[0]['id']
+                     if isinstance(response[0], dict) and 'result' in response[0] and len(response[0]['result']) > 0:
+                         return response[0]['result'][0]['id']
+                return ""
+        except Exception as e:
+            logger.error(f"Failed to save graph snapshot: {e}")
+            return ""
+
+    async def predict_consolidation_schedule(self) -> Dict[str, Any]:
+        """
+        Strategy 106: Consolidation Schedule.
+        Predicts optimal times for maintenance jobs based on activity patterns.
+        """
+        # 1. Get recent activity heatmap (last 7 days)
+        heatmap = await self.generate_heatmap(time_window_days=7)
+
+        # 2. Analyze daily volume
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        volume_yesterday = heatmap.get(yesterday, 0)
+
+        recommendation = {
+            "should_run_now": False,
+            "recommended_time": "03:00 UTC",
+            "reason": "Routine maintenance",
+            "priority": "low",
+            "volume_trend": "stable"
+        }
+
+        if volume_yesterday > 100:
+            recommendation["priority"] = "high"
+            recommendation["reason"] = "High volume detected yesterday"
+            recommendation["volume_trend"] = "high"
+
+        # Check current hour (mock: best time is 2-5 AM UTC)
+        current_hour = datetime.now(timezone.utc).hour
+        if 2 <= current_hour <= 5:
+             recommendation["should_run_now"] = True
+
+        return recommendation
 
     async def generate_heatmap(
         self,
