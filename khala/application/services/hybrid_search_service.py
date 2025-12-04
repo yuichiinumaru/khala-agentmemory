@@ -5,6 +5,7 @@ from khala.domain.memory.repository import MemoryRepository
 from khala.domain.ports.embedding_service import EmbeddingService
 from khala.domain.memory.entities import Memory, EmbeddingVector
 from khala.application.services.query_expansion_service import QueryExpansionService
+from khala.application.services.intent_classifier import IntentClassifier, QueryIntent
 from khala.application.services.translation_service import TranslationService
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 
@@ -19,14 +20,52 @@ class HybridSearchService:
         memory_repository: MemoryRepository,
         embedding_service: EmbeddingService,
         query_expansion_service: Optional[QueryExpansionService] = None,
+        intent_classifier: Optional[IntentClassifier] = None,
         translation_service: Optional[TranslationService] = None,
         db_client: Optional[SurrealDBClient] = None
     ):
         self.memory_repo = memory_repository
         self.embedding_service = embedding_service
         self.query_expansion_service = query_expansion_service
+        self.intent_classifier = intent_classifier
         self.translation_service = translation_service
         self.db_client = db_client
+
+    def get_search_params_for_intent(self, intent: str) -> Dict[str, Any]:
+        """
+        Returns optimized search parameters based on query intent.
+        """
+        params = {
+            "vector_weight": 1.0,
+            "bm25_weight": 1.0,
+            "top_k": 10,
+            "enable_graph_reranking": False
+        }
+
+        if intent == QueryIntent.FACTUAL.value:
+            # Boost BM25 for exact matches, disable graph for speed
+            params["bm25_weight"] = 1.5
+            params["vector_weight"] = 0.5
+            params["top_k"] = 5
+
+        elif intent == QueryIntent.ANALYSIS.value:
+            # Boost Vector for semantic understanding, enable graph for context
+            params["vector_weight"] = 1.5
+            params["bm25_weight"] = 0.5
+            params["top_k"] = 20
+            params["enable_graph_reranking"] = True
+
+        elif intent == QueryIntent.SUMMARY.value:
+            # Balanced, but more results
+            params["top_k"] = 15
+
+        elif intent == QueryIntent.CREATIVE.value:
+            # High vector weight for inspiration
+            params["vector_weight"] = 1.8
+            params["bm25_weight"] = 0.2
+            params["top_k"] = 15
+
+        return params
 
     async def search(
         self,
@@ -39,6 +78,7 @@ class HybridSearchService:
         bm25_weight: float = 1.0,
         expand_query: bool = False,
         enable_graph_reranking: bool = False,
+        auto_detect_intent: bool = False
         context: Optional[Dict[str, Any]] = None
     ) -> List[Memory]:
         """
@@ -53,11 +93,32 @@ class HybridSearchService:
             vector_weight: Weight for vector search results (default 1.0).
             bm25_weight: Weight for BM25 search results (default 1.0).
             enable_graph_reranking: Whether to apply graph distance reranking (Strategy 121).
+            auto_detect_intent: Whether to use IntentClassifier to adjust weights dynamically.
             context: Contextual parameters for boosting (Strategy 97).
 
         Returns:
             List of unique Memory objects sorted by RRF score.
         """
+        # 0. Intent Detection (Optional)
+        if auto_detect_intent and self.intent_classifier:
+            try:
+                intent_res = await self.intent_classifier.classify_intent(query)
+                intent = intent_res.get("intent")
+                if intent:
+                    params = self.get_search_params_for_intent(intent)
+                    # Override defaults if they weren't explicitly customized
+                    if vector_weight == 1.0 and bm25_weight == 1.0:
+                        vector_weight = params.get("vector_weight", vector_weight)
+                        bm25_weight = params.get("bm25_weight", bm25_weight)
+                        if params.get("enable_graph_reranking"):
+                             enable_graph_reranking = True
+
+                    logger.info(f"Auto-detected intent '{intent}'. Adjusted weights: V={vector_weight}, BM25={bm25_weight}")
+            except Exception as e:
+                logger.warning(f"Auto-intent detection failed: {e}")
+
+        # 0.5 Query Expansion
+        expanded_queries = [query]
         # 0. Multilingual Support (Strategy 95)
         # Check if translation is needed
         search_query = query
