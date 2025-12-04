@@ -79,3 +79,67 @@
 - [x] **AgentsNet** (Strategy 167).
 - [x] **Dr. MAMR** (Strategy 168).
 - [x] **Prompt Genealogy** (Strategy 170).
+
+## 🛠️ Pending Fixes (Audit 2025-12-04)
+
+- [x] **Fix Critical Syntax Error** in `khala/application/services/spatial_memory_service.py` (Broken Python-in-SQL logic).
+- [x] **Implement Semaphore** in `GeminiClient` (Strategy 126).
+- [x] **Create Flows/Crews Directories** (`khala/domain/flow`, `khala/domain/crew`) and implement basic pattern (Strategy 116).
+- [x] **Add `is_consensus` fields** to `relationship` table in `schema.py` (Strategy 73).
+- [x] **Implement Cross-Modal Retrieval** in `MultimodalService` (Strategy 50).
+- [x] **Enable RBAC** in `schema.py` (Uncomment `rbac_permissions`).
+- [x] **Align Hyperedge Documentation** or Implementation (Hyperedges emulated via GraphService).
+
+## 🧩 Completed Novel Features (Dec 2025)
+
+- [x] **Strategy 133**: Surprise-Based Learning (`SurpriseService`).
+- [x] **Strategy 134**: Curiosity-Driven Exploration (`CuriosityService`).
+- [x] **Strategy 125**: Human-in-the-Loop (`ApprovalService`).
+- [x] **Strategy 149**: Transient Scratchpads (`ScratchpadService`).
+- [x] **Strategy 150**: Recursive Summarization (`RecursiveSummaryService`).
+- [x] **Strategy 122**: Path Lookup Acceleration (Graph Cache).
+- [x] **Strategy 148**: Scoped Memories (Schema & Entity).
+- [x] **Strategy 139**: Contextual Bandits (`AdaptiveLearningService`).
+- [x] **Strategy 140**: Temporal Heatmaps (`TemporalAnalysisService`).
+
+## 📚 Consolidated Tasks from Doc 18 (Remaining)
+
+### Phase 1: Quick Wins
+- [ ] **17. Natural Memory Triggers**: Heuristic checks in ingestion.
+- [ ] **20. Monitoring & Health Checks**: Queue depth/cache rates.
+- [ ] **31. Significance Scoring**: Implement `SignificanceScorer`.
+- [ ] **37. Emotion-Driven Memory**: Sentiment analysis via Gemini.
+- [ ] **68. Weighted Directed Multigraph**: Add `weight` to relationships.
+- [ ] **120. Custom Pydantic Entity Types**: Enforce typing.
+- [ ] **141. Keyword Extraction**: Integrate YAKE/Rake.
+- [ ] **147. Negative Constraints**: Add `negative_constraints` to AgentProfile.
+
+### Phase 2: Intelligence & Logic
+- [ ] **30. Query Intent Classification**: Add `IntentClassifier`.
+- [ ] **32. Multi-Perspective Questions**: Generate query variations.
+- [ ] **33. Topic Change Detection**: Detect semantic shifts.
+- [ ] **34. Cross-Session Pattern Recognition**: Background job.
+- [ ] **36. Instruction Registry**: `InstructionRepository`.
+- [ ] **40. Execution-Based Evaluation**: Code sandbox.
+- [ ] **46. Standard Operating Procedures (SOPs)**: Implement `SOPService`.
+- [ ] **52. Multi-Step Planning**: Verification logic.
+- [ ] **54. Hypothesis Testing**: `HypothesisService`.
+- [ ] **154. User Modeling**: `UserProfileService`.
+- [ ] **155. Dependency Mapping**: Track memory dependencies.
+
+### Phase 3: Advanced Search & Graph
+- [ ] **76. Explainability Graph**: Store reasoning traces.
+- [ ] **95. Multilingual Search**: Translation layer.
+- [ ] **97. Contextual Search**: Proximity logic.
+- [ ] **102. Semantic-FTS Hybrid**: Tunable weighting.
+- [ ] **123. Parallel Search Execution**: `asyncio.gather`.
+- [ ] **142. Entity Disambiguation**: Merge logic.
+
+### Phase 4: Time & Forensics
+- [ ] **38. Advanced Multi-Index Strategy**: Composite indexes.
+- [ ] **41. Bi-temporal Graph Edges**: Full API exposure.
+- [ ] **75. Temporal Graph Evolution**: Snapshots.
+- [ ] **104. Agent Activity Timeline**: Logging.
+- [ ] **106. Consolidation Schedule**: Intelligent scheduling.
+- [ ] **108. Learning Curve Tracking**: Verification score trends.
+- [ ] **119. Temporal Edge Invalidation**: Soft-delete logic.
