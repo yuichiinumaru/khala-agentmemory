@@ -262,6 +262,7 @@ class Relationship:
     to_entity_id: str
     relation_type: str
     strength: float
+    weight: float = 1.0  # Strategy 68: Weighted Directed Multigraph
     valid_from: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     valid_to: Optional[datetime] = field(default=None)
     transaction_time_start: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

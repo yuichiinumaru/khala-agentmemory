@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import time
+import os
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Set, Tuple
@@ -245,6 +246,30 @@ class EntityExtractionService:
         """Extract entities from text using Gemini API."""
         result = await self.extract_intelligence_from_text(text, context)
         return result.entities
+
+    async def extract_keywords(self, text: str, max_keywords: int = 5) -> List[str]:
+        """Extract keywords from text using Gemini (Strategy 141)."""
+        if not self.gemini_client:
+            return []
+
+        prompt = f"""
+        Extract the top {max_keywords} most important keywords or keyphrases from the text below.
+        Return ONLY a JSON list of strings (e.g. ["keyword1", "keyword2"]).
+
+        Text: "{text}"
+        """
+
+        try:
+            response = await self.gemini_client.generate_content_async(prompt)
+            content = response.text.strip()
+            if content.startswith("```json"):
+                content = content.replace("```json", "").replace("```", "")
+            elif content.startswith("```"):
+                content = content.replace("```", "")
+            return json.loads(content)
+        except Exception as e:
+            logger.warning(f"Keyword extraction failed: {e}")
+            return []
     
     async def _extract_intelligence_with_gemini(self, text: str, context: Optional[Dict[str, Any]]) -> IntelligenceResult:
         """Extract entities and sentiment using Gemini API."""

@@ -370,6 +370,7 @@ class DatabaseSchema:
         DEFINE FIELD to_entity_id ON relationship TYPE string;
         DEFINE FIELD relation_type ON relationship TYPE string;
         DEFINE FIELD strength ON relationship TYPE float;
+        DEFINE FIELD weight ON relationship TYPE float DEFAULT 1.0; -- Strategy 68
         DEFINE FIELD valid_from ON relationship TYPE datetime;
         DEFINE FIELD valid_to ON relationship TYPE option<datetime>;
         DEFINE FIELD transaction_time_start ON relationship TYPE datetime;

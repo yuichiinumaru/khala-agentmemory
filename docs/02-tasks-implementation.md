@@ -105,14 +105,14 @@
 ## 📚 Consolidated Tasks from Doc 18 (Remaining)
 
 ### Phase 1: Quick Wins
-- [ ] **17. Natural Memory Triggers**: Heuristic checks in ingestion.
-- [ ] **20. Monitoring & Health Checks**: Queue depth/cache rates.
-- [ ] **31. Significance Scoring**: Implement `SignificanceScorer`.
-- [ ] **37. Emotion-Driven Memory**: Sentiment analysis via Gemini.
-- [ ] **68. Weighted Directed Multigraph**: Add `weight` to relationships.
-- [ ] **120. Custom Pydantic Entity Types**: Enforce typing.
-- [ ] **141. Keyword Extraction**: Integrate YAKE/Rake.
-- [ ] **147. Negative Constraints**: Add `negative_constraints` to AgentProfile.
+- [x] **17. Natural Memory Triggers**: Heuristic checks in ingestion.
+- [x] **20. Monitoring & Health Checks**: Queue depth/cache rates.
+- [x] **31. Significance Scoring**: Implement `SignificanceScorer`.
+- [x] **37. Emotion-Driven Memory**: Sentiment analysis via Gemini.
+- [x] **68. Weighted Directed Multigraph**: Add `weight` to relationships.
+- [x] **120. Custom Pydantic Entity Types**: Enforce typing.
+- [x] **141. Keyword Extraction**: Integrate YAKE/Rake.
+- [x] **147. Negative Constraints**: Add `negative_constraints` to AgentProfile.
 
 ### Phase 2: Intelligence & Logic
 - [ ] **30. Query Intent Classification**: Add `IntentClassifier`.
