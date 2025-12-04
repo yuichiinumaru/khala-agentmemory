@@ -270,10 +270,47 @@ class MemoryLifecycleService:
 
         return duplicates_removed
 
-    async def consolidate_memories(self, user_id: str) -> int:
+    async def schedule_consolidation(self, user_id: str) -> Dict[str, Any]:
+        """
+        Strategy 106: Intelligent Consolidation Scheduling.
+        Determines if consolidation should run based on system load, time of day, and memory accumulation.
+        """
+        # 1. Check accumulated short-term memories
+        memories = await self.repository.get_by_tier(
+            user_id, MemoryTier.SHORT_TERM.value, limit=500
+        )
+
+        count = len(memories)
+        should_run = False
+        reason = "insufficient_data"
+
+        # Heuristic 1: Volume threshold (Strategy 106)
+        if count > 50:
+            should_run = True
+            reason = "volume_threshold_exceeded"
+
+        # Heuristic 2: Time of day (Nightly consolidation)
+        # Assuming UTC, "night" might be 02:00 - 05:00. This is just a basic check.
+        current_hour = datetime.now(timezone.utc).hour
+        if 2 <= current_hour <= 5 and count > 10:
+             should_run = True
+             reason = "scheduled_maintenance_window"
+
+        if should_run:
+            logger.info(f"Consolidation triggered for user {user_id}. Reason: {reason}")
+            consolidated = await self.consolidate_memories(user_id, force=True)
+            return {"status": "executed", "consolidated_count": consolidated, "reason": reason}
+
+        return {"status": "skipped", "reason": reason}
+
+    async def consolidate_memories(self, user_id: str, force: bool = False) -> int:
         """Consolidate memories.
 
         Uses LLM to summarize and merge groups of similar memories.
+
+        Args:
+            user_id: The user ID.
+            force: If True, bypass heuristics and force consolidation (e.g. scheduled).
         """
         consolidated_count = 0
 
@@ -283,7 +320,8 @@ class MemoryLifecycleService:
             user_id, MemoryTier.SHORT_TERM.value, limit=200
         )
 
-        if self.memory_service.should_consolidate(memories):
+        # Re-using the check or forcing it if called directly
+        if force or self.memory_service.should_consolidate(memories):
             groups = self.consolidation_service.group_memories_for_consolidation(memories)
 
             for group in groups:
