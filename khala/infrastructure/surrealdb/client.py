@@ -1231,3 +1231,84 @@ class SurrealDBClient:
             version=data.get("version", "1.0.0"),
             is_active=data.get("is_active", True)
         )
+    async def get_cache_entry(self, key: str) -> Optional[Dict[str, Any]]:
+        """Get a cache entry by ID."""
+        query = "SELECT * FROM cache_storage WHERE id = $id;"
+        params = {"id": key}
+
+        async with self.get_connection() as conn:
+            response = await conn.query(query, params)
+            if response and isinstance(response, list) and len(response) > 0:
+                item = response[0]
+                if isinstance(item, dict):
+                    if 'status' in item and 'result' in item:
+                         if item['status'] == 'OK' and item['result']:
+                             return item['result'][0]
+                    else:
+                        return item
+            return None
+
+    async def create_cache_entry(
+        self,
+        id: str,
+        value: Any,
+        created_at: Any,
+        expires_at: Any,
+        access_count: int,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """Create a new cache entry."""
+        query = """
+        CREATE cache_storage CONTENT {
+            id: $id,
+            value: $value,
+            created_at: $created_at,
+            expires_at: $expires_at,
+            access_count: $access_count,
+            metadata: $metadata
+        };
+        """
+
+        # Serialize datetime
+        if hasattr(created_at, 'isoformat'):
+            created_at = created_at.isoformat()
+        if hasattr(expires_at, 'isoformat'):
+            expires_at = expires_at.isoformat()
+
+        params = {
+            "id": id,
+            "value": value,
+            "created_at": created_at,
+            "expires_at": expires_at,
+            "access_count": access_count,
+            "metadata": metadata
+        }
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+
+    async def update_cache_entry(self, id: str, updates: Dict[str, Any]) -> None:
+        """Update a cache entry."""
+        # Build set clause
+        set_parts = []
+        params = {"id": id}
+
+        for key, value in updates.items():
+            set_parts.append(f"{key} = ${key}")
+            params[key] = value
+
+        if not set_parts:
+            return
+
+        query = f"UPDATE cache_storage SET {', '.join(set_parts)} WHERE id = $id;"
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)
+
+    async def delete_cache_entry(self, id: str) -> None:
+        """Delete a cache entry."""
+        query = "DELETE cache_storage WHERE id = $id;"
+        params = {"id": id}
+
+        async with self.get_connection() as conn:
+            await conn.query(query, params)

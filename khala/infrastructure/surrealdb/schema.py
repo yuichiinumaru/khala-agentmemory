@@ -215,6 +215,19 @@ class DatabaseSchema:
         DEFINE FIELD final_output ON correction_chain TYPE string;
         DEFINE FIELD success ON correction_chain TYPE bool;
         DEFINE FIELD created_at ON correction_chain TYPE datetime;
+
+        # Cache Storage (L3 Cache)
+        DEFINE TABLE cache_storage SCHEMAFULL;
+        DEFINE FIELD id ON cache_storage TYPE string;
+        DEFINE FIELD value ON cache_storage TYPE object;
+        DEFINE FIELD created_at ON cache_storage TYPE datetime DEFAULT time::now();
+        DEFINE FIELD expires_at ON cache_storage TYPE datetime DEFAULT time::now() + 24h;
+        DEFINE FIELD access_count ON cache_storage TYPE int DEFAULT 0;
+        DEFINE FIELD metadata ON cache_storage TYPE object DEFAULT {};
+
+        DEFINE INDEX idx_cache_expires ON cache_storage FIELDS expires_at;
+        DEFINE INDEX idx_cache_created ON cache_storage FIELDS created_at;
+
         # Prompt Optimization (Module 13.1 - PromptWizard/Genealogy)
         DEFINE TABLE prompt_candidates SCHEMAFULL;
         DEFINE FIELD task_id ON prompt_candidates TYPE string;
@@ -527,7 +540,7 @@ class DatabaseSchema:
             "dr_mamr_tables",
             "agentsnet_tables",
             # MarsRL table
-            # "rbac_permissions",
+            "rbac_permissions",
         ]
         
         for step in creation_order:
@@ -585,6 +598,7 @@ class DatabaseSchema:
             ("agent_network", "SELECT count() FROM agent_network;"),
             ("agent_states", "SELECT count() FROM agent_states;"),
             ("network_evolution", "SELECT count() FROM network_evolution;"),
+            ("cache_storage", "SELECT count() FROM cache_storage;"),
         ]
         
         for table_name, query in table_checks:

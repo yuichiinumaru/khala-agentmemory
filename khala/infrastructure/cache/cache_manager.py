@@ -364,26 +364,8 @@ class L3PersistentCache:
     
     async def _ensure_table_exists(self):
         """Ensure cache table exists in database."""
-        # This would create the cache table if it doesn't exist
-        # Implementation depends on your schema setup
-        
-        # Example:
-        await self.db_client.execute_async("""
-            CREATE TABLE IF NOT EXISTS cache_storage (
-                id STRING PRIMARY KEY,
-                value OBJECT,
-                created_at DATETIME DEFAULT time::now(),
-                expires_at DATETIME DEFAULT time::now() + (24 * 1 * HOUR),
-                access_count INT DEFAULT 0,
-                metadata OBJECT DEFAULT {}
-            )
-            
-            CREATE INDEX IF NOT EXISTS idx_cache_expires 
-            ON cache_storage(expires_at)
-            
-            CREATE INDEX IF NOT EXISTS idx_cache_created 
-            ON cache_storage(created_at)
-        """)
+        # Table creation is now handled by SchemaManager
+        pass
     
     async def get(self, key: str) -> Optional[Any]:
         """Get value from persistent cache."""
