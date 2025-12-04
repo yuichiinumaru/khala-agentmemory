@@ -107,6 +107,10 @@ class DatabaseSchema:
         DEFINE INDEX tier_index ON memory FIELDS tier;
         DEFINE INDEX importance_index ON memory FIELDS importance;
         DEFINE INDEX created_index ON memory FIELDS created_at;
+
+        -- Strategy 38: Composite Indexes
+        DEFINE INDEX user_tier_index ON memory FIELDS user_id, tier;
+        DEFINE INDEX user_importance_index ON memory FIELDS user_id, importance;
         DEFINE INDEX accessed_index ON memory FIELDS accessed_at;
         
         
@@ -144,6 +148,19 @@ class DatabaseSchema:
         -- Indexes
         DEFINE INDEX cluster_centroid_index ON vector_cluster FIELDS centroid HNSW DIMENSION 768 DIST COSINE M 16;
         DEFINE INDEX stats_time_index ON vector_stats FIELDS window_start;
+        """,
+
+        # Adaptive Learning Tables (Strategy 139)
+        "adaptive_learning_tables": """
+        DEFINE TABLE bandit_stats SCHEMAFULL;
+        DEFINE FIELD context_id ON bandit_stats TYPE string;
+        DEFINE FIELD action_id ON bandit_stats TYPE string;
+        DEFINE FIELD total_reward ON bandit_stats TYPE float DEFAULT 0.0;
+        DEFINE FIELD count ON bandit_stats TYPE int DEFAULT 0;
+        DEFINE FIELD avg_reward ON bandit_stats TYPE float DEFAULT 0.0;
+        DEFINE FIELD updated_at ON bandit_stats TYPE datetime DEFAULT time::now();
+
+        DEFINE INDEX bandit_context_idx ON bandit_stats FIELDS context_id;
         """,
 
         # LGKGR Tables (Module 13.2.1)
@@ -325,6 +342,9 @@ class DatabaseSchema:
         DEFINE INDEX entity_type_index ON entity FIELDS entity_type;
         DEFINE INDEX entity_confidence_index ON entity FIELDS confidence;
         DEFINE INDEX entity_vector_index ON entity FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;
+
+        -- Strategy 38: Composite Indexes
+        DEFINE INDEX type_confidence_index ON entity FIELDS entity_type, confidence;
         """,
         
         # Relationship table (graph edge)
@@ -521,6 +541,7 @@ class DatabaseSchema:
             "branch_table",
             "skill_table",
             "vector_ops_tables",
+            "adaptive_learning_tables",
             "lgkgr_tables",
             "latent_mas_tables",
             # MarsRL table is inside latent_mas_tables block in current structure but labeled clearly
