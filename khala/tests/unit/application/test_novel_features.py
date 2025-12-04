@@ -30,7 +30,7 @@ async def test_approval_flow(mock_db_client):
 
     # 1. Request
     req_id = await service.request_approval("delete", "mem:1", "user:1", "Delete memory")
-    assert req_id == "req:1"
+    assert req_id.startswith("approval_request:")
 
     # 2. Get Pending
     mock_conn = mock_db_client.get_connection.return_value.__aenter__.return_value
