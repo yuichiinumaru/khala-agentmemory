@@ -139,6 +139,7 @@ class JobProcessor:
         # Services
         self.memory_service = None
         self.db_client = None
+        self.gemini_client = None
         
         # Job types
         self._register_default_jobs()
@@ -163,6 +164,15 @@ class JobProcessor:
             self.memory_service = MemoryService()
             self.db_client = SurrealDBClient()
             
+            # Initialize GeminiClient
+            try:
+                from ...gemini.client import GeminiClient
+                self.gemini_client = GeminiClient(enable_cascading=False) # Use lighter init
+            except ImportError:
+                logger.warning("GeminiClient not available, some jobs may fail")
+            except Exception as e:
+                logger.warning(f"Failed to init GeminiClient: {e}")
+
             # Start worker tasks
             self.is_running = True
             for i in range(self.max_workers):
@@ -210,7 +220,8 @@ class JobProcessor:
             "consolidation": "ConsolidationJob", 
             "deduplication": "DeduplicationJob",
             "consistency_check": "ConsistencyJob",
-            "index_repair": "IndexRepairJob"
+            "index_repair": "IndexRepairJob",
+            "pattern_recognition": "PatternRecognitionJob"
         }
     
     async def submit_job(
@@ -416,6 +427,8 @@ class JobProcessor:
                 return await self._execute_consistency_check(job)
             elif job.job_type == "index_repair":
                 return await self._execute_index_repair(job)
+            elif job.job_type == "pattern_recognition":
+                return await self._execute_pattern_recognition(job)
             else:
                 raise ValueError(f"Unsupported job type: {job.job_type}")
                 
@@ -597,6 +610,50 @@ class JobProcessor:
                 job_id=job.job_id,
                 success=True,
                 result=result_data,
+                execution_time_ms=execution_time,
+                worker_id=job.worker_id
+            )
+
+        except Exception as e:
+            execution_time = (time.time() - start_time) * 1000
+            return JobResult(
+                job_id=job.job_id,
+                success=False,
+                result=None,
+                execution_time_ms=execution_time,
+                error=str(e),
+                worker_id=job.worker_id
+            )
+
+    async def _execute_pattern_recognition(self, job: JobDefinition) -> JobResult:
+        """Execute cross-session pattern recognition job (Strategy 34)."""
+        start_time = time.time()
+
+        if not self.gemini_client:
+            raise ValueError("GeminiClient not available for pattern recognition")
+
+        try:
+            from ....application.services.pattern_recognition_service import PatternRecognitionService
+
+            service = PatternRecognitionService(self.gemini_client, self.db_client)
+
+            user_id = job.payload.get("user_id")
+            if not user_id:
+                raise ValueError("user_id is required for pattern recognition")
+
+            lookback = job.payload.get("lookback", 50)
+
+            patterns = await service.analyze_patterns(user_id, lookback_limit=lookback)
+
+            # Optionally store patterns in a table or just return them
+            # For now we return them as result
+
+            execution_time = (time.time() - start_time) * 1000
+
+            return JobResult(
+                job_id=job.job_id,
+                success=True,
+                result={"patterns_found": len(patterns), "patterns": patterns},
                 execution_time_ms=execution_time,
                 worker_id=job.worker_id
             )
