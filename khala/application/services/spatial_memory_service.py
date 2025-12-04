@@ -176,28 +176,10 @@ class SpatialMemoryService:
         SELECT * FROM memory
         WHERE location IS NOT NONE
           AND location INSIDE <geometry>$polygon;
-        coords_list = [[lon, lat] for lon, lat in polygon_coords]
-
-        # Construct GeoJSON Polygon structure
-        # Note: GeoJSON coordinates for Polygon are [ [ [x,y], ... ] ] (array of rings)
-        polygon_struct = {
-            "type": "Polygon",
-            "coordinates": [coords_list]
-        }
-
-        # Serialize to JSON string to inject directly
-        # This bypasses potential SDK binding issues with complex geometry types
-        polygon_json = json.dumps(polygon_struct)
-
-        query = f"""
-        SELECT * FROM memory
-        WHERE location IS NOT NONE
-          AND location INSIDE {polygon_json};
         """
 
         try:
             async with self.db_client.get_connection() as conn:
-                result = await conn.query(query)
                 result = await conn.query(
                     query,
                     {"polygon": polygon_data}
