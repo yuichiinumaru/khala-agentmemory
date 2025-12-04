@@ -136,14 +136,38 @@ class SurrealDBClient:
                         except Exception as e:
                             logger.error(f"Error closing connection: {e}")
     
-    async def create_memory(self, memory: Memory) -> str:
+    @asynccontextmanager
+    async def _borrow_connection(self, connection: Optional[AsyncSurreal] = None):
+        """Helper to use provided connection or get one from pool."""
+        if connection:
+            yield connection
+        else:
+            async with self.get_connection() as conn:
+                yield conn
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Execute a block within a database transaction (Strategy 65)."""
+        async with self.get_connection() as conn:
+            try:
+                await conn.query("BEGIN TRANSACTION;")
+                yield conn
+                await conn.query("COMMIT TRANSACTION;")
+            except Exception as e:
+                try:
+                    await conn.query("CANCEL TRANSACTION;")
+                except Exception:
+                    pass
+                raise e
+
+    async def create_memory(self, memory: Memory, connection: Optional[AsyncSurreal] = None) -> str:
         """Create a new memory in the database."""
         # Calculate content hash for deduplication
         content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
 
-        # Check for existing memory with same hash
-        check_query = "SELECT id FROM memory WHERE content_hash = $content_hash LIMIT 1;"
-        async with self.get_connection() as conn:
+        async with self._borrow_connection(connection) as conn:
+            # Check for existing memory with same hash
+            check_query = "SELECT id FROM memory WHERE content_hash = $content_hash LIMIT 1;"
             check_response = await conn.query(check_query, {"content_hash": content_hash})
             
             # Handle SurrealDB response format
@@ -165,110 +189,121 @@ class SurrealDBClient:
                      logger.info(f"Duplicate memory detected (hash collision). Returning existing ID: {existing_id}")
                      return existing_id
 
-        query = """
-        CREATE type::thing('memory', $id) CONTENT {
-            user_id: $user_id,
-            content: $content,
-            content_hash: $content_hash,
-            embedding: $embedding,
-            embedding_model: $embedding_model,
-            embedding_version: $embedding_version,
-            embedding_visual: $embedding_visual,
-            embedding_visual_model: $embedding_visual_model,
-            embedding_visual_version: $embedding_visual_version,
-            embedding_code: $embedding_code,
-            embedding_code_model: $embedding_code_model,
-            embedding_code_version: $embedding_code_version,
-            tier: $tier,
-            importance: $importance,
-            tags: $tags,
-            category: $category,
-            metadata: $metadata,
-            created_at: $created_at,
-            updated_at: $updated_at,
-            accessed_at: $accessed_at,
-            access_count: $access_count,
-            llm_cost: $llm_cost,
-            verification_score: $verification_score,
-            verification_count: $verification_count,
-            verification_status: $verification_status,
-            verified_at: $verified_at,
-            verification_issues: $verification_issues,
-            debate_consensus: $debate_consensus,
-            is_archived: $is_archived,
-            decay_score: $decay_score,
-            source: $source,
-            sentiment: $sentiment,
-            episode_id: $episode_id,
-            confidence: $confidence,
-            source_reliability: $source_reliability,
-            location: $location,
-            versions: $versions,
-            events: $events
-        };
-        """
-        
-        # Serialize source and handle datetime
-        source_data = None
-        if memory.source:
-            source_data = asdict(memory.source)
-            if source_data.get('timestamp'):
-                source_data['timestamp'] = source_data['timestamp'].isoformat()
+            # Prepare conditional content fields (Strategy 63)
+            content_str = memory.content or ""
+            content_tiny = content_str[:100]
+            content_small = content_str[:1000]
+            content_full = content_str if len(content_str) > 1000 else None
 
-        # Serialize sentiment
-        sentiment_data = None
-        if memory.sentiment:
-            sentiment_data = asdict(memory.sentiment)
+            query = """
+            CREATE type::thing('memory', $id) CONTENT {
+                user_id: $user_id,
+                content: $content,
+                content_tiny: $content_tiny,
+                content_small: $content_small,
+                content_full: $content_full,
+                content_hash: $content_hash,
+                embedding: $embedding,
+                embedding_model: $embedding_model,
+                embedding_version: $embedding_version,
+                embedding_visual: $embedding_visual,
+                embedding_visual_model: $embedding_visual_model,
+                embedding_visual_version: $embedding_visual_version,
+                embedding_code: $embedding_code,
+                embedding_code_model: $embedding_code_model,
+                embedding_code_version: $embedding_code_version,
+                tier: $tier,
+                importance: $importance,
+                tags: $tags,
+                category: $category,
+                metadata: $metadata,
+                created_at: $created_at,
+                updated_at: $updated_at,
+                accessed_at: $accessed_at,
+                access_count: $access_count,
+                llm_cost: $llm_cost,
+                verification_score: $verification_score,
+                verification_count: $verification_count,
+                verification_status: $verification_status,
+                verified_at: $verified_at,
+                verification_issues: $verification_issues,
+                debate_consensus: $debate_consensus,
+                is_archived: $is_archived,
+                decay_score: $decay_score,
+                source: $source,
+                sentiment: $sentiment,
+                episode_id: $episode_id,
+                confidence: $confidence,
+                source_reliability: $source_reliability,
+                location: $location,
+                versions: $versions,
+                events: $events
+            };
+            """
 
-        # Serialize location
-        location_data = None
-        if memory.location:
-            location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
+            # Serialize source and handle datetime
+            source_data = None
+            if memory.source:
+                source_data = asdict(memory.source)
+                if source_data.get('timestamp'):
+                    source_data['timestamp'] = source_data['timestamp'].isoformat()
 
-        params = {
-            "id": memory.id,
-            "user_id": memory.user_id,
-            "content": memory.content,
-            "content_hash": content_hash,
-            "embedding": memory.embedding.values if memory.embedding else None,
-            "embedding_model": memory.embedding.model if memory.embedding else None,
-            "embedding_version": memory.embedding.version if memory.embedding else None,
-            "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
-            "embedding_visual_model": memory.embedding_visual.model if memory.embedding_visual else None,
-            "embedding_visual_version": memory.embedding_visual.version if memory.embedding_visual else None,
-            "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
-            "embedding_code_model": memory.embedding_code.model if memory.embedding_code else None,
-            "embedding_code_version": memory.embedding_code.version if memory.embedding_code else None,
-            "tier": memory.tier.value,
-            "importance": memory.importance.value,
-            "tags": memory.tags,
-            "category": memory.category,
-            "summary": memory.summary,
-            "metadata": memory.metadata,
-            "created_at": memory.created_at,
-            "updated_at": memory.updated_at,
-            "accessed_at": memory.accessed_at,
-            "access_count": memory.access_count,
-            "llm_cost": memory.llm_cost,
-            "verification_score": memory.verification_score,
-            "verification_count": memory.verification_count,
-            "verification_status": memory.verification_status,
-            "verified_at": memory.verified_at,
-            "verification_issues": memory.verification_issues,
-            "debate_consensus": memory.debate_consensus,
-            "is_archived": memory.is_archived,
-            "decay_score": memory.decay_score.value if memory.decay_score else None,
-            "source": source_data,
-            "sentiment": sentiment_data,
-            "episode_id": memory.episode_id,
-            "confidence": memory.confidence,
-            "source_reliability": memory.source_reliability,
-            "location": location_data,
-            "versions": memory.versions,
-            "events": memory.events
-        }
-        
-        async with self.get_connection() as conn:
+            # Serialize sentiment
+            sentiment_data = None
+            if memory.sentiment:
+                sentiment_data = asdict(memory.sentiment)
+
+            # Serialize location
+            location_data = None
+            if memory.location:
+                location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
+
+            params = {
+                "id": memory.id,
+                "user_id": memory.user_id,
+                "content": memory.content,
+                "content_tiny": content_tiny,
+                "content_small": content_small,
+                "content_full": content_full,
+                "content_hash": content_hash,
+                "embedding": memory.embedding.values if memory.embedding else None,
+                "embedding_model": memory.embedding.model if memory.embedding else None,
+                "embedding_version": memory.embedding.version if memory.embedding else None,
+                "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
+                "embedding_visual_model": memory.embedding_visual.model if memory.embedding_visual else None,
+                "embedding_visual_version": memory.embedding_visual.version if memory.embedding_visual else None,
+                "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
+                "embedding_code_model": memory.embedding_code.model if memory.embedding_code else None,
+                "embedding_code_version": memory.embedding_code.version if memory.embedding_code else None,
+                "tier": memory.tier.value,
+                "importance": memory.importance.value,
+                "tags": memory.tags,
+                "category": memory.category,
+                "summary": memory.summary,
+                "metadata": memory.metadata,
+                "created_at": memory.created_at,
+                "updated_at": memory.updated_at,
+                "accessed_at": memory.accessed_at,
+                "access_count": memory.access_count,
+                "llm_cost": memory.llm_cost,
+                "verification_score": memory.verification_score,
+                "verification_count": memory.verification_count,
+                "verification_status": memory.verification_status,
+                "verified_at": memory.verified_at,
+                "verification_issues": memory.verification_issues,
+                "debate_consensus": memory.debate_consensus,
+                "is_archived": memory.is_archived,
+                "decay_score": memory.decay_score.value if memory.decay_score else None,
+                "source": source_data,
+                "sentiment": sentiment_data,
+                "episode_id": memory.episode_id,
+                "confidence": memory.confidence,
+                "source_reliability": memory.source_reliability,
+                "location": location_data,
+                "versions": memory.versions,
+                "events": memory.events
+            }
+
             response = await conn.query(query, params)
             
             # Check for error string
@@ -316,16 +351,25 @@ class SurrealDBClient:
             
             return None
     
-    async def update_memory(self, memory: Memory) -> None:
+    async def update_memory(self, memory: Memory, connection: Optional[AsyncSurreal] = None) -> None:
         """Update an existing memory."""
         # Recalculate hash on update
         content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
+
+        # Prepare conditional content fields (Strategy 63)
+        content_str = memory.content or ""
+        content_tiny = content_str[:100]
+        content_small = content_str[:1000]
+        content_full = content_str if len(content_str) > 1000 else None
 
         # Using MERGE to preserve other fields (like events, versions)
         query = """
         UPDATE type::thing('memory', $id) MERGE {
             user_id: $user_id,
             content: $content,
+            content_tiny: $content_tiny,
+            content_small: $content_small,
+            content_full: $content_full,
             content_hash: $content_hash,
             embedding: $embedding,
             tier: $tier,
@@ -378,6 +422,9 @@ class SurrealDBClient:
             "id": memory.id,
             "user_id": memory.user_id,
             "content": memory.content,
+            "content_tiny": content_tiny,
+            "content_small": content_small,
+            "content_full": content_full,
             "content_hash": content_hash,
             "embedding": memory.embedding.values if memory.embedding else None,
             "embedding_model": memory.embedding.model if memory.embedding else None,
@@ -415,17 +462,17 @@ class SurrealDBClient:
             "events": memory.events
         }
         
-        async with self.get_connection() as conn:
+        async with self._borrow_connection(connection) as conn:
             response = await conn.query(query, params)
             if isinstance(response, str):
                  raise RuntimeError(f"Failed to update memory: {response}")
     
-    async def delete_memory(self, memory_id: str) -> None:
+    async def delete_memory(self, memory_id: str, connection: Optional[AsyncSurreal] = None) -> None:
         """Delete a memory by ID."""
         query = "DELETE type::thing('memory', $id);"
         params = {"id": memory_id}
         
-        async with self.get_connection() as conn:
+        async with self._borrow_connection(connection) as conn:
             await conn.query(query, params)
 
     async def create_entity(self, entity: Entity) -> str:
@@ -455,7 +502,7 @@ class SurrealDBClient:
             await conn.query(query, params)
             return entity.id
 
-    async def create_relationship(self, relationship: Relationship) -> str:
+    async def create_relationship(self, relationship: Relationship, connection: Optional[AsyncSurreal] = None) -> str:
         """Create a new relationship in the database."""
         # Parse entity IDs to extract UUIDs if they are in record format
         from_uuid = relationship.from_entity_id
@@ -495,7 +542,7 @@ class SurrealDBClient:
             "transaction_time_end": relationship.transaction_time_end,
         }
 
-        async with self.get_connection() as conn:
+        async with self._borrow_connection(connection) as conn:
             response = await conn.query(query, params)
             
             # Check for errors

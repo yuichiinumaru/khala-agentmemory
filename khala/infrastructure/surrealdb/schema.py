@@ -32,6 +32,11 @@ class DatabaseSchema:
         DEFINE FIELD id ON memory TYPE string;
         DEFINE FIELD user_id ON memory TYPE string;
         DEFINE FIELD content ON memory TYPE string;
+        -- Strategy 63: Conditional Content Fields
+        DEFINE FIELD content_tiny ON memory TYPE option<string>;
+        DEFINE FIELD content_small ON memory TYPE option<string>;
+        DEFINE FIELD content_full ON memory TYPE option<string>;
+
         DEFINE FIELD content_hash ON memory TYPE string;
         DEFINE FIELD embedding ON memory TYPE option<array<float>>;
         -- Task 85: Vector Provenance

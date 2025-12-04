@@ -41,9 +41,9 @@
 - [ ] **Strategy 116 (Flows vs Crews)**: Implement distinct `Flow` and `Crew` definitions and orchestrator logic.
 - [ ] **Strategy 149 (Transient Scratchpads)**: Implement temporary memory storage for complex reasoning.
 - [ ] **Strategy 148 (Scoped Memories)**: Implement project/scope isolation beyond basic RBAC.
-- [ ] **Strategy 150 (Recursive Summarization)**: Implement hierarchical summary generation.
-- [ ] **Strategy 122 (Path Lookup Acceleration)**: Implement pre-indexing of common graph paths.
-- [ ] **Strategy 63 & 65 (SurrealDB Ops)**: Implement Conditional Content Fields and Document-Level Transactions.
+- [x] **Strategy 150 (Recursive Summarization)**: Implement hierarchical summary generation (Service: `RecursiveSummaryService`).
+- [x] **Strategy 122 (Path Lookup Acceleration)**: Implement pre-indexing of common graph paths (Service: `GraphCacheService`).
+- [x] **Strategy 63 & 65 (SurrealDB Ops)**: Implement Conditional Content Fields and Document-Level Transactions (Schema & Client Updates).
 
 ---
 
