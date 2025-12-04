@@ -67,6 +67,9 @@ class Memory:
     episode_id: Optional[str] = None
     confidence: float = 1.0  # Strategy 135: Metacognitive Indexing
     source_reliability: float = 1.0  # Strategy 136: Source Reliability Scoring
+    # Module 15: Version Control
+    branch_id: Optional[str] = field(default=None)
+    fork_parent_id: Optional[str] = field(default=None)
     # Module 11: Optimization Fields
     versions: List[Dict[str, Any]] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)
