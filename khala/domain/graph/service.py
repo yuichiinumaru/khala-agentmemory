@@ -289,6 +289,67 @@ class GraphService:
 
         return matches
 
+    async def detect_communities(self, method: str = "louvain") -> Dict[str, List[str]]:
+        """
+        Implement Strategy 143: Community Detection.
+        Finds clusters of tightly connected entities in the graph.
+
+        Args:
+            method: Algorithm to use ('louvain', 'girvan_newman', 'greedy').
+
+        Returns:
+            Dictionary mapping community IDs to lists of entity IDs.
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+            return {}
+
+        # 1. Fetch graph snapshot
+        # For large graphs, this should be done via graph engine or limited snapshot
+        query = "SELECT * FROM relationship LIMIT 2000;"
+        graph = nx.Graph()
+
+        async with client.get_connection() as conn:
+            response = await conn.query(query)
+            rels = []
+            if response and isinstance(response, list):
+                 if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                     rels = response[0]['result']
+                 else:
+                     rels = response
+
+            for rel in rels:
+                if isinstance(rel, dict):
+                    graph.add_edge(rel['from_entity_id'], rel['to_entity_id'], weight=rel.get('strength', 1.0))
+
+        if not graph.number_of_nodes():
+            return {}
+
+        # 2. Detect Communities
+        communities = []
+        try:
+            if method == "louvain":
+                # Requires networkx 2.7+
+                communities = nx.community.louvain_communities(graph, weight='weight')
+            elif method == "girvan_newman":
+                 # This returns an iterator of tuples of sets
+                 comp = nx.community.girvan_newman(graph)
+                 communities = next(comp)
+            else:
+                 # Default to greedy modularity
+                 communities = nx.community.greedy_modularity_communities(graph, weight='weight')
+        except (AttributeError, ImportError):
+            # Fallback for older networkx versions or missing optional deps
+            logger.warning("Advanced community detection not available, falling back to label propagation")
+            communities = nx.community.label_propagation_communities(graph)
+
+        # 3. Format result
+        result = {}
+        for i, comm in enumerate(communities):
+            result[f"community_{i}"] = list(comm)
+
+        return result
+
     def _deserialize_relationship(self, data: Dict[str, Any]) -> Relationship:
         """Helper to deserialize relationship data."""
         def parse_dt(dt_val: Any) -> Optional[datetime]:

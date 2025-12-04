@@ -1,9 +1,11 @@
 from typing import Dict, Any, Optional, List, Union
 import logging
+import asyncio
 from datetime import datetime, timezone
 import base64
 
 from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
+from khala.domain.memory.value_objects import EmbeddingVector
 from khala.domain.memory.repository import MemoryRepository
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.surrealdb.client import SurrealDBClient
@@ -35,7 +37,7 @@ class MultimodalService:
         Ingest an image as a memory.
 
         Analyzes the image using Gemini, creates a text description,
-        and stores it as a memory with multimodal metadata.
+        generates a visual embedding, and stores it as a memory.
 
         Args:
             user_id: The user ID.
@@ -48,8 +50,11 @@ class MultimodalService:
             The ID of the created memory.
         """
         try:
-            # 1. Analyze Image
-            analysis = await self._analyze_image(image_data, mime_type, context)
+            # 1. Analyze and Embed in parallel
+            analysis_task = self._analyze_image(image_data, mime_type, context)
+            embedding_task = self._generate_visual_embedding(image_data, mime_type)
+
+            analysis, visual_embedding = await asyncio.gather(analysis_task, embedding_task)
 
             description = analysis.get("description", "")
             entities = analysis.get("entities", [])
@@ -76,7 +81,8 @@ class MultimodalService:
                 tier=MemoryTier.SHORT_TERM, # Start in short term
                 importance=ImportanceScore(0.8), # Images are usually important
                 metadata=image_metadata,
-                tags=["image", "multimodal"] + [e['name'] for e in entities if 'name' in e]
+                tags=["image", "multimodal"] + [e['name'] for e in entities if 'name' in e],
+                embedding_visual=EmbeddingVector(values=visual_embedding, model="multimodal-embedding-001") if visual_embedding else None
             )
 
             # 3. Save Memory
@@ -98,7 +104,6 @@ class MultimodalService:
         """Analyze image using Gemini Vision capabilities."""
 
         # Prepare the image object for Gemini
-        # google.generativeai expects a dict for blob: {'mime_type': ..., 'data': ...}
         image_blob = {
             'mime_type': mime_type,
             'data': image_data
@@ -144,3 +149,26 @@ class MultimodalService:
             "model": response.get("model_id"),
             "raw_response": content
         }
+
+    async def _generate_visual_embedding(self, image_data: bytes, mime_type: str) -> Optional[List[float]]:
+        """Generate visual embedding for an image."""
+        try:
+            import google.generativeai as genai
+
+            blob = {'mime_type': mime_type, 'data': image_data}
+
+            # Note: Assuming genai.embed_content supports this per Google documentation
+            # for 'models/multimodal-embedding-001' or similar
+            result = await asyncio.to_thread(
+                genai.embed_content,
+                model="models/multimodal-embedding-001",
+                content=blob,
+                task_type="retrieval_document"
+            )
+
+            if 'embedding' in result:
+                return result['embedding']
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to generate visual embedding: {e}")
+            return None

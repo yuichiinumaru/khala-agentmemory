@@ -6,10 +6,10 @@ functionality for spatial memory organization, proximity search, and trajectory 
 
 from typing import List, Dict, Any, Optional, Tuple
 import logging
+import json
 from datetime import datetime
 
 from khala.domain.memory.value_objects import Location
-from khala.domain.memory.entities import Memory
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,6 @@ class SpatialMemoryService:
         # Strategy 114: Track history in versions
         if memory.location:
             # Create a snapshot of the current state before update
-            # We store a simplified snapshot to avoid massive duplication
             snapshot = {
                 "updated_at": datetime.now().isoformat(),
                 "location": memory.location.to_geojson(),
@@ -134,6 +133,12 @@ class SpatialMemoryService:
                         # Otherwise assume it is the list of records itself
                         return result
 
+                # Handle SurrealDB response format
+                if isinstance(result, list) and len(result) > 0:
+                    first = result[0]
+                    if isinstance(first, dict) and 'status' in first and 'result' in first:
+                        return first['result']
+                    return result
                 return []
         except Exception as e:
             logger.error(f"Failed to find nearby memories: {e}")
@@ -152,9 +157,10 @@ class SpatialMemoryService:
         Returns:
             List of memories inside the region.
         """
-        from surrealdb.data.types.geometry import GeometryPolygon, GeometryLine, GeometryPoint
-
         # Ensure polygon is closed
+        if not polygon_coords:
+            return []
+
         if polygon_coords[0] != polygon_coords[-1]:
             polygon_coords.append(polygon_coords[0])
 
@@ -170,6 +176,23 @@ class SpatialMemoryService:
         SELECT * FROM memory
         WHERE location IS NOT NONE
           AND location INSIDE <geometry>$polygon;
+        coords_list = [[lon, lat] for lon, lat in polygon_coords]
+
+        # Construct GeoJSON Polygon structure
+        # Note: GeoJSON coordinates for Polygon are [ [ [x,y], ... ] ] (array of rings)
+        polygon_struct = {
+            "type": "Polygon",
+            "coordinates": [coords_list]
+        }
+
+        # Serialize to JSON string to inject directly
+        # This bypasses potential SDK binding issues with complex geometry types
+        polygon_json = json.dumps(polygon_struct)
+
+        query = f"""
+        SELECT * FROM memory
+        WHERE location IS NOT NONE
+          AND location INSIDE {polygon_json};
         """
 
         try:
@@ -179,16 +202,11 @@ class SpatialMemoryService:
                     {"polygon": polygon_data}
                 )
 
-                if isinstance(result, str):
-                    logger.error(f"Query returned error string: {result}")
-                    return []
-
-                if result and isinstance(result, list):
-                    if len(result) > 0:
-                        first = result[0]
-                        if isinstance(first, dict) and 'status' in first and 'result' in first:
-                            return first['result']
-                        return result
+                if isinstance(result, list) and len(result) > 0:
+                    first = result[0]
+                    if isinstance(first, dict) and 'status' in first and 'result' in first:
+                        return first['result']
+                    return result
                 return []
         except Exception as e:
             logger.error(f"Failed to find memories in region: {e}")
@@ -205,19 +223,22 @@ class SpatialMemoryService:
         Returns:
             List of historical locations with timestamps.
         """
+        # Normalize ID
+        if "memory:" in memory_id:
+            memory_id = memory_id.split("memory:")[1]
+
         query = """
         SELECT id, updated_at, location, versions
         FROM memory
-        WHERE id = $id;
+        WHERE id = type::thing('memory', $id);
         """
 
         try:
             async with self.db_client.get_connection() as conn:
                 result = await conn.query(query, {"id": memory_id})
-                if not result:
-                    return []
 
                 # Check for QueryResponse wrapper
+                records = []
                 if isinstance(result, list) and len(result) > 0:
                     first = result[0]
                     if isinstance(first, dict) and 'status' in first and 'result' in first:
@@ -257,7 +278,7 @@ class SpatialMemoryService:
                             "source": "history"
                         })
 
-                # Sort by timestamp (string comparison of ISO dates is safe)
+                # Sort by timestamp (descending)
                 trajectory.sort(key=lambda x: x.get('timestamp') or "", reverse=True)
                 return trajectory
 
@@ -293,7 +314,13 @@ class SpatialMemoryService:
         try:
             async with self.db_client.get_connection() as conn:
                 result = await conn.query(query, {"prec": grid_precision})
-                return result[0] if result else []
+
+                if isinstance(result, list) and len(result) > 0:
+                    first = result[0]
+                    if isinstance(first, dict) and 'status' in first and 'result' in first:
+                        return first['result']
+                    return result
+                return []
         except Exception as e:
             logger.error(f"Failed to find spatial clusters: {e}")
             return []

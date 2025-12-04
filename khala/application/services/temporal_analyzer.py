@@ -203,3 +203,53 @@ class TemporalAnalysisService:
                 results["errors"] += 1
 
         return results
+
+    async def generate_heatmap(
+        self,
+        time_window_days: int = 30
+    ) -> Dict[str, int]:
+        """
+        Implement Strategy 140: Temporal Heatmaps.
+        Generates a histogram of memory creation counts over the last N days.
+
+        Args:
+            time_window_days: Number of days to look back.
+
+        Returns:
+            Dictionary mapping date strings (YYYY-MM-DD) to creation counts.
+        """
+        # Using SurrealDB's time formatting to group by day
+        # Note: $duration must be a duration string like '30d'
+        duration_str = f"{time_window_days}d"
+
+        query = """
+        SELECT count() as count,
+               time::format(created_at, "%Y-%m-%d") as date_bucket
+        FROM memory
+        WHERE created_at > time::now() - <duration>$duration
+        GROUP BY date_bucket
+        ORDER BY date_bucket ASC;
+        """
+
+        try:
+            async with self.db_client.get_connection() as conn:
+                response = await conn.query(query, {"duration": duration_str})
+
+                heatmap = {}
+                items = []
+                # Handle SurrealDB response format
+                if response and isinstance(response, list):
+                     if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                         items = response[0]['result']
+                     else:
+                         items = response
+
+                for item in items:
+                    if isinstance(item, dict) and 'date_bucket' in item:
+                        heatmap[item['date_bucket']] = item['count']
+
+                return heatmap
+
+        except Exception as e:
+            logger.error(f"Failed to generate heatmap: {e}")
+            return {}

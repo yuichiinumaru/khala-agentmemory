@@ -32,23 +32,9 @@ class AdvancedVectorService:
         self.db_client = db_client
 
     def quantize_vector(self, vector: List[float], method: str = "int8") -> List[int]:
-        """Implement Strategy 79: Vector Quantization.
-
-        Converts a float vector to a quantized integer representation for storage optimization.
-        Currently supports 'int8' scalar quantization mapping [-1.0, 1.0] to [-127, 127].
-
-        Args:
-            vector: Input float embedding vector
-            method: Quantization method (default: "int8")
-
-        Returns:
-            List[int]: Quantized integer vector
-        """
+        """Implement Strategy 79: Vector Quantization."""
         if method == "int8":
-            # Assuming normalized vectors in [-1, 1] range for cosine similarity
-            # Map -1.0 -> -127, 1.0 -> 127
             vec_np = np.array(vector, dtype=np.float32)
-            # Clip to range just in case
             vec_np = np.clip(vec_np, -1.0, 1.0)
             quantized = (vec_np * 127).astype(np.int8)
             return quantized.tolist()
@@ -56,15 +42,7 @@ class AdvancedVectorService:
             raise ValueError(f"Unsupported quantization method: {method}")
 
     def dequantize_vector(self, quantized_vector: List[int], method: str = "int8") -> List[float]:
-        """Reconstruct float vector from quantized representation.
-
-        Args:
-            quantized_vector: Input integer vector
-            method: Quantization method (default: "int8")
-
-        Returns:
-            List[float]: Reconstructed approximate float vector
-        """
+        """Reconstruct float vector from quantized representation."""
         if method == "int8":
             vec_np = np.array(quantized_vector, dtype=np.float32)
             return (vec_np / 127.0).tolist()
@@ -72,26 +50,12 @@ class AdvancedVectorService:
             raise ValueError(f"Unsupported quantization method: {method}")
 
     def reduce_dimensions(self, vector: List[float], target_dim: int) -> List[float]:
-        """Implement Strategy 82: Adaptive Vector Dimensions.
-
-        Reduces vector dimensionality via truncation. For embeddings like OpenAI's text-embedding-3,
-        truncation is a supported method for dimensionality reduction.
-
-        Args:
-            vector: Input float vector
-            target_dim: Desired dimension size
-
-        Returns:
-            List[float]: Reduced dimension vector (renormalized)
-        """
+        """Implement Strategy 82: Adaptive Vector Dimensions."""
         vec_np = np.array(vector)
         if len(vec_np) <= target_dim:
             return vector
 
-        # Truncate
         reduced = vec_np[:target_dim]
-
-        # Renormalize (L2 norm)
         norm = np.linalg.norm(reduced)
         if norm > 0:
             reduced = reduced / norm
@@ -99,18 +63,7 @@ class AdvancedVectorService:
         return reduced.tolist()
 
     def interpolate_vectors(self, vector_a: List[float], vector_b: List[float], alpha: float = 0.5) -> List[float]:
-        """Implement Strategy 84: Vector Interpolation.
-
-        Blends two vectors to find a concept "between" them.
-
-        Args:
-            vector_a: First vector
-            vector_b: Second vector
-            alpha: Blend factor (0.0 = vector_a, 1.0 = vector_b)
-
-        Returns:
-            List[float]: Interpolated vector (normalized)
-        """
+        """Implement Strategy 84: Vector Interpolation."""
         a = np.array(vector_a)
         b = np.array(vector_b)
 
@@ -118,8 +71,6 @@ class AdvancedVectorService:
             raise ValueError("Vectors must have same dimensions for interpolation")
 
         interpolated = (1 - alpha) * a + alpha * b
-
-        # Normalize result
         norm = np.linalg.norm(interpolated)
         if norm > 0:
             interpolated = interpolated / norm
@@ -127,23 +78,16 @@ class AdvancedVectorService:
         return interpolated.tolist()
 
     async def compute_clusters(self, k: int = 10, sample_size: int = 1000) -> Dict[str, Any]:
-        """Implement Strategy 81: Vector Clustering.
-
-        Fetches memory vectors, performs K-Means clustering, and stores centroids.
-
-        Args:
-            k: Number of clusters
-            sample_size: Max number of vectors to fetch for clustering
-
-        Returns:
-            Dict containing clustering statistics
-        """
-        # 1. Fetch vectors from DB
+        """Implement Strategy 81: Vector Clustering (Optimized)."""
+        # 1. Fetch vectors
         query = f"SELECT id, embedding FROM memory WHERE embedding IS NOT NONE LIMIT {sample_size};"
         async with self.db_client.get_connection() as conn:
             results = await conn.query(query)
 
         memories = results if results else []
+        if isinstance(memories, list) and len(memories) > 0 and isinstance(memories[0], dict) and 'result' in memories[0]:
+             memories = memories[0]['result']
+
         if not memories:
             logger.warning("No memories found for clustering")
             return {"status": "no_data"}
@@ -151,7 +95,7 @@ class AdvancedVectorService:
         vectors = []
         ids = []
         for mem in memories:
-            if mem.get("embedding"):
+            if isinstance(mem, dict) and mem.get("embedding"):
                 vectors.append(mem["embedding"])
                 ids.append(mem["id"])
 
@@ -170,23 +114,14 @@ class AdvancedVectorService:
 
         # 3. Store Clusters
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        cluster_map = {} # map cluster index to DB record
+        cluster_map = {}
 
         async with self.db_client.get_connection() as conn:
-            # Clear old clusters? Or archive? For now, we create new ones.
-            # Strategy: Delete old clusters for simplicity in this implementation,
-            # or we could version them.
             await conn.query("DELETE vector_cluster;")
 
             for i, centroid in enumerate(centroids):
-                # Calculate radius (max distance of a point in this cluster)
                 cluster_points = X[labels == i]
-                if len(cluster_points) > 0:
-                    # distance from centroid
-                    dists = np.linalg.norm(cluster_points - centroid, axis=1)
-                    radius = float(np.max(dists))
-                else:
-                    radius = 0.0
+                radius = float(np.max(np.linalg.norm(cluster_points - centroid, axis=1))) if len(cluster_points) > 0 else 0.0
 
                 record = {
                     "centroid": centroid.tolist(),
@@ -197,54 +132,64 @@ class AdvancedVectorService:
                 }
 
                 created = await conn.create("vector_cluster", record)
-                cluster_map[i] = created[0]["id"]
+                if isinstance(created, list) and len(created) > 0:
+                     cluster_map[i] = created[0]["id"]
+                elif isinstance(created, dict) and "id" in created:
+                     cluster_map[i] = created["id"]
 
-            # 4. Update Memories with Cluster ID
-            # This can be slow for many memories, ideally done in batch or async job
-            # For this implementation, we'll update the ones we sampled
-            for idx, mem_id in enumerate(ids):
-                cluster_idx = labels[idx]
-                cluster_record_id = cluster_map[cluster_idx]
+            # 4. Update Memories with Cluster ID (Batch)
+            batch_size = 50
+            for i in range(0, len(ids), batch_size):
+                batch_ids = ids[i:i+batch_size]
+                batch_labels = labels[i:i+batch_size]
 
-                # Update memory
-                await conn.query(f"UPDATE {mem_id} SET cluster_id = {cluster_record_id};")
+                queries = []
+                params = {}
+
+                for j, mem_id in enumerate(batch_ids):
+                    cluster_idx = batch_labels[j]
+                    if cluster_idx in cluster_map:
+                        cluster_record_id = cluster_map[cluster_idx]
+                        # Use parameter binding for ID to prevent injection
+                        queries.append(f"UPDATE $id_{j} SET cluster_id = $cid_{j};")
+                        params[f"id_{j}"] = mem_id
+                        params[f"cid_{j}"] = cluster_record_id
+
+                if queries:
+                    await conn.query("\n".join(queries), params)
 
         return {
             "status": "success",
-            "clusters_created": k,
+            "clusters_created": len(cluster_map),
             "memories_updated": len(ids)
         }
 
     async def detect_anomalies(self, threshold_std: float = 2.0) -> List[Dict[str, Any]]:
-        """Implement Strategy 83: Vector-Space Anomaly Detection.
-
-        Identifies memories that are far from their cluster centroids.
-
-        Args:
-            threshold_std: Number of standard deviations to consider an outlier
-
-        Returns:
-            List of anomalous memory records
-        """
-        # Fetch memories with cluster info
+        """Implement Strategy 83: Vector-Space Anomaly Detection (Optimized)."""
         query = """
-        SELECT id, embedding, cluster_id, cluster_id.centroid as centroid, cluster_id.radius as radius
+        SELECT id, embedding, cluster_id, cluster_id.centroid as centroid
         FROM memory
         WHERE embedding IS NOT NONE AND cluster_id IS NOT NONE;
         """
         async with self.db_client.get_connection() as conn:
             results = await conn.query(query)
 
-        if not results:
+        memories = []
+        if isinstance(results, list):
+             if len(results) > 0 and isinstance(results[0], dict) and 'result' in results[0]:
+                 memories = results[0]['result']
+             else:
+                 memories = results
+
+        if not memories:
             return []
 
         anomalies = []
         distances = []
-
-        # First pass: calculate all distances to get stats
         processed_results = []
-        for mem in results:
-            if not mem.get("centroid"): continue
+
+        for mem in memories:
+            if not isinstance(mem, dict) or not mem.get("centroid"): continue
 
             vec = np.array(mem["embedding"])
             cent = np.array(mem["centroid"])
@@ -260,14 +205,10 @@ class AdvancedVectorService:
         std_dist = np.std(distances)
         cutoff = mean_dist + (threshold_std * std_dist)
 
-        # Second pass: identify outliers
+        # Identify outliers
         for mem in processed_results:
             if mem["_dist"] > cutoff:
-                anomaly_score = (mem["_dist"] - mean_dist) / (std_dist + 1e-9) # simple z-score
-
-                # Update memory with anomaly score
-                async with self.db_client.get_connection() as conn:
-                    await conn.query(f"UPDATE {mem['id']} SET anomaly_score = {anomaly_score};")
+                anomaly_score = (mem["_dist"] - mean_dist) / (std_dist + 1e-9)
 
                 anomalies.append({
                     "id": mem["id"],
@@ -276,53 +217,69 @@ class AdvancedVectorService:
                     "cluster_id": mem["cluster_id"]
                 })
 
+        # Batch update anomalies
+        if anomalies:
+            async with self.db_client.get_connection() as conn:
+                batch_size = 50
+                for i in range(0, len(anomalies), batch_size):
+                    batch = anomalies[i:i+batch_size]
+                    queries = []
+                    params = {}
+
+                    for j, item in enumerate(batch):
+                         queries.append(f"UPDATE $id_{j} SET anomaly_score = $score_{j};")
+                         params[f"id_{j}"] = item["id"]
+                         params[f"score_{j}"] = item["anomaly_score"]
+
+                    if queries:
+                        await conn.query("\n".join(queries), params)
+
         return anomalies
 
     async def detect_drift(self, model_version: str = "default") -> Dict[str, Any]:
-        """Implement Strategy 80: Vector Drift Detection.
-
-        Calculates current distribution statistics and compares with historical baselines.
-
-        Args:
-            model_version: The embedding model version tag
-
-        Returns:
-            Drift analysis results
-        """
+        """Implement Strategy 80: Vector Drift Detection."""
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        # Fetch all embeddings
         query = "SELECT embedding FROM memory WHERE embedding IS NOT NONE;"
         async with self.db_client.get_connection() as conn:
             results = await conn.query(query)
 
-        if not results:
+        vectors = []
+        if isinstance(results, list):
+             if len(results) > 0 and isinstance(results[0], dict) and 'result' in results[0]:
+                 items = results[0]['result']
+             else:
+                 items = results
+             vectors = [r["embedding"] for r in items if isinstance(r, dict) and "embedding" in r]
+
+        if not vectors:
             return {"status": "no_data"}
 
-        vectors = [r["embedding"] for r in results]
         X = np.array(vectors)
-
-        # Calculate current stats
         mean_embedding = np.mean(X, axis=0)
-        variance = float(np.var(X)) # Scalar variance (trace of covariance / dims or just variance of flattened)
-        # Better: average squared distance from mean
+        # Average squared Euclidean distance from the mean (trace of covariance matrix)
         variance = float(np.mean(np.sum((X - mean_embedding)**2, axis=1)))
 
-        # Fetch previous stats
         prev_query = "SELECT * FROM vector_stats ORDER BY window_start DESC LIMIT 1;"
         async with self.db_client.get_connection() as conn:
             prev_results = await conn.query(prev_query)
 
         drift_score = 0.0
         if prev_results:
-            prev = prev_results[0]
-            prev_mean = np.array(prev["mean_embedding"])
-            # Drift = distance between means
-            drift_score = float(np.linalg.norm(mean_embedding - prev_mean))
+             if isinstance(prev_results, list) and len(prev_results) > 0:
+                 if isinstance(prev_results[0], dict) and 'result' in prev_results[0]:
+                     prev_items = prev_results[0]['result']
+                 else:
+                     prev_items = prev_results
 
-        # Store new stats
+                 if prev_items and isinstance(prev_items[0], dict) and "mean_embedding" in prev_items[0]:
+                     prev = prev_items[0]
+                     prev_mean = np.array(prev["mean_embedding"])
+                     drift_score = float(np.linalg.norm(mean_embedding - prev_mean))
+
+        # Save stats
         stat_record = {
-            "window_start": timestamp, # Using point in time for simplicity
+            "window_start": timestamp,
             "window_end": timestamp,
             "mean_embedding": mean_embedding.tolist(),
             "variance": variance,
@@ -338,5 +295,5 @@ class AdvancedVectorService:
             "drift_score": drift_score,
             "variance": variance,
             "sample_count": len(vectors),
-            "status": "drift_detected" if drift_score > 0.1 else "stable" # Arbitrary threshold
+            "status": "drift_detected" if drift_score > 0.1 else "stable"
         }

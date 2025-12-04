@@ -64,6 +64,7 @@ class DatabaseSchema:
         DEFINE FIELD verification_issues ON memory TYPE array<string>;
         DEFINE FIELD debate_consensus ON memory TYPE option<object>;
         DEFINE FIELD is_archived ON memory TYPE bool DEFAULT false;
+        DEFINE FIELD is_anchor ON memory TYPE bool DEFAULT false; -- Strategy 151
         DEFINE FIELD decay_score ON memory VALUE fn::decay_score(0.0, $importance, 30.0);
         
         -- Tier 6: Advanced Metadata
@@ -74,6 +75,9 @@ class DatabaseSchema:
         DEFINE FIELD episode_id ON memory TYPE option<string>;
         DEFINE FIELD confidence ON memory TYPE float;
         DEFINE FIELD source_reliability ON memory TYPE float;
+        -- Module 15: Version Control
+        DEFINE FIELD branch_id ON memory TYPE option<string>;
+        DEFINE FIELD fork_parent_id ON memory TYPE option<string>;
         -- Module 11: Optimized Fields
         DEFINE FIELD versions ON memory TYPE array<object> FLEXIBLE DEFAULT [];
         DEFINE FIELD events ON memory TYPE array<object> FLEXIBLE DEFAULT [];
@@ -114,6 +118,7 @@ class DatabaseSchema:
 
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
+        DEFINE INDEX anchor_index ON memory FIELDS is_anchor;
         """,
         
         # Advanced Vector Ops Tables (Module 11.C.2)
@@ -366,6 +371,18 @@ class DatabaseSchema:
         DEFINE INDEX audit_memory_index ON audit_log FIELDS memory_id;
         """,
 
+        # Branch table (Module 15)
+        "branch_table": """
+        DEFINE TABLE branch SCHEMAFULL;
+        DEFINE FIELD name ON branch TYPE string;
+        DEFINE FIELD parent_branch_id ON branch TYPE option<string>;
+        DEFINE FIELD created_at ON branch TYPE datetime DEFAULT time::now();
+        DEFINE FIELD updated_at ON branch TYPE datetime DEFAULT time::now();
+        DEFINE FIELD created_by ON branch TYPE string;
+        DEFINE FIELD status ON branch TYPE string;
+        DEFINE INDEX branch_name_idx ON branch FIELDS name;
+        """,
+
         # Search Session table
         "search_session_table": """
         DEFINE TABLE search_session SCHEMAFULL;
@@ -501,6 +518,7 @@ class DatabaseSchema:
             "relationship_table",
             "audit_log_table",
             "search_session_table",
+            "branch_table",
             "skill_table",
             "vector_ops_tables",
             "lgkgr_tables",
