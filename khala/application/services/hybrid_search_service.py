@@ -78,7 +78,7 @@ class HybridSearchService:
         bm25_weight: float = 1.0,
         expand_query: bool = False,
         enable_graph_reranking: bool = False,
-        auto_detect_intent: bool = False
+        auto_detect_intent: bool = False,
         context: Optional[Dict[str, Any]] = None
     ) -> List[Memory]:
         """

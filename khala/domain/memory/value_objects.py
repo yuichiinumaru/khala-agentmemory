@@ -135,6 +135,7 @@ class MemoryTier(Enum):
     WORKING = "working"      # 1 hour TTL, active processing
     SHORT_TERM = "short_term"  # 15 days TTL, recent memories
     LONG_TERM = "long_term"   # Persistent, important memories
+    SCRATCHPAD = "scratchpad" # Transient, very short-term (Strategy 149)
     
     def ttl_hours(self) -> int:
         """Get TTL in hours for this tier."""
@@ -142,6 +143,7 @@ class MemoryTier(Enum):
             MemoryTier.WORKING: 1,
             MemoryTier.SHORT_TERM: 15 * 24,  # 15 days
             MemoryTier.LONG_TERM: -1,  # Persistent
+            MemoryTier.SCRATCHPAD: 1,  # 1 hour max
         }
         return ttl_map[self]
     
@@ -151,6 +153,7 @@ class MemoryTier(Enum):
             MemoryTier.WORKING: MemoryTier.SHORT_TERM,
             MemoryTier.SHORT_TERM: MemoryTier.LONG_TERM,
             MemoryTier.LONG_TERM: None,  # No promotion from long-term
+            MemoryTier.SCRATCHPAD: None, # No promotion from scratchpad
         }
         return promotion_map[self]
 
