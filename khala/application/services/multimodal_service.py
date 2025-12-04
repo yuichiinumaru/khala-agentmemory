@@ -95,6 +95,83 @@ class MultimodalService:
             logger.error(f"Failed to ingest image: {e}")
             raise
 
+    async def search_images_by_text(
+        self,
+        user_id: str,
+        query_text: str,
+        limit: int = 10,
+        threshold: float = 0.6
+    ) -> List[Dict[str, Any]]:
+        """
+        Cross-Modal Retrieval (Strategy 50).
+        Find images that match a text query.
+
+        Args:
+            user_id: The user ID.
+            query_text: The search query.
+            limit: Maximum results.
+            threshold: Similarity threshold.
+
+        Returns:
+            List of matching memories with similarity scores.
+        """
+        # 1. Generate text embedding using the same multimodal model
+        # Note: We must use the multimodal-embedding model to be in the same space as visual embeddings
+        try:
+            import google.generativeai as genai
+
+            # Using asyncio.to_thread for blocking SDK call
+            result = await asyncio.to_thread(
+                genai.embed_content,
+                model="models/multimodal-embedding-001",
+                content=query_text,
+                task_type="retrieval_query",
+                request_options={"timeout": 30}
+            )
+
+            query_embedding = result.get('embedding')
+            if not query_embedding:
+                logger.error("Failed to generate query embedding")
+                return []
+
+        except Exception as e:
+            logger.error(f"Error embedding query: {e}")
+            return []
+
+        # 2. Vector Search against embedding_visual field
+        # SurrealDB Query
+        query = """
+        SELECT *, vector::similarity::cosine(embedding_visual, $query_vec) as similarity
+        FROM memory
+        WHERE user_id = $uid
+        AND embedding_visual IS NOT NONE
+        AND vector::similarity::cosine(embedding_visual, $query_vec) > $threshold
+        ORDER BY similarity DESC
+        LIMIT $limit;
+        """
+
+        params = {
+            "uid": user_id,
+            "query_vec": query_embedding,
+            "threshold": threshold,
+            "limit": limit
+        }
+
+        try:
+            async with self.db_client.get_connection() as conn:
+                result = await conn.query(query, params)
+
+                # Helper to parse result
+                if isinstance(result, list) and len(result) > 0:
+                    if isinstance(result[0], dict) and 'result' in result[0]:
+                        return result[0]['result']
+                    return result
+                return []
+
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}")
+            return []
+
     async def _analyze_image(
         self,
         image_data: bytes,
