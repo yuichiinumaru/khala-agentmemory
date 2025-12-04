@@ -17,6 +17,7 @@ from khala.domain.memory.services import (
     ConsolidationService,
     ConflictResolutionService
 )
+from khala.application.services.significance_scorer import SignificanceScorer
 from khala.application.services.privacy_safety_service import PrivacySafetyService
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
@@ -36,7 +37,8 @@ class MemoryLifecycleService:
         deduplication_service: Optional[DeduplicationService] = None,
         consolidation_service: Optional[ConsolidationService] = None,
         conflict_resolution_service: Optional[ConflictResolutionService] = None,
-        privacy_safety_service: Optional[PrivacySafetyService] = None
+        privacy_safety_service: Optional[PrivacySafetyService] = None,
+        significance_scorer: Optional[SignificanceScorer] = None
     ):
         self.repository = repository
         self.gemini_client = gemini_client or GeminiClient()
@@ -46,6 +48,7 @@ class MemoryLifecycleService:
         self.consolidation_service = consolidation_service or ConsolidationService()
         self.conflict_resolution_service = conflict_resolution_service or ConflictResolutionService(repository)
         self.privacy_safety_service = privacy_safety_service or PrivacySafetyService(self.gemini_client)
+        self.significance_scorer = significance_scorer or SignificanceScorer(self.gemini_client)
 
     async def ingest_memory(self, memory: Memory, check_privacy: bool = True) -> str:
         """Ingest a new memory, performing auto-summarization and privacy checks."""
@@ -62,6 +65,19 @@ class MemoryLifecycleService:
                     "redacted_items": sanitization_result.redacted_items,
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }
+
+        # Strategy 17 & 31: Significance Scoring & Natural Triggers
+        # We recalculate importance if it seems default or low, or to catch natural triggers
+        if self.significance_scorer:
+             # Calculate new score
+             new_score = await self.significance_scorer.calculate_significance(memory.content)
+             # Update if higher than current (assuming we want to boost importance)
+             if new_score.value > memory.importance.value:
+                 memory.importance = new_score
+
+        # Strategy 37: Emotion-Driven Memory
+        if self.significance_scorer and not memory.sentiment:
+            memory.sentiment = await self.significance_scorer.analyze_sentiment(memory.content)
 
         # Strategy 152: Bias Detection
         if check_privacy and self.privacy_safety_service:

@@ -63,6 +63,8 @@ class GeminiClient:
         # Response cache
         self._response_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_timestamps: Dict[str, datetime] = {}
+        self._cache_hits = 0
+        self._cache_misses = 0
         
         # Model configuration
         self._models: Dict[str, genai.GenerativeModel] = {}
@@ -303,8 +305,10 @@ class GeminiClient:
             cache_key = self._get_cache_key(prompt, model_id=model.model_id)
             cached_response = self._get_cached_response(cache_key)
             if cached_response:
+                self._cache_hits += 1
                 logger.debug(f"Cache hit for {model.model_id}")
                 return cached_response
+            self._cache_misses += 1
         
         # Configure generation parameters
         config = {
@@ -539,6 +543,18 @@ class GeminiClient:
         self._response_cache.clear()
         self._cache_timestamps.clear()
         logger.info("Cleared response cache")
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache usage statistics."""
+        total = self._cache_hits + self._cache_misses
+        hit_rate = (self._cache_hits / total) if total > 0 else 0.0
+        return {
+            "hits": self._cache_hits,
+            "misses": self._cache_misses,
+            "total": total,
+            "hit_rate": hit_rate,
+            "size": len(self._response_cache)
+        }
     
     def get_budget_status(self) -> Dict[str, Any]:
         """Get current budget status and alerts."""
@@ -756,6 +772,51 @@ class GeminiClient:
                 "overall_score": 0.0,
                 "error": str(e)
             }
+
+    async def analyze_sentiment(self, text: str) -> Dict[str, Any]:
+        """Analyze sentiment of text.
+
+        Returns:
+            Dict with score (-1.0 to 1.0), label, and emotions.
+        """
+        prompt = f"""
+        Analyze the sentiment of the following text.
+        Return a JSON object with:
+        - score: float between -1.0 (negative) and 1.0 (positive)
+        - label: string (positive, negative, neutral, mixed)
+        - emotions: dictionary of emotion names and their intensities (0.0-1.0)
+
+        Text: "{text}"
+        """
+        # Use fast model for classification
+        response = await self.generate_text(
+            prompt=prompt,
+            task_type="classification",
+            model_id="gemini-2.0-flash",
+            temperature=0.0
+        )
+        try:
+            content = response.get("content", "").strip()
+            # Clean markdown if present
+            if content.startswith("```json"):
+                content = content.replace("```json", "").replace("```", "")
+            elif content.startswith("```"):
+                content = content.replace("```", "")
+
+            return json.loads(content)
+        except Exception:
+            logger.warning(f"Failed to parse sentiment analysis JSON: {response.get('content', '')}")
+            return {"score": 0.0, "label": "neutral", "emotions": {}}
+
+    async def translate_text(self, text: str, target_language: str) -> str:
+        """Translate text to target language."""
+        prompt = f"Translate the following text to {target_language}:\n\n{text}"
+        response = await self.generate_text(
+            prompt=prompt,
+            task_type="generation",
+            model_id="gemini-2.0-flash"
+        )
+        return response.get("content", "").strip()
 
     # --- Mixture of Thought (MoT) ---
     
