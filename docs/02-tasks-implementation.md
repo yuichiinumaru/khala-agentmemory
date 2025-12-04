@@ -33,6 +33,18 @@
 - [x] **Adaptive Learning**: Implement Strategy 139 (Contextual Bandits) - Implemented in `AdaptiveLearningService`.
 - [x] **Temporal Analysis**: Implement Strategy 140 (Temporal Heatmaps) in `TemporalAnalysisService`.
 
+### Module 16: Missing Novel Features (Audit Findings)
+*Status: Missing Logic*
+- [ ] **Strategy 133 (Surprise-Based Learning)**: Implement `SurpriseService` to detect contradictions and boost importance.
+- [ ] **Strategy 134 (Curiosity-Driven Exploration)**: Implement agent queries for missing knowledge holes.
+- [ ] **Strategy 125 (Human-in-the-Loop)**: Implement `ApprovalService` for critical checkpoints.
+- [ ] **Strategy 116 (Flows vs Crews)**: Implement distinct `Flow` and `Crew` definitions and orchestrator logic.
+- [ ] **Strategy 149 (Transient Scratchpads)**: Implement temporary memory storage for complex reasoning.
+- [ ] **Strategy 148 (Scoped Memories)**: Implement project/scope isolation beyond basic RBAC.
+- [ ] **Strategy 150 (Recursive Summarization)**: Implement hierarchical summary generation.
+- [ ] **Strategy 122 (Path Lookup Acceleration)**: Implement pre-indexing of common graph paths.
+- [ ] **Strategy 63 & 65 (SurrealDB Ops)**: Implement Conditional Content Fields and Document-Level Transactions.
+
 ---
 
 ## 🟢 COMPLETED

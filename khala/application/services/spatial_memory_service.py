@@ -197,6 +197,7 @@ class SpatialMemoryService:
 
         try:
             async with self.db_client.get_connection() as conn:
+                result = await conn.query(query)
                 result = await conn.query(
                     query,
                     {"polygon": polygon_data}
