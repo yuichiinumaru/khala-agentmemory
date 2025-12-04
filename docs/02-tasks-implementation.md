@@ -35,6 +35,12 @@
 
 ### Module 16: Missing Novel Features (Audit Findings)
 *Status: Missing Logic*
+- [x] **Strategy 133 (Surprise-Based Learning)**: Implement `SurpriseService` to detect contradictions and boost importance.
+- [x] **Strategy 134 (Curiosity-Driven Exploration)**: Implement agent queries for missing knowledge holes.
+- [x] **Strategy 125 (Human-in-the-Loop)**: Implement `ApprovalService` for critical checkpoints.
+- [ ] **Strategy 116 (Flows vs Crews)**: Implement distinct `Flow` and `Crew` definitions and orchestrator logic.
+- [ ] **Strategy 149 (Transient Scratchpads)**: Implement temporary memory storage for complex reasoning.
+- [ ] **Strategy 148 (Scoped Memories)**: Implement project/scope isolation beyond basic RBAC.
 - [ ] **Strategy 133 (Surprise-Based Learning)**: Implement `SurpriseService` to detect contradictions and boost importance.
 - [ ] **Strategy 134 (Curiosity-Driven Exploration)**: Implement agent queries for missing knowledge holes.
 - [ ] **Strategy 125 (Human-in-the-Loop)**: Implement `ApprovalService` for critical checkpoints.
