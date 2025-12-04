@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 import logging
 import asyncio
+import re
 from khala.domain.memory.repository import MemoryRepository
 from khala.domain.ports.embedding_service import EmbeddingService
 from khala.domain.memory.entities import Memory, EmbeddingVector
@@ -67,6 +68,63 @@ class HybridSearchService:
 
         return params
 
+    def _calculate_proximity_score(self, content: str, query_terms: List[str], window_size: int = 10) -> float:
+        """
+        Calculate a score based on how close query terms are in the content.
+        Strategy 97: Contextual Search (Proximity).
+        """
+        if not content or len(query_terms) < 2:
+            return 0.0
+
+        # Normalize
+        text = content.lower()
+        terms = [t.lower() for t in query_terms if len(t) > 2] # Ignore short words
+
+        if len(terms) < 2:
+            return 0.0
+
+        # Find positions of all terms
+        positions = []
+        for term in terms:
+            term_positions = [m.start() for m in re.finditer(re.escape(term), text)]
+            if not term_positions:
+                # If a significant term is missing, proximity doesn't apply for the full set
+                # But we can check for partial proximity if we have at least 2 other terms
+                continue
+            positions.append(term_positions)
+
+        if len(positions) < 2:
+            return 0.0
+
+        # Check minimum distance between any pair of different terms
+        min_dist = float('inf')
+        found_pair = False
+
+        for i in range(len(positions)):
+            for j in range(i + 1, len(positions)):
+                pos_list_a = positions[i]
+                pos_list_b = positions[j]
+
+                for p_a in pos_list_a:
+                    for p_b in pos_list_b:
+                        dist = abs(p_a - p_b)
+                        if dist < min_dist:
+                            min_dist = dist
+                            found_pair = True
+
+        if not found_pair:
+            return 0.0
+
+        # Convert char distance to approx word distance (avg 6 chars/word incl space)
+        word_dist = min_dist / 6.0
+
+        if word_dist <= window_size:
+            # Boost score: closer is better.
+            # Max boost 0.3 for very close, decaying to 0 at window_size
+            return 0.3 * (1.0 - (word_dist / window_size))
+
+        return 0.0
+
     async def search(
         self,
         query: str,
@@ -117,14 +175,9 @@ class HybridSearchService:
             except Exception as e:
                 logger.warning(f"Auto-intent detection failed: {e}")
 
-        # 0.5 Query Expansion
-        expanded_queries = [query]
-        # 0. Multilingual Support (Strategy 95)
-        # Check if translation is needed
+        # 0.5 Multilingual Support (Strategy 95)
         search_query = query
         if self.translation_service:
-            # We only attempt translation if the query seems non-English or we want robust handling
-            # Ideally this is user-configurable, but we'll do auto-detect.
             trans_result = await self.translation_service.detect_and_translate(query)
             if trans_result.get("was_translated"):
                 search_query = trans_result.get("translated_text")
@@ -145,7 +198,6 @@ class HybridSearchService:
         async def _fetch_vector(q_text: str) -> List[Memory]:
             try:
                 embedding = await self.embedding_service.get_embedding(q_text)
-                # embedding is now an EmbeddingVector object
                 return await self.memory_repo.search_by_vector(
                     embedding=embedding,
                     user_id=user_id,
@@ -169,6 +221,7 @@ class HybridSearchService:
                 return []
 
         # Gather all tasks: 2 tasks per query (Vector + BM25)
+        # Strategy 123: Parallel Search Execution
         tasks = []
         for q in expanded_queries:
             tasks.append(_fetch_vector(q))
@@ -186,12 +239,10 @@ class HybridSearchService:
             return []
 
         # 2. Compute RRF Scores
-        # Map memory_id -> score
         scores: Dict[str, float] = {}
-        # Map memory_id -> Memory object
         memories: Dict[str, Memory] = {}
 
-        # Process Vector Results (Deduplicate first to handle multiple expansions returning same result)
+        # Process Vector Results
         seen_vector_ids = set()
         unique_vector_results = []
         for m in all_vector_results:
@@ -220,15 +271,9 @@ class HybridSearchService:
         # 3. Sort by Score
         sorted_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
 
-        # 4. Graph Distance Reranking (Strategy 121)
-        # If enabled, we boost results that are 1-hop connected to the top result (anchor)
-        # or connected to an "active" concept in the query (if we had entity linking).
-        # For now, we'll implement a simple "Anchor Point" boost:
-        # If result B is connected to result A (where A is high ranking), boost B.
-
         final_results = [memories[mid] for mid in sorted_ids]
 
-        # Access client safely (prefer self.memory_repo.client if db_client not set)
+        # Access client safely
         client_to_use = self.db_client
         if not client_to_use and hasattr(self.memory_repo, 'client'):
             client_to_use = self.memory_repo.client
@@ -236,18 +281,20 @@ class HybridSearchService:
         # 4. Contextual Boosting (Strategy 97)
         # Apply boosts based on context (time, location, etc.)
         context_boost_scores = [0.0] * len(final_results)
+
+        # Pre-calculate query terms for proximity check
+        query_terms = search_query.split()
+
         if context:
             try:
                 from datetime import datetime
                 # Temporal Proximity
                 current_time = context.get('current_time')
                 if current_time:
-                     # If current_time is passed as datetime
                     if isinstance(current_time, str):
                         current_time = datetime.fromisoformat(current_time)
 
                     for i, m in enumerate(final_results):
-                        # Boost recent memories
                         if m.created_at:
                             age_seconds = (current_time - m.created_at).total_seconds()
                             if age_seconds < 3600: # 1 hour
@@ -255,12 +302,7 @@ class HybridSearchService:
                             elif age_seconds < 86400: # 1 day
                                 context_boost_scores[i] += 0.1
 
-                # Location Proximity (if both have location)
-                # This requires calculating distance, which is expensive here.
-                # We assume SurrealDB handled geospatial filtering if 'filters' were used.
-                # Here we might just boost if location metadata matches vaguely.
-
-                # Boost if in same episode
+                # Episode Proximity
                 active_episode_id = context.get('episode_id')
                 if active_episode_id:
                      for i, m in enumerate(final_results):
@@ -270,25 +312,21 @@ class HybridSearchService:
             except Exception as e:
                 logger.warning(f"Contextual boosting failed: {e}")
 
+        # Proximity Logic (Task 97: Contextual Search Proximity)
+        # We calculate proximity score for every result
+        for i, m in enumerate(final_results):
+            if m.content:
+                prox_score = self._calculate_proximity_score(m.content, query_terms)
+                if prox_score > 0:
+                    context_boost_scores[i] += prox_score
 
         if (enable_graph_reranking and client_to_use and final_results) or any(s > 0 for s in context_boost_scores):
             try:
-                # Use the top result as the "Anchor"
                 anchor_id = final_results[0].id
-
-                # Fetch connected entities/memories for the anchor
-                # 1. Direct connections via Relationship table (if anchor is an Entity ID or Memory ID tracked in graph)
-                # 2. Shared Episode ID (Strategy 118)
-
                 anchor_episode = final_results[0].episode_id
                 connected_ids = set()
 
                 if enable_graph_reranking:
-                    # If we had Memory-Memory links in relationship table, we could query them.
-                    # Assuming 'relationship' table links entities. If Memory IDs are used as Entity IDs or
-                    # mapped, we can query. For now, we'll try to fetch direct neighbors.
-
-                    # We need to handle the ID format (strip 'memory:' if present)
                     clean_anchor_id = anchor_id
                     if ":" in clean_anchor_id:
                         clean_anchor_id = clean_anchor_id.split(":")[1]
@@ -299,8 +337,6 @@ class HybridSearchService:
                     LIMIT 50;
                     """
 
-                    # We use a raw query via client if possible, or skip if client doesn't expose raw query easily here
-                    # accessing client_to_use.get_connection()
                     async with client_to_use.get_connection() as conn:
                         graph_resp = await conn.query(query_graph, {"anchor": clean_anchor_id})
                         if graph_resp and isinstance(graph_resp, list):
@@ -315,40 +351,20 @@ class HybridSearchService:
                                     if item.get('to_entity_id') != clean_anchor_id:
                                         connected_ids.add(item.get('to_entity_id'))
 
-                # Apply Boosting
-                # Logic:
-                # 1. Same Episode: +15% score
-                # 2. Graph Neighbor: +10% score
-                # 3. Context Boost: +Variable
-
                 reranked_scores = []
                 for i, m in enumerate(final_results):
-                    # Base score is inverted rank (higher is better)
-                    # We can't easily modify the RRF score directly as it's not passed down.
-                    # But we can re-sort.
-
                     boost_score = context_boost_scores[i]
 
-                    # Episode Boost (if not already handled by context)
                     if anchor_episode and m.episode_id == anchor_episode:
                         boost_score += 0.15
 
-                    # Graph Boost
                     clean_m_id = m.id.split(":")[1] if ":" in m.id else m.id
                     if clean_m_id in connected_ids:
                         boost_score += 0.10
 
-                    # We store (boost, original_index) to sort primarily by boost, then keep original order
                     reranked_scores.append(boost_score)
 
-                # Re-sort final_results based on boost + original position preservation
-                # We want to keep the original RRF ordering as the base, but bubble up boosted items.
-                # A simple way: add boost to a normalized rank score?
-                # Or simply: stable sort by boost descending.
-
-                # Combine memory with boost
                 zipped = list(zip(final_results, reranked_scores))
-                # Sort: primary key = boost (desc), secondary = original index (asc) is implicit in stable sort
                 zipped.sort(key=lambda x: x[1], reverse=True)
 
                 final_results = [m for m, score in zipped]
