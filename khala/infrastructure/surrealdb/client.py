@@ -6,10 +6,14 @@ transaction support, and error handling optimized for the KHALA memory system.
 
 import asyncio
 import hashlib
-from typing import Dict, List, Optional, Any, Union
+import os
+import re
+from typing import Dict, List, Optional, Any, Union, AsyncGenerator
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+
+from pydantic import BaseModel, Field, SecretStr
 
 try:
     from surrealdb import Surreal, AsyncSurreal
@@ -28,39 +32,57 @@ from .schema import DatabaseSchema
 logger = logging.getLogger(__name__)
 
 
+class SurrealConfig(BaseModel):
+    """Immutable configuration for SurrealDB."""
+    url: str = Field(..., description="SurrealDB WebSocket URL")
+    namespace: str = Field(..., description="Database Namespace")
+    database: str = Field(..., description="Database Name")
+    username: str = Field(..., description="Auth Username")
+    password: SecretStr = Field(..., description="Auth Password")
+    max_connections: int = Field(default=10, ge=1, le=100)
+
+    @classmethod
+    def from_env(cls) -> "SurrealConfig":
+        """Load from environment variables with Zero Trust."""
+        password = os.getenv("SURREAL_PASS")
+        if not password:
+             raise ValueError("CRITICAL: SURREAL_PASS environment variable is missing. Startup aborted.")
+
+        return cls(
+            url=os.getenv("SURREAL_URL", "ws://localhost:8000/rpc"),
+            namespace=os.getenv("SURREAL_NS", "khala"),
+            database=os.getenv("SURREAL_DB", "memories"),
+            username=os.getenv("SURREAL_USER", "root"),
+            password=SecretStr(password)
+        )
+
 class SurrealDBClient:
     """Async SurrealDB client with connection pooling and optimization."""
     
-    def __init__(
-        self,
-        url: str = "ws://localhost:8000/rpc",
-        namespace: str = "khala",
-        database: str = "memories",
-        username: str = "root",
-        password: str = "root",
-        max_connections: int = 10,
-    ):
+    def __init__(self, config: Optional[SurrealConfig] = None):
         """Initialize SurrealDB client.
         
         Args:
-            url: WebSocket URL for SurrealDB
-            namespace: Namespace to use (multi-tenancy)
-            database: Database to use
-            username: Authentication username
-            password: Authentication password
-            max_connections: Maximum connections in pool
+            config: Validated configuration object.
         """
-        self.url = url
-        self.namespace = namespace
-        self.database = database
-        self.username = username
-        self.password = password
-        self.max_connections = max_connections
+        self.config = config or SurrealConfig.from_env()
         
+        # Validation Check: Warn if using default credentials
+        if self.config.username == "root" and self.config.password.get_secret_value() == "root":
+             logger.warning("💀 SECURITY ALERT: Using default SurrealDB credentials. Do not do this in production.")
+
         self._connection_pool: List[AsyncSurreal] = []
         self._pool_lock = asyncio.Lock()
-        self._semaphore = asyncio.Semaphore(max_connections)
+        self._semaphore = asyncio.Semaphore(self.config.max_connections)
         self._initialized = False
+
+        # Backwards compatibility properties (deprecated)
+        self.url = self.config.url
+        self.namespace = self.config.namespace
+        self.database = self.config.database
+        self.username = self.config.username
+        self.password = self.config.password.get_secret_value()
+        self.max_connections = self.config.max_connections
     
     async def initialize(self) -> None:
         """Initialize connection pool and setup namespace/database."""
@@ -71,32 +93,35 @@ class SurrealDBClient:
             if self._initialized:
                 return
             
-            # Create initial connection
-            connection = AsyncSurreal(self.url)
-            await connection.connect()
-            await connection.signin({"username": self.username, "password": self.password})
+            logger.info(f"Connecting to SurrealDB at {self.config.url}...")
             
-            # Define namespace and database if they don't exist
             try:
-                await connection.query(f"DEFINE NAMESPACE {self.namespace};")
+                connection = AsyncSurreal(self.config.url)
+                await connection.connect()
+                await connection.signin({
+                    "username": self.config.username,
+                    "password": self.config.password.get_secret_value()
+                })
+
+                # Fail loudly if setup fails
+                await connection.query(f"DEFINE NAMESPACE {self.config.namespace};")
+                await connection.use(namespace=self.config.namespace, database=self.config.database)
+
+                self._connection_pool.append(connection)
+                self._initialized = True
+
             except Exception as e:
-                logger.debug(f"Namespace {self.namespace} might already exist: {e}")
+                logger.critical(f"Failed to initialize SurrealDB connection: {e}")
+                raise RuntimeError(f"SurrealDB Initialization Failed: {e}") from e
             
-            await connection.use(namespace=self.namespace, database=self.database)
-            
-            # Add to pool
-            self._connection_pool.append(connection)
-            self._initialized = True
-            
-        # Initialize Schema using DatabaseSchema manager
-        # Moved outside lock to prevent deadlock (get_connection needs lock)
         try:
             schema_manager = DatabaseSchema(self)
             await schema_manager.create_schema()
         except Exception as e:
             logger.error(f"Failed to initialize schema: {e}")
+            raise RuntimeError(f"Schema Initialization Failed: {e}") from e
         
-        logger.info(f"Connected to SurrealDB at {self.url}")
+        logger.info("SurrealDB initialized successfully.")
     
     @asynccontextmanager
     async def get_connection(self):
@@ -677,18 +702,24 @@ class SurrealDBClient:
             return relationship.id
 
     def _build_filter_query(self, filters: Dict[str, Any], params: Dict[str, Any]) -> str:
-        """Build WHERE clause segment from filters and update params."""
+        """Build WHERE clause segment securely.
+
+        Fixes SQL Injection by validating keys and using params for values.
+        """
         if not filters:
             return ""
 
         clauses = []
-        for key, value in filters.items():
-            # Validate key (alphanumeric, underscore, dot)
-            if not all(c.isalnum() or c in "_." for c in key):
-                logger.warning(f"Skipping invalid filter key: {key}")
-                continue
+        # Strict whitelist regex for keys: alphanumeric, underscore, dot.
+        key_pattern = re.compile(r"^[a-zA-Z0-9_.]+$")
 
-            safe_param_key = f"filter_{key.replace('.', '_')}"
+        for key, value in filters.items():
+            if not key_pattern.match(key):
+                logger.warning(f"💀 SQL INJECTION ATTEMPT: Invalid filter key '{key}'")
+                continue # Skip invalid keys
+
+            key_hash = hashlib.md5(key.encode()).hexdigest()[:8]
+            safe_param_key = f"filter_{key_hash}"
 
             if isinstance(value, (list, tuple)):
                 clauses.append(f"{key} IN ${safe_param_key}")
@@ -891,12 +922,16 @@ class SurrealDBClient:
                 if dt_val.tzinfo is None:
                     return dt_val.replace(tzinfo=timezone.utc)
                 return dt_val
-                
-            if isinstance(dt_val, str):
-                # Remove timezone info if present and add UTC
-                if dt_val.endswith('Z'):
-                    dt_val = dt_val[:-1]
-                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+
+            try:
+                if isinstance(dt_val, str):
+                    # Remove timezone info if present and add UTC
+                    if dt_val.endswith('Z'):
+                        dt_val = dt_val[:-1]
+                    return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+            except ValueError as e:
+                # Fail Loudly on data corruption
+                raise ValueError(f"CRITICAL: Data corruption detected. Invalid timestamp: {dt_val}") from e
             
             return datetime.now(timezone.utc)
         
