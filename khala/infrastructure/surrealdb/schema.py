@@ -29,7 +29,8 @@ class DatabaseSchema:
         DEFINE TABLE memory SCHEMAFULL;
         
         -- Core fields
-        DEFINE FIELD id ON memory TYPE string;
+
+        DEFINE FIELD id ON memory TYPE any;
         DEFINE FIELD user_id ON memory TYPE string;
         DEFINE FIELD content ON memory TYPE string;
         DEFINE FIELD content_hash ON memory TYPE string;
@@ -319,7 +320,8 @@ class DatabaseSchema:
         "episode_table": """
         DEFINE TABLE episode SCHEMAFULL;
 
-        DEFINE FIELD id ON episode TYPE string;
+
+        DEFINE FIELD id ON episode TYPE any;
         DEFINE FIELD user_id ON episode TYPE string;
         DEFINE FIELD title ON episode TYPE string;
         DEFINE FIELD description ON episode TYPE string;
@@ -342,7 +344,8 @@ class DatabaseSchema:
         "entity_table": """
         DEFINE TABLE entity SCHEMAFULL;
         
-        DEFINE FIELD id ON entity TYPE string;
+
+        DEFINE FIELD id ON entity TYPE any;
         DEFINE FIELD text ON entity TYPE string;
         DEFINE FIELD entity_type ON entity TYPE string;
         DEFINE FIELD confidence ON entity TYPE float;
@@ -387,7 +390,8 @@ class DatabaseSchema:
         "audit_log_table": """
         DEFINE TABLE audit_log SCHEMAFULL;
         
-        DEFINE FIELD id ON audit_log TYPE string;
+
+        DEFINE FIELD id ON audit_log TYPE any;
         DEFINE FIELD timestamp ON audit_log TYPE datetime DEFAULT time::now();
         DEFINE FIELD user_id ON audit_log TYPE string;
         DEFINE FIELD action ON audit_log TYPE object FLEXIBLE;
@@ -420,7 +424,8 @@ class DatabaseSchema:
         "search_session_table": """
         DEFINE TABLE search_session SCHEMAFULL;
 
-        DEFINE FIELD id ON search_session TYPE string;
+
+        DEFINE FIELD id ON search_session TYPE any;
         DEFINE FIELD user_id ON search_session TYPE string;
         DEFINE FIELD query ON search_session TYPE string;
         DEFINE FIELD expanded_queries ON search_session TYPE array<string>;
