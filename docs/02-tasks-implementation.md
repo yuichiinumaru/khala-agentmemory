@@ -79,3 +79,13 @@
 - [x] **AgentsNet** (Strategy 167).
 - [x] **Dr. MAMR** (Strategy 168).
 - [x] **Prompt Genealogy** (Strategy 170).
+
+## 🛠️ Pending Fixes (Audit 2025-12-04)
+
+- [ ] **Fix Critical Syntax Error** in `khala/application/services/spatial_memory_service.py` (Broken Python-in-SQL logic).
+- [ ] **Implement Semaphore** in `GeminiClient` (Strategy 126).
+- [ ] **Create Flows/Crews Directories** (`khala/domain/flow`, `khala/domain/crew`) and implement basic pattern (Strategy 116).
+- [ ] **Add `is_consensus` fields** to `relationship` table in `schema.py` (Strategy 73).
+- [ ] **Implement Cross-Modal Retrieval** in `MultimodalService` (Strategy 50).
+- [ ] **Enable RBAC** in `schema.py` (Uncomment `rbac_permissions`).
+- [ ] **Align Hyperedge Documentation** or Implementation.
