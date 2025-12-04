@@ -72,7 +72,9 @@ class DatabaseSchema:
         DEFINE FIELD debate_consensus ON memory TYPE option<object>;
         DEFINE FIELD is_archived ON memory TYPE bool DEFAULT false;
         DEFINE FIELD is_anchor ON memory TYPE bool DEFAULT false; -- Strategy 151
-        DEFINE FIELD decay_score ON memory VALUE fn::decay_score(0.0, $importance, 30.0);
+
+        -- Changed from VALUE to DEFAULT to allow background updates (Strategy 106)
+        DEFINE FIELD decay_score ON memory TYPE float DEFAULT fn::decay_score(0.0, $importance, 30.0);
         
         -- Tier 6: Advanced Metadata
         DEFINE FIELD source ON memory TYPE option<object> FLEXIBLE;
