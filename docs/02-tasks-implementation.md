@@ -128,12 +128,12 @@
 - [ ] **155. Dependency Mapping**: Track memory dependencies.
 
 ### Phase 3: Advanced Search & Graph
-- [ ] **76. Explainability Graph**: Store reasoning traces.
-- [ ] **95. Multilingual Search**: Translation layer.
-- [ ] **97. Contextual Search**: Proximity logic.
-- [ ] **102. Semantic-FTS Hybrid**: Tunable weighting.
-- [ ] **123. Parallel Search Execution**: `asyncio.gather`.
-- [ ] **142. Entity Disambiguation**: Merge logic.
+- [x] **76. Explainability Graph**: Store reasoning traces.
+- [x] **95. Multilingual Search**: Translation layer.
+- [x] **97. Contextual Search**: Proximity logic.
+- [x] **102. Semantic-FTS Hybrid**: Tunable weighting.
+- [x] **123. Parallel Search Execution**: `asyncio.gather`.
+- [x] **142. Entity Disambiguation**: Merge logic.
 
 ### Phase 4: Time & Forensics
 - [ ] **38. Advanced Multi-Index Strategy**: Composite indexes.
