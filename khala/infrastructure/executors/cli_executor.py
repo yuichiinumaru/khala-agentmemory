@@ -1,11 +1,15 @@
 import asyncio
 import json
+import os
+import logging
 import tempfile
 import time
 from pathlib import Path
 from typing import Dict, Any
 
 from ...application.orchestration.executor import SubagentExecutor
+
+logger = logging.getLogger(__name__)
 from ...application.orchestration.types import SubagentTask, SubagentResult, SubagentRole, ModelTier
 
 class CLISubagentExecutor(SubagentExecutor):
@@ -15,18 +19,19 @@ class CLISubagentExecutor(SubagentExecutor):
     
     def _get_agent_file(self, role: SubagentRole) -> Path:
         """Get path to agent configuration file."""
-        # TODO: Make this configurable via environment variables or config file
+        base_path = os.getenv("KHALA_AGENTS_PATH", "./.gemini/agents")
         agent_files = {
-            SubagentRole.ANALYZER: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/research-analyst.md",
-            SubagentRole.SYNTHESIZER: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/knowledge-synthesizer.md",
-            SubagentRole.CURATOR: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/code-quality-reviewer.md",
-            SubagentRole.RESEARCHER: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/research-analyst.md",
-            SubagentRole.VALIDATOR: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/test-coverage-reviewer.md",
-            SubagentRole.CONSOLIDATOR: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/knowledge-synthesizer.md",
-            SubagentRole.EXTRACTOR: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/data-analyst.md",
-            SubagentRole.OPTIMIZER: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/performance-reviewer.md"
+            SubagentRole.ANALYZER: "research-analyst.md",
+            SubagentRole.SYNTHESIZER: "knowledge-synthesizer.md",
+            SubagentRole.CURATOR: "code-quality-reviewer.md",
+            SubagentRole.RESEARCHER: "research-analyst.md",
+            SubagentRole.VALIDATOR: "test-coverage-reviewer.md",
+            SubagentRole.CONSOLIDATOR: "knowledge-synthesizer.md",
+            SubagentRole.EXTRACTOR: "data-analyst.md",
+            SubagentRole.OPTIMIZER: "performance-reviewer.md"
         }
-        return agent_files.get(role, agent_files[SubagentRole.ANALYZER])
+        filename = agent_files.get(role, "research-analyst.md")
+        return Path(base_path) / filename
 
     def _get_model_for_tier(self, tier: ModelTier) -> str:
         """Resolve model name from tier."""
@@ -82,12 +87,18 @@ class CLISubagentExecutor(SubagentExecutor):
                     cwd=str(workspace_path)
                 )
                 
-                # Wait for completion with timeout
+                # Wait for completion with timeout and capture output
                 try:
-                    stdout, stderr = await asyncio.wait_for(
-                        process.wait(),
+                    stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                        process.communicate(),
                         timeout=task.timeout_seconds
                     )
+                    stdout = stdout_bytes.decode() if stdout_bytes else ""
+                    stderr = stderr_bytes.decode() if stderr_bytes else ""
+
+                    if process.returncode != 0:
+                        logger.error(f"Subagent CLI failed: {stderr}")
+
                 except asyncio.TimeoutError:
                     process.kill()
                     raise TimeoutError(f"Task {task.task_id} timed out")

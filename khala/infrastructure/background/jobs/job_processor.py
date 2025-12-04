@@ -337,24 +337,17 @@ class JobProcessor:
         
         while self.is_running:
             try:
-                # Get next job with timeout
-                job = await asyncio.wait_for(
-                    self._get_next_job(),
-                    timeout=1.0  # Check for jobs every second
-                )
+                job = await self._get_next_job()
                 
                 if job:
                     await self._process_job(job, worker_id)
                 else:
-                    # No jobs available, short sleep
-                    await asyncio.sleep(0.1)
+                    # Adaptive sleep: If no jobs, sleep 1s to save CPU.
+                    await asyncio.sleep(1.0)
                     
-            except asyncio.TimeoutError:
-                # No jobs available, continue loop
-                continue
             except Exception as e:
                 logger.error(f"Worker {worker_id} error: {e}")
-                await asyncio.sleep(1.0)  # Brief pause on error
+                await asyncio.sleep(1.0)
         
         logger.info(f"Worker {worker_id} stopped")
     
@@ -687,16 +680,20 @@ class JobProcessor:
             delay = min(300, 30 * (2 ** job.retry_count))  # Max 5 minutes
             
             job.status = JobStatus.PENDING
+            job.scheduled_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
             self.metrics["retry_count"] += 1
             
-            # Reschedule job
-            await asyncio.sleep(delay)
+            # Reschedule job (Non-blocking)
             if self.redis_client:
                 await self._store_job_redis(job)
             else:
-                self._memory_queue.put_nowait(job)
+                # For memory queue, we spawn a delayed task to re-queue
+                async def re_queue():
+                    await asyncio.sleep(delay)
+                    self._memory_queue.put_nowait(job)
+                asyncio.create_task(re_queue())
             
-            logger.info(f"Job {job.job_id} will be retried ({job.retry_count}/{job.max_retries}) after {delay}s")
+            logger.info(f"Job {job.job_id} rescheduled for retry ({job.retry_count}/{job.max_retries}) in {delay}s")
         else:
             # Max retries exceeded, mark as failed
             self.metrics["failed_jobs"] += 1

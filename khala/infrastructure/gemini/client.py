@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Any, Union, Tuple
 from datetime import datetime, timezone, timedelta
 import logging
 
+import cachetools
+
 try:
     import google.generativeai as genai
     from google.api_core import exceptions as gcp_exceptions
@@ -60,9 +62,9 @@ class GeminiClient:
         self.max_retries = max_retries
         self.timeout_seconds = timeout_seconds
         
-        # Response cache
-        self._response_cache: Dict[str, Dict[str, Any]] = {}
-        self._cache_timestamps: Dict[str, datetime] = {}
+        # Response cache (Memory Leak Fixed via TTLCache)
+        self._response_cache = cachetools.TTLCache(maxsize=1000, ttl=cache_ttl_seconds)
+        self._cache_lock = asyncio.Lock()
         self._cache_hits = 0
         self._cache_misses = 0
         
@@ -205,7 +207,7 @@ class GeminiClient:
         # Default to generation
         return "generation"
     
-    def select_model(self, prompt: str, task_type: str = "generation") -> GeminiModel:
+    async def select_model(self, prompt: str, task_type: str = "generation") -> GeminiModel:
         """Select the optimal model based on task complexity and type.
         
         Args:
@@ -216,42 +218,19 @@ class GeminiClient:
             Selected model configuration
         """
         if not self.enable_cascading:
-            # If cascading is disabled, use smart tier
             return ModelRegistry.get_model("gemini-2.5-pro")
-        
-        # Classify complexity
-        complexity = asyncio.create_task(self.classify_task_complexity(prompt))
         
         # Determine required quality based on task type
         quality_requirements = {
-            "embedding": 0.5,  # Embeddings don't need highest quality
-            "classification": 0.7,  # Moderate quality needed
-            "extraction": 0.8,   # High quality needed for extraction
-            "generation": 0.8    # High quality needed for generation
+            "embedding": 0.5,
+            "classification": 0.7,
+            "extraction": 0.8,
+            "generation": 0.8
         }.get(task_type, 0.8)
         
-        # Get cost-optimal model
         try:
-            complexity_value = complexity if isinstance(complexity, float) else 0.5
-            
-            if hasattr(complexity, "__await__"):
-                try:
-                    loop = asyncio.get_running_loop()
-                    # If we are in a loop, we can't use asyncio.run. 
-                    # We have to assume a default or handle it differently.
-                    # For synchronous select_model, we might need to rely on the cache or default.
-                    if loop.is_running():
-                         # We can't await here because select_model is sync.
-                         # Fallback to default complexity
-                         complexity_score = 0.5
-                    else:
-                        complexity_score = asyncio.run(complexity)
-                except RuntimeError:
-                    # No running loop, safe to use asyncio.run
-                    complexity_score = asyncio.run(complexity)
-            else:
-                complexity_score = complexity_value
-                
+            # Properly await the complexity score
+            complexity_score = await self.classify_task_complexity(prompt)
             return ModelRegistry.get_cost_optimal_model(complexity_score, quality_requirements)
         except Exception as e:
             logger.warning(f"Error selecting optimal model, using default: {e}")
@@ -284,13 +263,9 @@ class GeminiClient:
         start_time = time.time()
         
         # Select model
-        # If images are provided, force use of a multimodal model (gemini-2.5-pro or flash)
         if images:
             if not model_id:
-                # Default to Flash for multimodal as it's efficient, or Pro if quality needed
-                # For now, let's use the one selected by complexity, but ensure it supports images.
-                # All Gemini models in our registry (Pro/Flash) support images.
-                model = self.select_model(prompt, task_type)
+                model = await self.select_model(prompt, task_type)
             else:
                 model = ModelRegistry.get_model(model_id)
                 use_cascading = False
@@ -298,12 +273,12 @@ class GeminiClient:
             model = ModelRegistry.get_model(model_id)
             use_cascading = False
         else:
-            model = self.select_model(prompt, task_type)
+            model = await self.select_model(prompt, task_type)
         
-        # Check cache if enabled (skip for images for now as hashing them is expensive)
+        # Check cache if enabled
         if self.enable_caching and not images:
             cache_key = self._get_cache_key(prompt, model_id=model.model_id)
-            cached_response = self._get_cached_response(cache_key)
+            cached_response = await self._get_cached_response(cache_key)
             if cached_response:
                 self._cache_hits += 1
                 logger.debug(f"Cache hit for {model.model_id}")
@@ -389,7 +364,7 @@ class GeminiClient:
                 "output_tokens": int(output_tokens),
                 "cost_usd": str(cost_record.cost_usd)
             }
-            self._cache_response(cache_key, cached_data)
+            await self._cache_response(cache_key, cached_data)
         
         return {
             "content": response.text,
@@ -484,55 +459,23 @@ class GeminiClient:
 
         return "_".join(components)
     
-    def _get_cached_response(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        """Get cached response if available and not expired.
-        
-        Args:
-            cache_key: Cache key to retrieve
-
-        Returns:
-            Cached response or None
-        """
+    async def _get_cached_response(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Get cached response if available and not expired."""
         if not self.enable_caching:
             return None
         
-        cached_record = self._response_cache.get(cache_key)
-        if not cached_record:
+        async with self._cache_lock:
+            # TTLCache handles expiration automatically
+            cached_record = self._response_cache.get(cache_key)
+            if cached_record:
+                cached_record["cache_hit"] = True
+                return cached_record
             return None
-        
-        # Check if cache has expired
-        now = datetime.now(timezone.utc)
 
-        # Handle different ways timestamp might be stored (in record or in separate dict)
-        if "timestamp" in cached_record:
-            if isinstance(cached_record["timestamp"], str):
-                 cache_time = datetime.fromisoformat(cached_record["timestamp"])
-            else:
-                 cache_time = cached_record["timestamp"]
-        else:
-            cache_time = self._cache_timestamps.get(cache_key, now)
-
-        age_seconds = (now - cache_time).total_seconds()
-
-        if age_seconds > self.cache_ttl_seconds:
-            # Remove expired cache entry
-            if cache_key in self._response_cache:
-                del self._response_cache[cache_key]
-            if cache_key in self._cache_timestamps:
-                del self._cache_timestamps[cache_key]
-            return None
-        
-        # Update cache hit tracking
-        if cache_key not in self._cache_timestamps:
-            self._cache_timestamps[cache_key] = now
-
-        cached_record["cache_hit"] = True
-        return cached_record
-
-    def _cache_response(self, cache_key: str, data: Dict[str, Any]) -> None:
-        """Cache a response with timestamp."""
-        self._response_cache[cache_key] = data
-        self._cache_timestamps[cache_key] = datetime.now(timezone.utc)
+    async def _cache_response(self, cache_key: str, data: Dict[str, Any]) -> None:
+        """Cache a response."""
+        async with self._cache_lock:
+            self._response_cache[cache_key] = data
     
     def get_cost_tracker(self) -> CostTracker:
         """Get the cost tracker instance."""
