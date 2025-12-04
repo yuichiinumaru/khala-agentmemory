@@ -13,33 +13,33 @@ KHALA is designed as a **hierarchical, graph-based memory system** that integrat
 
 ```mermaid
 graph TD
-    User[User / Agno Agent] -->|Interaction| API[Interface Layer (API/MCP)]
-    API --> Orchestrator[Application Layer: Orchestrator]
+    User["User / Agno Agent"] -->|Interaction| API["Interface Layer (API/MCP)"]
+    API --> Orchestrator["Application Layer: Orchestrator"]
 
     subgraph "Layer 1: Intelligence"
-        Orchestrator --> Intent[Intent Classifier]
-        Orchestrator --> Debate[Multi-Agent Debate]
-        Orchestrator --> Verify[Verification Gate]
+        Orchestrator --> Intent["Intent Classifier"]
+        Orchestrator --> Debate["Multi-Agent Debate"]
+        Orchestrator --> Verify["Verification Gate"]
     end
 
     subgraph "Layer 2: Retrieval Engine"
-        Intent --> Hybrid[Hybrid Search]
-        Hybrid --> Vector[Vector Search]
-        Hybrid --> BM25[BM25 Search]
-        Hybrid --> GraphSearch[Graph Traversal]
-        Hybrid --> Cache[L1/L2 Cache]
+        Intent --> Hybrid["Hybrid Search"]
+        Hybrid --> Vector["Vector Search"]
+        Hybrid --> BM25["BM25 Search"]
+        Hybrid --> GraphSearch["Graph Traversal"]
+        Hybrid --> Cache["L1/L2 Cache"]
     end
 
     subgraph "Layer 3: Storage (SurrealDB)"
-        Vector --> DB_Mem[(Memory Table)]
+        Vector --> DB_Mem[("Memory Table")]
         BM25 --> DB_Mem
-        GraphSearch --> DB_Graph[(Entity & Relation Tables)]
+        GraphSearch --> DB_Graph[("Entity & Relation Tables")]
     end
 
     subgraph "Layer 4: Background Optimization"
-        Scheduler[Job Scheduler] --> Consolidation[Consolidation Service]
-        Scheduler --> Decay[Decay Service]
-        Scheduler --> Skill[Skill Extractor]
+        Scheduler["Job Scheduler"] --> Consolidation["Consolidation Service"]
+        Scheduler --> Decay["Decay Service"]
+        Scheduler --> Skill["Skill Extractor"]
         Consolidation --> DB_Mem
     end
 ```
