@@ -57,9 +57,109 @@ class GraphService:
 
         return hyper_node.id
 
+    async def create_bitemporal_relationship(
+        self,
+        from_id: str,
+        to_id: str,
+        relation_type: str,
+        valid_from: Optional[datetime] = None,
+        valid_to: Optional[datetime] = None,
+        strength: float = 1.0
+    ) -> str:
+        """
+        Strategy 41: Create a relationship with explicit bi-temporal validity.
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+            raise RuntimeError("Repository client not available")
+
+        if not valid_from:
+            valid_from = datetime.now(timezone.utc)
+
+        rel = Relationship(
+            from_entity_id=from_id,
+            to_entity_id=to_id,
+            relation_type=relation_type,
+            strength=strength,
+            valid_from=valid_from,
+            valid_to=valid_to,
+            transaction_time_start=datetime.now(timezone.utc)
+        )
+        await client.create_relationship(rel)
+        return rel.id
+
+    async def invalidate_relationship(self, relationship_id: str) -> bool:
+        """
+        Strategy 119: Soft-delete/invalidate a relationship by setting valid_to = now.
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+            return False
+
+        now = datetime.now(timezone.utc)
+        query = "UPDATE relationship SET valid_to = $now WHERE id = $id OR id = $prefixed_id;"
+        params = {
+            "now": now,
+            "id": relationship_id,
+            "prefixed_id": f"relationship:{relationship_id}"
+        }
+
+        try:
+            async with client.get_connection() as conn:
+                await conn.query(query, params)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to invalidate relationship {relationship_id}: {e}")
+            return False
+
+    async def get_graph_snapshot(
+        self,
+        timestamp: datetime,
+        limit: int = 1000
+    ) -> nx.Graph:
+        """
+        Strategy 75: Temporal Graph Evolution.
+        Get a snapshot of the graph as it existed at `timestamp` (valid time).
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+            return nx.Graph()
+
+        query = """
+        SELECT * FROM relationship
+        WHERE valid_from <= $ts
+        AND (valid_to IS NONE OR valid_to > $ts)
+        LIMIT $limit;
+        """
+        params = {"ts": timestamp, "limit": limit}
+
+        graph = nx.DiGraph()
+
+        async with client.get_connection() as conn:
+            response = await conn.query(query, params)
+            rels = []
+            if response and isinstance(response, list):
+                 if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                     rels = response[0]['result']
+                 else:
+                     rels = response
+
+            for rel_data in rels:
+                if isinstance(rel_data, dict):
+                    # No deserialization needed for simple networkx construction
+                    graph.add_edge(
+                        rel_data['from_entity_id'],
+                        rel_data['to_entity_id'],
+                        type=rel_data.get('relation_type'),
+                        strength=rel_data.get('strength', 1.0)
+                    )
+
+        return graph
+
     async def get_inherited_relationships(self, entity_id: str) -> List[Relationship]:
         """
         Get all relationships for an entity, including those inherited from parents.
+        Filters out invalid (soft-deleted) relationships.
 
         Inheritance is defined by 'is_a' or 'subclass_of' relationships.
         """
@@ -69,7 +169,12 @@ class GraphService:
             return []
 
         # 1. Get direct relationships (where entity is source)
-        query = "SELECT * FROM relationship WHERE from_entity_id = $id;"
+        # Strategy 119: Filter by valid_to
+        query = """
+        SELECT * FROM relationship
+        WHERE from_entity_id = $id
+        AND (valid_to IS NONE OR valid_to > time::now());
+        """
         params = {"id": entity_id}
 
         direct_rels = []
@@ -94,7 +199,8 @@ class GraphService:
         SELECT to_entity_id
         FROM relationship
         WHERE from_entity_id = $id
-        AND (relation_type = 'is_a' OR relation_type = 'subclass_of');
+        AND (relation_type = 'is_a' OR relation_type = 'subclass_of')
+        AND (valid_to IS NONE OR valid_to > time::now());
         """
 
         parents = []
@@ -201,7 +307,12 @@ class GraphService:
         # 1. Fetch graph snapshot
         # For large graphs, this should be done incrementally or via dedicated graph engine.
         # Here we do an in-memory snapshot for analysis.
-        query = "SELECT * FROM relationship LIMIT $limit;"
+        # Strategy 119: Filter for currently valid edges
+        query = """
+        SELECT * FROM relationship
+        WHERE (valid_to IS NONE OR valid_to > time::now())
+        LIMIT $limit;
+        """
         params = {"limit": limit}
 
         graph = nx.Graph() # Undirected for general importance
@@ -248,7 +359,12 @@ class GraphService:
         # 1. Fetch relevant portion of the main graph
         # Heuristic: Fetch neighborhood of nodes that match candidate types in target graph
         # For simplicity in this implementation, we fetch a larger subgraph or use the full snapshot (limited)
-        query = "SELECT * FROM relationship LIMIT $limit;"
+        # Strategy 119: Filter for valid edges
+        query = """
+        SELECT * FROM relationship
+        WHERE (valid_to IS NONE OR valid_to > time::now())
+        LIMIT $limit;
+        """
         params = {"limit": limit} # Should be larger for real use
 
         host_graph = nx.DiGraph() # Directed to match relationships
@@ -306,7 +422,12 @@ class GraphService:
 
         # 1. Fetch graph snapshot
         # For large graphs, this should be done via graph engine or limited snapshot
-        query = "SELECT * FROM relationship LIMIT 2000;"
+        # Strategy 119: Filter for valid edges
+        query = """
+        SELECT * FROM relationship
+        WHERE (valid_to IS NONE OR valid_to > time::now())
+        LIMIT 2000;
+        """
         graph = nx.Graph()
 
         async with client.get_connection() as conn:

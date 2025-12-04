@@ -128,3 +128,64 @@ class AdaptiveLearningService:
             logger.error(f"Failed to get best action: {e}")
 
         return None
+
+    async def track_learning_curve(
+        self,
+        model_id: str,
+        epoch: int,
+        loss: float,
+        accuracy: float,
+        reward_mean: float
+    ) -> None:
+        """
+        Strategy 108: Learning Curve Tracking.
+        Records training metrics to visualize learning progress over time.
+        """
+        # Using the `training_curves` table defined in schema (Strategy 166)
+        query = """
+        CREATE training_curves CONTENT {
+            model_id: $model_id,
+            epoch: $epoch,
+            loss: $loss,
+            accuracy: $accuracy,
+            reward_mean: $reward_mean,
+            created_at: time::now()
+        };
+        """
+
+        params = {
+            "model_id": model_id,
+            "epoch": epoch,
+            "loss": loss,
+            "accuracy": accuracy,
+            "reward_mean": reward_mean
+        }
+
+        try:
+            async with self.db_client.get_connection() as conn:
+                await conn.query(query, params)
+        except Exception as e:
+            logger.error(f"Failed to track learning curve: {e}")
+
+    async def get_learning_curve(self, model_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieve learning curve data for a model.
+        """
+        query = """
+        SELECT epoch, loss, accuracy, reward_mean, created_at
+        FROM training_curves
+        WHERE model_id = $model_id
+        ORDER BY epoch ASC;
+        """
+
+        try:
+            async with self.db_client.get_connection() as conn:
+                response = await conn.query(query, {"model_id": model_id})
+                if response and isinstance(response, list):
+                     if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                         return response[0]['result']
+                     return response
+                return []
+        except Exception as e:
+            logger.error(f"Failed to get learning curve: {e}")
+            return []
