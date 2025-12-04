@@ -115,9 +115,12 @@ class DatabaseSchema:
         DEFINE INDEX importance_index ON memory FIELDS importance;
         DEFINE INDEX created_index ON memory FIELDS created_at;
 
-        -- Strategy 38: Composite Indexes
+        -- Strategy 38: Composite Indexes (Advanced Multi-Index)
         DEFINE INDEX user_tier_index ON memory FIELDS user_id, tier;
         DEFINE INDEX user_importance_index ON memory FIELDS user_id, importance;
+        DEFINE INDEX user_time_index ON memory FIELDS user_id, created_at;
+        DEFINE INDEX user_access_index ON memory FIELDS user_id, accessed_at;
+        DEFINE INDEX user_tier_importance_index ON memory FIELDS user_id, tier, importance;
         DEFINE INDEX accessed_index ON memory FIELDS accessed_at;
         
         
@@ -133,6 +136,21 @@ class DatabaseSchema:
         -- Module 12 indexes
         DEFINE INDEX episode_index ON memory FIELDS episode_id;
         DEFINE INDEX anchor_index ON memory FIELDS is_anchor;
+        """,
+
+        # Strategy 75: Temporal Graph Evolution
+        "graph_evolution_tables": """
+        DEFINE TABLE graph_snapshot SCHEMAFULL;
+        DEFINE FIELD timestamp ON graph_snapshot TYPE datetime DEFAULT time::now();
+        DEFINE FIELD node_count ON graph_snapshot TYPE int;
+        DEFINE FIELD edge_count ON graph_snapshot TYPE int;
+        DEFINE FIELD density ON graph_snapshot TYPE float;
+        DEFINE FIELD avg_degree ON graph_snapshot TYPE float;
+        DEFINE FIELD avg_clustering ON graph_snapshot TYPE float;
+        DEFINE FIELD component_count ON graph_snapshot TYPE int;
+        DEFINE FIELD metadata ON graph_snapshot TYPE object FLEXIBLE;
+
+        DEFINE INDEX snapshot_time_idx ON graph_snapshot FIELDS timestamp;
         """,
         
         # Advanced Vector Ops Tables (Module 11.C.2)
@@ -614,6 +632,7 @@ class DatabaseSchema:
             "search_session_table",
             "branch_table",
             "skill_table",
+            "graph_evolution_tables",
             "vector_ops_tables",
             "adaptive_learning_tables",
             "lgkgr_tables",
@@ -648,6 +667,7 @@ class DatabaseSchema:
             "REMOVE TABLE audit_log",
             "REMOVE TABLE search_session",
             "REMOVE TABLE skill",
+            "REMOVE TABLE graph_snapshot",
             "REMOVE TABLE vector_cluster",
             "REMOVE TABLE vector_stats",
             "REMOVE TABLE agent_network",
@@ -678,6 +698,7 @@ class DatabaseSchema:
             ("audit_log", "SELECT count() FROM audit_log;"),
             ("search_session", "SELECT count() FROM search_session;"),
             ("skill", "SELECT count() FROM skill;"),
+            ("graph_snapshot", "SELECT count() FROM graph_snapshot;"),
             ("vector_cluster", "SELECT count() FROM vector_cluster;"),
             ("agent_network", "SELECT count() FROM agent_network;"),
             ("agent_states", "SELECT count() FROM agent_states;"),

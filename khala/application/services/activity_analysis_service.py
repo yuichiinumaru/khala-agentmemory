@@ -95,3 +95,72 @@ class ActivityAnalysisService:
         except Exception as e:
             logger.error(f"Failed to summarize activity: {e}")
             return {}
+
+    async def get_learning_curve(self, agent_id: str, days: int = 30) -> Dict[str, Any]:
+        """
+        Strategy 108: Learning Curve Tracking.
+        Analyzes the trend of verification scores for an agent's memories.
+        """
+        client = getattr(self.repository, 'client', None)
+        if not client:
+            return {}
+
+        # 1. Fetch verification scores over time
+        # Group by day or check individual points
+        query = """
+        SELECT
+            time::format(created_at, "%Y-%m-%d") as date,
+            math::mean(verification_score) as avg_score,
+            count() as memory_count
+        FROM memory
+        WHERE user_id = $agent_id
+        AND created_at > time::now() - $duration
+        AND verification_score != NONE
+        GROUP BY date
+        ORDER BY date ASC;
+        """
+
+        params = {
+            "agent_id": agent_id,
+            "duration": f"{days}d"
+        }
+
+        try:
+             async with client.get_connection() as conn:
+                response = await conn.query(query, params)
+
+                items = []
+                if response and isinstance(response, list):
+                     if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                         items = response[0]['result']
+                     else:
+                         items = response
+
+                # Calculate simple trend (improvement rate)
+                data_points = []
+                for item in items:
+                    if isinstance(item, dict):
+                        data_points.append({
+                            "date": item.get("date"),
+                            "score": item.get("avg_score", 0.0),
+                            "count": item.get("memory_count", 0)
+                        })
+
+                trend = "stable"
+                if len(data_points) >= 2:
+                    first = data_points[0]["score"]
+                    last = data_points[-1]["score"]
+                    if last > first * 1.05:
+                        trend = "improving"
+                    elif last < first * 0.95:
+                        trend = "degrading"
+
+                return {
+                    "agent_id": agent_id,
+                    "trend": trend,
+                    "data_points": data_points
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to calculate learning curve: {e}")
+            return {}
