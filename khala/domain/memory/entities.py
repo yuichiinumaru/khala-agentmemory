@@ -39,6 +39,7 @@ class Memory:
     embedding_code: Optional[EmbeddingVector] = field(default=None)
     tags: List[str] = field(default_factory=list)
     category: Optional[str] = field(default=None)
+    scope: Optional[str] = field(default=None)  # Strategy 148: Scoped Memories
     summary: Optional[str] = field(default=None)
     metadata: Dict[str, Any] = field(default_factory=dict)
     

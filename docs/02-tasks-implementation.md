@@ -38,9 +38,9 @@
 - [ ] **Strategy 133 (Surprise-Based Learning)**: Implement `SurpriseService` to detect contradictions and boost importance.
 - [ ] **Strategy 134 (Curiosity-Driven Exploration)**: Implement agent queries for missing knowledge holes.
 - [ ] **Strategy 125 (Human-in-the-Loop)**: Implement `ApprovalService` for critical checkpoints.
-- [ ] **Strategy 116 (Flows vs Crews)**: Implement distinct `Flow` and `Crew` definitions and orchestrator logic.
-- [ ] **Strategy 149 (Transient Scratchpads)**: Implement temporary memory storage for complex reasoning.
-- [ ] **Strategy 148 (Scoped Memories)**: Implement project/scope isolation beyond basic RBAC.
+- [x] **Strategy 116 (Flows vs Crews)**: Implement distinct `Flow` and `Crew` definitions and orchestrator logic.
+- [x] **Strategy 149 (Transient Scratchpads)**: Implement temporary memory storage for complex reasoning.
+- [x] **Strategy 148 (Scoped Memories)**: Implement project/scope isolation beyond basic RBAC.
 - [ ] **Strategy 150 (Recursive Summarization)**: Implement hierarchical summary generation.
 - [ ] **Strategy 122 (Path Lookup Acceleration)**: Implement pre-indexing of common graph paths.
 - [ ] **Strategy 63 & 65 (SurrealDB Ops)**: Implement Conditional Content Fields and Document-Level Transactions.
@@ -95,6 +95,7 @@
 - [x] **Strategy 133**: Surprise-Based Learning (`SurpriseService`).
 - [x] **Strategy 134**: Curiosity-Driven Exploration (`CuriosityService`).
 - [x] **Strategy 125**: Human-in-the-Loop (`ApprovalService`).
+- [x] **Strategy 116**: Flows vs Crews (`FlowOrchestrator`, `CrewOrchestrator`).
 - [x] **Strategy 149**: Transient Scratchpads (`ScratchpadService`).
 - [x] **Strategy 150**: Recursive Summarization (`RecursiveSummaryService`).
 - [x] **Strategy 122**: Path Lookup Acceleration (Graph Cache).

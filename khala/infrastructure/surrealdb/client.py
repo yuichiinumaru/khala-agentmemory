@@ -166,6 +166,50 @@ class SurrealDBClient:
                      logger.info(f"Duplicate memory detected (hash collision). Returning existing ID: {existing_id}")
                      return existing_id
 
+        query = """
+        CREATE type::thing('memory', $id) CONTENT {
+            user_id: $user_id,
+            content: $content,
+            content_hash: $content_hash,
+            embedding: $embedding,
+            embedding_model: $embedding_model,
+            embedding_version: $embedding_version,
+            embedding_visual: $embedding_visual,
+            embedding_visual_model: $embedding_visual_model,
+            embedding_visual_version: $embedding_visual_version,
+            embedding_code: $embedding_code,
+            embedding_code_model: $embedding_code_model,
+            embedding_code_version: $embedding_code_version,
+            tier: $tier,
+            importance: $importance,
+            tags: $tags,
+            category: $category,
+            scope: $scope,
+            metadata: $metadata,
+            created_at: $created_at,
+            updated_at: $updated_at,
+            accessed_at: $accessed_at,
+            access_count: $access_count,
+            llm_cost: $llm_cost,
+            verification_score: $verification_score,
+            verification_count: $verification_count,
+            verification_status: $verification_status,
+            verified_at: $verified_at,
+            verification_issues: $verification_issues,
+            debate_consensus: $debate_consensus,
+            is_archived: $is_archived,
+            decay_score: $decay_score,
+            source: $source,
+            sentiment: $sentiment,
+            episode_id: $episode_id,
+            confidence: $confidence,
+            source_reliability: $source_reliability,
+            location: $location,
+            versions: $versions,
+            events: $events
+        };
+        """
+        
         # Serialize source and handle datetime
         source_data = None
         if memory.source:
@@ -192,6 +236,7 @@ class SurrealDBClient:
             "importance": memory.importance.value,
             "tags": memory.tags,
             "category": memory.category,
+            "scope": memory.scope,
             "summary": memory.summary,
             "metadata": memory.metadata,
             "created_at": memory.created_at,
@@ -304,6 +349,7 @@ class SurrealDBClient:
             importance: $importance,
             tags: $tags,
             category: $category,
+            scope: $scope,
             metadata: $metadata,
             created_at: $created_at,
             updated_at: time::now(),
@@ -364,6 +410,7 @@ class SurrealDBClient:
             "importance": memory.importance.value,
             "tags": memory.tags,
             "category": memory.category,
+            "scope": memory.scope,
             "metadata": memory.metadata,
             "created_at": memory.created_at,
             "accessed_at": memory.accessed_at,
@@ -779,6 +826,7 @@ class SurrealDBClient:
             embedding_code=embedding_code,
             tags=data.get("tags", []),
             category=data.get("category"),
+            scope=data.get("scope"),
             summary=data.get("summary"),
             metadata=data.get("metadata", {}),
             created_at=parse_dt(data["created_at"]),

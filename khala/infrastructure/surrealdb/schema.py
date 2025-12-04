@@ -46,10 +46,11 @@ class DatabaseSchema:
         DEFINE FIELD embedding_code ON memory TYPE option<array<float>>;
         DEFINE FIELD embedding_code_model ON memory TYPE option<string>;
         DEFINE FIELD embedding_code_version ON memory TYPE option<string>;
-        DEFINE FIELD tier ON memory TYPE string ASSERT $value INSIDE ['working', 'short_term', 'long_term'];
+        DEFINE FIELD tier ON memory TYPE string ASSERT $value INSIDE ['working', 'short_term', 'long_term', 'scratchpad'];
         DEFINE FIELD importance ON memory TYPE float;
         DEFINE FIELD tags ON memory TYPE array<string>;
         DEFINE FIELD category ON memory TYPE option<string>;
+        DEFINE FIELD scope ON memory TYPE option<string>;
         DEFINE FIELD summary ON memory TYPE option<string>;
         DEFINE FIELD metadata ON memory TYPE object FLEXIBLE;
         
@@ -117,6 +118,9 @@ class DatabaseSchema:
         
         -- Tag prefix search
         DEFINE INDEX tag_search ON memory FIELDS tags SEARCH ANALYZER ascii BM25;
+
+        -- Scoped memory index (Strategy 148)
+        DEFINE INDEX scope_index ON memory FIELDS scope;
 
         -- Spatial index (Strategies 111-115)
         DEFINE INDEX location_index ON memory FIELDS location;
@@ -272,6 +276,53 @@ class DatabaseSchema:
         DEFINE FIELD created_at ON prompt_evaluations TYPE datetime;
 
         DEFINE INDEX eval_prompt_idx ON prompt_evaluations FIELDS prompt_id;
+        """,
+
+        # Strategy 116: Flows Tables
+        "flow_tables": """
+        DEFINE TABLE flow SCHEMAFULL;
+        DEFINE FIELD name ON flow TYPE string;
+        DEFINE FIELD description ON flow TYPE string;
+        DEFINE FIELD steps ON flow TYPE array<object> FLEXIBLE;
+        DEFINE FIELD metadata ON flow TYPE object FLEXIBLE;
+        DEFINE FIELD is_active ON flow TYPE bool DEFAULT true;
+        DEFINE FIELD created_at ON flow TYPE datetime DEFAULT time::now();
+
+        DEFINE TABLE flow_execution SCHEMAFULL;
+        DEFINE FIELD flow_id ON flow_execution TYPE string;
+        DEFINE FIELD user_id ON flow_execution TYPE string;
+        DEFINE FIELD status ON flow_execution TYPE string;
+        DEFINE FIELD current_step_index ON flow_execution TYPE int DEFAULT 0;
+        DEFINE FIELD context ON flow_execution TYPE object FLEXIBLE;
+        DEFINE FIELD results ON flow_execution TYPE object FLEXIBLE;
+        DEFINE FIELD started_at ON flow_execution TYPE datetime DEFAULT time::now();
+        DEFINE FIELD ended_at ON flow_execution TYPE option<datetime>;
+
+        DEFINE INDEX flow_exec_user_idx ON flow_execution FIELDS user_id;
+        DEFINE INDEX flow_exec_status_idx ON flow_execution FIELDS status;
+        """,
+
+        # Strategy 116: Crews Tables
+        "crew_tables": """
+        DEFINE TABLE crew SCHEMAFULL;
+        DEFINE FIELD name ON crew TYPE string;
+        DEFINE FIELD objective ON crew TYPE string;
+        DEFINE FIELD members ON crew TYPE array<object> FLEXIBLE;
+        DEFINE FIELD manager_agent_id ON crew TYPE option<string>;
+        DEFINE FIELD memory_context_id ON crew TYPE option<string>;
+        DEFINE FIELD status ON crew TYPE string DEFAULT 'active';
+        DEFINE FIELD created_at ON crew TYPE datetime DEFAULT time::now();
+
+        DEFINE TABLE crew_task SCHEMAFULL;
+        DEFINE FIELD crew_id ON crew_task TYPE string;
+        DEFINE FIELD description ON crew_task TYPE string;
+        DEFINE FIELD expected_outcome ON crew_task TYPE string;
+        DEFINE FIELD assigned_to_member ON crew_task TYPE option<string>;
+        DEFINE FIELD status ON crew_task TYPE string DEFAULT 'pending';
+        DEFINE FIELD result ON crew_task TYPE option<string>;
+        DEFINE FIELD created_at ON crew_task TYPE datetime DEFAULT time::now();
+
+        DEFINE INDEX crew_task_crew_idx ON crew_task FIELDS crew_id;
         """,
 
         # Dr. MAMR Tables (Strategy 168)
@@ -563,6 +614,8 @@ class DatabaseSchema:
             "lgkgr_tables",
             "latent_mas_tables",
             # MarsRL table is inside latent_mas_tables block in current structure but labeled clearly
+            "flow_tables",
+            "crew_tables",
             "dr_mamr_tables",
             "agentsnet_tables",
             # MarsRL table
