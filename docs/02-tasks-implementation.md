@@ -35,15 +35,24 @@
 
 ### Module 16: Missing Novel Features (Audit Findings)
 *Status: Missing Logic*
-- [ ] **Strategy 133 (Surprise-Based Learning)**: Implement `SurpriseService` to detect contradictions and boost importance.
-- [ ] **Strategy 134 (Curiosity-Driven Exploration)**: Implement agent queries for missing knowledge holes.
-- [ ] **Strategy 125 (Human-in-the-Loop)**: Implement `ApprovalService` for critical checkpoints.
+- [x] **Strategy 133 (Surprise-Based Learning)**: Implement `SurpriseService` to detect contradictions and boost importance.
+- [x] **Strategy 134 (Curiosity-Driven Exploration)**: Implement agent queries for missing knowledge holes.
+- [x] **Strategy 125 (Human-in-the-Loop)**: Implement `ApprovalService` for critical checkpoints.
 - [ ] **Strategy 116 (Flows vs Crews)**: Implement distinct `Flow` and `Crew` definitions and orchestrator logic.
 - [ ] **Strategy 149 (Transient Scratchpads)**: Implement temporary memory storage for complex reasoning.
 - [ ] **Strategy 148 (Scoped Memories)**: Implement project/scope isolation beyond basic RBAC.
 - [x] **Strategy 150 (Recursive Summarization)**: Implement hierarchical summary generation (Service: `RecursiveSummaryService`).
 - [x] **Strategy 122 (Path Lookup Acceleration)**: Implement pre-indexing of common graph paths (Service: `GraphCacheService`).
 - [x] **Strategy 63 & 65 (SurrealDB Ops)**: Implement Conditional Content Fields and Document-Level Transactions (Schema & Client Updates).
+- [ ] **Strategy 133 (Surprise-Based Learning)**: Implement `SurpriseService` to detect contradictions and boost importance.
+- [ ] **Strategy 134 (Curiosity-Driven Exploration)**: Implement agent queries for missing knowledge holes.
+- [ ] **Strategy 125 (Human-in-the-Loop)**: Implement `ApprovalService` for critical checkpoints.
+- [x] **Strategy 116 (Flows vs Crews)**: Implement distinct `Flow` and `Crew` definitions and orchestrator logic.
+- [x] **Strategy 149 (Transient Scratchpads)**: Implement temporary memory storage for complex reasoning.
+- [x] **Strategy 148 (Scoped Memories)**: Implement project/scope isolation beyond basic RBAC.
+- [ ] **Strategy 150 (Recursive Summarization)**: Implement hierarchical summary generation.
+- [ ] **Strategy 122 (Path Lookup Acceleration)**: Implement pre-indexing of common graph paths.
+- [ ] **Strategy 63 & 65 (SurrealDB Ops)**: Implement Conditional Content Fields and Document-Level Transactions.
 
 ---
 
@@ -95,6 +104,7 @@
 - [x] **Strategy 133**: Surprise-Based Learning (`SurpriseService`).
 - [x] **Strategy 134**: Curiosity-Driven Exploration (`CuriosityService`).
 - [x] **Strategy 125**: Human-in-the-Loop (`ApprovalService`).
+- [x] **Strategy 116**: Flows vs Crews (`FlowOrchestrator`, `CrewOrchestrator`).
 - [x] **Strategy 149**: Transient Scratchpads (`ScratchpadService`).
 - [x] **Strategy 150**: Recursive Summarization (`RecursiveSummaryService`).
 - [x] **Strategy 122**: Path Lookup Acceleration (Graph Cache).
@@ -115,17 +125,17 @@
 - [ ] **147. Negative Constraints**: Add `negative_constraints` to AgentProfile.
 
 ### Phase 2: Intelligence & Logic
-- [ ] **30. Query Intent Classification**: Add `IntentClassifier`.
-- [ ] **32. Multi-Perspective Questions**: Generate query variations.
-- [ ] **33. Topic Change Detection**: Detect semantic shifts.
-- [ ] **34. Cross-Session Pattern Recognition**: Background job.
-- [ ] **36. Instruction Registry**: `InstructionRepository`.
-- [ ] **40. Execution-Based Evaluation**: Code sandbox.
-- [ ] **46. Standard Operating Procedures (SOPs)**: Implement `SOPService`.
-- [ ] **52. Multi-Step Planning**: Verification logic.
-- [ ] **54. Hypothesis Testing**: `HypothesisService`.
-- [ ] **154. User Modeling**: `UserProfileService`.
-- [ ] **155. Dependency Mapping**: Track memory dependencies.
+- [x] **30. Query Intent Classification**: Add `IntentClassifier`.
+- [x] **32. Multi-Perspective Questions**: Generate query variations.
+- [x] **33. Topic Change Detection**: Detect semantic shifts.
+- [x] **34. Cross-Session Pattern Recognition**: Background job.
+- [x] **36. Instruction Registry**: `InstructionRepository`.
+- [x] **40. Execution-Based Evaluation**: Code sandbox.
+- [x] **46. Standard Operating Procedures (SOPs)**: Implement `SOPService`.
+- [x] **52. Multi-Step Planning**: Verification logic.
+- [x] **54. Hypothesis Testing**: `HypothesisService`.
+- [x] **154. User Modeling**: `UserProfileService`.
+- [x] **155. Dependency Mapping**: Track memory dependencies.
 
 ### Phase 3: Advanced Search & Graph
 - [ ] **76. Explainability Graph**: Store reasoning traces.

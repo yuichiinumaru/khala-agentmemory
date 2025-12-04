@@ -88,14 +88,15 @@ class SurrealDBClient:
             self._connection_pool.append(connection)
             self._initialized = True
             
-            # Initialize Schema using DatabaseSchema manager
-            try:
-                schema_manager = DatabaseSchema(self)
-                await schema_manager.create_schema()
-            except Exception as e:
-                logger.error(f"Failed to initialize schema: {e}")
-            
-            logger.info(f"Connected to SurrealDB at {self.url}")
+        # Initialize Schema using DatabaseSchema manager
+        # Moved outside lock to prevent deadlock (get_connection needs lock)
+        try:
+            schema_manager = DatabaseSchema(self)
+            await schema_manager.create_schema()
+        except Exception as e:
+            logger.error(f"Failed to initialize schema: {e}")
+        
+        logger.info(f"Connected to SurrealDB at {self.url}")
     
     @asynccontextmanager
     async def get_connection(self):
@@ -304,6 +305,126 @@ class SurrealDBClient:
                 "events": memory.events
             }
 
+        query = """
+        CREATE type::thing('memory', $id) CONTENT {
+            user_id: $user_id,
+            content: $content,
+            content_hash: $content_hash,
+            embedding: $embedding,
+            embedding_model: $embedding_model,
+            embedding_version: $embedding_version,
+            embedding_visual: $embedding_visual,
+            embedding_visual_model: $embedding_visual_model,
+            embedding_visual_version: $embedding_visual_version,
+            embedding_code: $embedding_code,
+            embedding_code_model: $embedding_code_model,
+            embedding_code_version: $embedding_code_version,
+            tier: $tier,
+            importance: $importance,
+            tags: $tags,
+            category: $category,
+            scope: $scope,
+            metadata: $metadata,
+            created_at: $created_at,
+            updated_at: $updated_at,
+            accessed_at: $accessed_at,
+            access_count: $access_count,
+            llm_cost: $llm_cost,
+            verification_score: $verification_score,
+            verification_count: $verification_count,
+            verification_status: $verification_status,
+            verified_at: $verified_at,
+            verification_issues: $verification_issues,
+            debate_consensus: $debate_consensus,
+            is_archived: $is_archived,
+            decay_score: $decay_score,
+            source: $source,
+            sentiment: $sentiment,
+            episode_id: $episode_id,
+            confidence: $confidence,
+            source_reliability: $source_reliability,
+            location: $location,
+            versions: $versions,
+            events: $events
+        };
+        """
+        
+        # Serialize source and handle datetime
+        source_data = None
+        if memory.source:
+            source_data = asdict(memory.source)
+            if source_data.get('timestamp'):
+                source_data['timestamp'] = source_data['timestamp'].isoformat()
+
+        # Serialize sentiment
+        sentiment_data = None
+        if memory.sentiment:
+            sentiment_data = asdict(memory.sentiment)
+
+        # Serialize location
+        location_data = None
+        if memory.location:
+            location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
+
+        # Construct content dictionary dynamically
+        content_dict = {
+            "user_id": memory.user_id,
+            "content": memory.content,
+            "content_hash": content_hash,
+            "tier": memory.tier.value,
+            "importance": memory.importance.value,
+            "tags": memory.tags,
+            "category": memory.category,
+            "scope": memory.scope,
+            "summary": memory.summary,
+            "metadata": memory.metadata,
+            "created_at": memory.created_at,
+            "updated_at": memory.updated_at,
+            "accessed_at": memory.accessed_at,
+            "access_count": memory.access_count,
+            "llm_cost": memory.llm_cost,
+            "verification_score": memory.verification_score,
+            "verification_count": memory.verification_count,
+            "verification_status": memory.verification_status,
+            "verified_at": memory.verified_at,
+            "verification_issues": memory.verification_issues,
+            "debate_consensus": memory.debate_consensus,
+            "is_archived": memory.is_archived,
+            "decay_score": memory.decay_score.value if memory.decay_score else None,
+            "source": source_data,
+            "sentiment": sentiment_data,
+            "episode_id": memory.episode_id,
+            "confidence": memory.confidence,
+            "source_reliability": memory.source_reliability,
+            "location": location_data,
+            "versions": memory.versions,
+            "events": memory.events
+        }
+
+        # Add optional embeddings only if they exist
+        if memory.embedding:
+            content_dict["embedding"] = memory.embedding.values
+            content_dict["embedding_model"] = memory.embedding.model
+            content_dict["embedding_version"] = memory.embedding.version
+        
+        if memory.embedding_visual:
+            content_dict["embedding_visual"] = memory.embedding_visual.values
+            content_dict["embedding_visual_model"] = memory.embedding_visual.model
+            content_dict["embedding_visual_version"] = memory.embedding_visual.version
+
+        if memory.embedding_code:
+            content_dict["embedding_code"] = memory.embedding_code.values
+            content_dict["embedding_code_model"] = memory.embedding_code.model
+            content_dict["embedding_code_version"] = memory.embedding_code.version
+
+        query = "CREATE type::thing('memory', $id) CONTENT $content_data;"
+
+        params = {
+            "id": memory.id,
+            "content_data": content_dict
+        }
+        
+        async with self.get_connection() as conn:
             response = await conn.query(query, params)
             
             # Check for error string
@@ -376,6 +497,7 @@ class SurrealDBClient:
             importance: $importance,
             tags: $tags,
             category: $category,
+            scope: $scope,
             metadata: $metadata,
             created_at: $created_at,
             updated_at: time::now(),
@@ -439,6 +561,7 @@ class SurrealDBClient:
             "importance": memory.importance.value,
             "tags": memory.tags,
             "category": memory.category,
+            "scope": memory.scope,
             "metadata": memory.metadata,
             "created_at": memory.created_at,
             "accessed_at": memory.accessed_at,
@@ -854,6 +977,7 @@ class SurrealDBClient:
             embedding_code=embedding_code,
             tags=data.get("tags", []),
             category=data.get("category"),
+            scope=data.get("scope"),
             summary=data.get("summary"),
             metadata=data.get("metadata", {}),
             created_at=parse_dt(data["created_at"]),

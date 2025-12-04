@@ -28,9 +28,15 @@ class ApprovalService:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
-        await self.db_client.create(self.table, data)
-        # Mock client in test returns dict, real client returns list of dict usually.
-        # But here we just return the ID we generated or what the DB confirmed.
+
+        async with self.db_client.get_connection() as conn:
+            try:
+                await conn.create(req_id, data)
+            except AttributeError:
+                # Fallback if connection wrapper doesn't expose create directly
+                query = f"CREATE {req_id} CONTENT $data"
+                await conn.query(query, {"data": data})
+
         return req_id
 
     async def create_request(self, action: str, details: Dict[str, Any], requester: str) -> str:
@@ -41,7 +47,28 @@ class ApprovalService:
         """Get an approval request."""
         if not request_id.startswith(f"{self.table}:"):
             request_id = f"{self.table}:{request_id}"
-        return await self.db_client.select(request_id)
+
+        async with self.db_client.get_connection() as conn:
+            try:
+                # Try using select if available
+                if hasattr(conn, 'select'):
+                    result = await conn.select(request_id)
+                else:
+                    # Fallback to query
+                    query = f"SELECT * FROM {request_id}"
+                    result = await conn.query(query)
+                    if isinstance(result, list) and result and 'result' in result[0]:
+                        result = result[0]['result']
+
+                # Handle result
+                if isinstance(result, list) and result:
+                     return result[0]
+                elif isinstance(result, dict):
+                     return result
+                return None
+            except Exception as e:
+                logger.error(f"Failed to get request: {e}")
+                return None
 
     async def approve(self, request_id: str, approver: str) -> bool:
         """Approve a request."""
@@ -64,17 +91,15 @@ class ApprovalService:
         query = f"SELECT * FROM {self.table} WHERE status = 'pending';"
         async with self.db_client.get_connection() as conn:
             result = await conn.query(query)
-            if result and isinstance(result, list) and len(result) > 0 and result[0].get('result'):
-                 return result[0]['result']
+            if result and isinstance(result, list) and len(result) > 0:
+                if isinstance(result[0], dict) and 'result' in result[0]:
+                     return result[0]['result']
+                return result
         return []
 
     async def _update_status(self, request_id: str, status: str, approver: str) -> bool:
         if not request_id.startswith(f"{self.table}:"):
             request_id = f"{self.table}:{request_id}"
-
-        # The test expects an UPDATE query via raw query or using update with special syntax
-        # Strategy 125 test expects: "UPDATE type::thing('approval_request', $id)"
-        # This implies we should use a custom query or the client.update calls that internally.
 
         query = f"UPDATE type::thing('approval_request', $id) SET status = $status, approver = $approver, updated_at = $updated_at;"
         params = {
