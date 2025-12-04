@@ -167,9 +167,9 @@ class DatabaseSchema:
         "lgkgr_tables": """
         -- Reasoning Paths Trace
         DEFINE TABLE reasoning_paths SCHEMAFULL;
-        DEFINE FIELD query_entity ON reasoning_paths TYPE string;
-        DEFINE FIELD target_entity ON reasoning_paths TYPE string;
-        DEFINE FIELD path ON reasoning_paths TYPE array<string>;
+        DEFINE FIELD query_entity ON reasoning_paths TYPE string; -- record<entity> | string
+        DEFINE FIELD target_entity ON reasoning_paths TYPE string; -- record<entity> | string
+        DEFINE FIELD path ON reasoning_paths TYPE array<object>; -- stores sequence of nodes/edges
         DEFINE FIELD llm_explanation ON reasoning_paths TYPE string;
         DEFINE FIELD confidence ON reasoning_paths TYPE float;
         DEFINE FIELD final_rank ON reasoning_paths TYPE int;
