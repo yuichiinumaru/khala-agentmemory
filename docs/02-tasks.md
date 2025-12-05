@@ -7,6 +7,37 @@
 
 ## 🚨 CRITICAL (Must Fix Immediately)
 
+<<<<<<< HEAD
+- [x] **Security: Fix CLI Executor RCE**
+    -   **File**: `khala/infrastructure/executors/cli_executor.py`
+    -   **Action**: Used `shutil.which` and absolute path.
+
+- [x] **Security: Fix CLI Executor DoS**
+    -   **File**: `khala/infrastructure/executors/cli_executor.py`
+    -   **Action**: Implemented `_read_stream_safe` with 10MB limit.
+
+- [x] **Data Integrity: Fix Timestamp Corruption**
+    -   **File**: `khala/infrastructure/surrealdb/client.py`
+    -   **Action**: `parse_dt` raises `ValueError` on None/Invalid.
+
+- [x] **Concurrency: Fix Duplicate Race Condition**
+    -   **File**: `khala/infrastructure/surrealdb/client.py`
+    -   **Action**: Improved error handling to catch DB unique constraint violations.
+
+- [x] **Dependency: Fix setup.py**
+    -   **File**: `setup.py`
+    -   **Action**: Confirmed `surrealdb>=2.0.4` is pinned.
+
+## 🟠 HIGH (Stability & Correctness)
+
+- [x] **Performance: Fix API Auth Bottleneck**
+    -   **File**: `khala/interface/rest/main.py`
+    -   **Action**: Config loaded once in `lifespan` into `state.api_key`.
+
+- [x] **Reliability: Fix Gemini Batch Errors**
+    -   **File**: `khala/infrastructure/gemini/client.py`
+    -   **Action**: `generate_embeddings` fails loudly on batch error to preserve alignment.
+=======
 - [ ] **Security: Fix CLI Executor RCE**
     -   **File**: `khala/infrastructure/executors/cli_executor.py`
     -   **Issue**: Implicit `npx` execution allows PATH hijacking.
@@ -38,6 +69,7 @@
     -   **File**: `khala/infrastructure/gemini/client.py`
     -   **Issue**: `generate_embeddings` swallows exceptions in loop.
     -   **Action**: Implement proper error aggregation and reporting.
+>>>>>>> 012c64e1d6f0456a4a863cfb42b7db015f68a64a
 
 - [ ] **Performance: Fix Lifecycle LLM Loop**
     -   **File**: `khala/application/services/memory_lifecycle.py`
@@ -49,6 +81,25 @@
     -   **Issue**: In-memory storage (`self._sops`).
     -   **Action**: Inject `SOPRepository` and implement persistence.
 
+<<<<<<< HEAD
+- [x] **Type Safety: Fix Model Metrics**
+    -   **File**: `khala/infrastructure/gemini/models.py`
+    -   **Action**: Used `UsageStats` dataclass with integers.
+
+## 🟡 MEDIUM (Refactoring)
+
+- [x] **Hygiene: Deduplicate JSON Parsing**
+    -   **File**: `khala/infrastructure/gemini/client.py`
+    -   **Action**: Imported `parse_json_safely` from `khala.application.utils`.
+
+- [x] **Architecture: Fix Local Imports**
+    -   **File**: `khala/infrastructure/surrealdb/client.py`
+    -   **Action**: Moved imports to top level.
+
+- [x] **Stability: Fix API Startup**
+    -   **File**: `khala/interface/rest/main.py`
+    -   **Action**: `lifespan` raises `RuntimeError` on startup failure.
+=======
 - [ ] **Type Safety: Fix Model Metrics**
     -   **File**: `khala/infrastructure/gemini/models.py`
     -   **Issue**: Integers stored as strings.
@@ -67,6 +118,7 @@
 - [ ] **Stability: Fix API Startup**
     -   **File**: `khala/interface/rest/main.py`
     -   **Action**: Remove `yield` on exception in `lifespan`. Fail fast.
+>>>>>>> 012c64e1d6f0456a4a863cfb42b7db015f68a64a
 
 ---
 
