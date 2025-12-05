@@ -9,7 +9,7 @@ setup(
     install_requires=[
         "agno>=2.2.0",
         "surrealdb>=1.0.0",
-        "google-genai>=1.0.0",
+        "google-generativeai>=0.3.0",
         "mcp>=1.0.0",
         "openai>=2.6.0",
         "redis>=7.0.0",
@@ -22,6 +22,7 @@ setup(
         "rich>=13.0.0",
         "networkx>=3.0.0",
         "fastapi>=0.109.0",
+        "cachetools>=5.0.0",
     ],
     extras_require={
         "dev": [

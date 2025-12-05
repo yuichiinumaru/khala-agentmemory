@@ -1,101 +1,126 @@
-# Role: The Senior Engineer Forensic Pathologist (Zero-Mercy Code Autopsy)
+# FORENSIC CODE AUTOPSY REPORT
 
+**Pathologist:** Senior Engineer Hardcore Code Inquisitor
 **Subject:** KHALA Memory System
-**Date:** 2025-12-04
-**Status:** CRITICAL CONDITION
-
-## Section 1: The File-by-File Breakdown
-
-### File: `khala/infrastructure/surrealdb/client.py`
-**Shame Score:** 20/100
-**Findings:**
-* `[Line 44]` **(Critical)**: `username="root", password="root"` as default arguments. This is a security catastrophe. The database is wide open by default.
-* `[Line 87]` **(High)**: `except Exception as e: logger.debug(...)` inside `initialize`. Database connection failures are swallowed and logged as DEBUG. This makes startup failures invisible.
-* `[Line 180]` **(High)**: `hashlib.sha256` is used to generate `content_hash` locally. This logic must match the DB's internal logic exactly or uniqueness checks will drift.
-* `[Line 382]` **(Critical)**: `_build_filter_query` manually constructs SQL strings (`f"{key} = ..."`). While it attempts `isalnum()` validation, it is a homemade sanitizer. **SQL Injection Vector**.
-* `[Line 539]` **(Med)**: `_deserialize_memory` defaults timestamps to `datetime.now()` if parsing fails. This silently corrupts data provenance.
-* `[Line 625]` **(Low)**: `create_search_session` returns `""` (empty string) on failure instead of raising an exception. Caller assumes success.
-
-### File: `khala/infrastructure/gemini/client.py`
-**Shame Score:** 35/100
-**Findings:**
-* `[Line 68]` **(High)**: `_response_cache` is accessed without a lock in `async` methods. Concurrent requests will corrupt the cache dictionary (Race Condition).
-* `[Line 68]` **(Med)**: Unbounded cache growth. No `max_size`. Memory leak guaranteed over time.
-* `[Line 145]` **(Critical)**: `asyncio.run()` called inside `select_model` which is called by `async generate_text`. **This will crash the event loop** ("asyncio.run() cannot be called from a running event loop").
-* `[Line 210]` **(High)**: `generate_text` implements its own exponential backoff retry loop. Use a library like `tenacity` instead of fragile custom logic.
-* `[Line 38]` **(Nit)**: `cache_ttl_seconds=300` is a magic number.
-
-### File: `khala/infrastructure/executors/cli_executor.py`
-**Shame Score:** 5/100
-**Findings:**
-* `[Line 16]` **(Critical)**: Hardcoded absolute paths: `/home/suportesaude/YUICHI/...`. This code works ONLY on the developer's machine. It is dead on arrival anywhere else.
-* `[Line 87]` **(High)**: `process.wait()` returns the exit code, NOT stdout/stderr. The variables `stdout, stderr` are assigned the result of `wait_for` (which returns the return value of the coro). Effectively, **all output logs are lost**.
-* `[Line 68]` **(Med)**: `cmd = ["npx", ...]` relies on external `npx` presence and `gemini-mcp-tool`. Implicit dependency not checked.
-
-### File: `khala/infrastructure/background/jobs/job_processor.py`
-**Shame Score:** 40/100
-**Findings:**
-* `[Line 354]` **(High)**: `_worker_loop` uses polling (`sleep(0.1)`) instead of blocking queue pop (`BLPOP`). High CPU usage for idle workers.
-* `[Line 600]` **(High)**: `_handle_job_failure` sleeps (`await asyncio.sleep(delay)`) inside the worker loop. If a job fails, the worker **stops processing all jobs** for 5 minutes. This destroys throughput.
-* `[Line 458]` **(Med)**: `_execute_decay_scoring` with `scan_all` loads ALL memory IDs into RAM (`SELECT id FROM memory`). Scale killer.
-* `[Line 580]` **(Nit)**: `_execute_job` uses a giant `if/elif` block instead of a dispatch map.
-
-### File: `khala/infrastructure/background/scheduler.py`
-**Shame Score:** 60/100
-**Findings:**
-* `[Line 95]` **(Med)**: `_loop` sleeps for 60 seconds regardless of task interval. A task with `interval=10s` will run effectively randomly every ~60s.
-* `[Line 142]` **(Med)**: `create_scheduler` registers tasks with `scan_all: True` which causes the OOM issue in `JobProcessor`.
-
-### File: `khala/infrastructure/persistence/surrealdb_repository.py`
-**Shame Score:** 50/100
-**Findings:**
-* `[Line 90]` **(High)**: `find_duplicate_groups` re-calculates hashes locally (`hashlib.sha256`) instead of trusting the DB's `content_hash`. Redundant and risky.
-* `[Line 20]` **(Nit)**: Accesses private member `client._deserialize_memory`. Violation of encapsulation.
-
-### File: `khala/application/services/memory_lifecycle.py`
-**Shame Score:** 45/100
-**Findings:**
-* `[Line 210]` **(High)**: `promote_memories` fetches `limit=1000`. If a user has >1000 memories, old working memories outside this window are **never** promoted.
-* `[Line 260]` **(High)**: `deduplicate_memories` performs an O(N^2) comparison loop in Python.
-* `[Line 300]` **(Med)**: `schedule_consolidation` hardcodes time-of-day check (`2 <= current_hour <= 5`) assuming UTC server time matches user's preferred maintenance window.
-
-### File: `khala/interface/rest/main.py`
-**Shame Score:** 10/100
-**Findings:**
-* `[Line 16]` **(Critical)**: Global initialization of `db_client` with default credentials. Application starts with insecure defaults.
-* `[Line 41]` **(Critical)**: `/metrics` endpoint is unauthenticated. Exposes internal system state to the public.
-* `[Line 64]` **(Low)**: `if __name__ == "__main__":` block in library code. Use a separate entry point script.
-
-### File: `khala/interface/mcp/khala_subagent_tools.py`
-**Shame Score:** 50/100
-**Findings:**
-* `[Line 30]` **(Med)**: `session_stats` accumulates indefinitely. Potential memory leak for long-running MCP servers.
-* `[Line 200]` **(High)**: Error handling consists of `return {"status": "error"}`. No logging of the actual exception stack trace. Debugging will be impossible.
-
-### File: `khala/domain/memory/entities.py`
-**Shame Score:** 70/100
-**Findings:**
-* `[Line 80]` **(Med)**: Domain logic (`should_promote_to_next_tier`) contains hardcoded magic numbers ("15 days", "0.5 hours"). Should be configurable.
+**Time of Death:** 2025-05-22
+**Cause of Death:** Systemic Negligence, Architectural Incompetence, Fake Tests.
 
 ---
 
-## Section 2: The Consolidated Table of Shame
+## SECTION 1: THE FILE-BY-FILE BREAKDOWN
+
+### `khala/infrastructure/surrealdb/client.py`
+**Shame Score:** 10/100
+**Findings:**
+* `[Line 44]` **(Critical)**: `self.password` stores raw secret string. Memory dump vulnerability.
+* `[Line 38]` **(High)**: Defaults to `root`/`root` if env vars missing. "Secure by Default" violation.
+* `[Line 165]` **(High)**: `create_memory` returns existing ID on hash collision, silently ignoring updates. Logic error (Idempotency vs Update).
+* `[Line 120]` **(Med)**: `_deserialize_memory` crashes on invalid enum values. No resilience.
+* `[Line 353]` **(Med)**: `_build_filter_query` manually constructs SQL. Injection risk despite regex.
+
+### `khala/infrastructure/gemini/client.py`
+**Shame Score:** 15/100
+**Findings:**
+* `[Line 651]` **(Critical)**: `json.loads(content)` in `analyze_sentiment`. DoS vector via malformed LLM output.
+* `[Line 118]` **(High)**: `_complexity_cache` leaks memory (unbounded dict).
+* `[Line 157]` **(Med)**: Race condition in `_models` lazy loading.
+* `[Line 133]` **(Med)**: Naive complexity heuristic (`count("?")`) allows cost inflation attacks.
+
+### `khala/interface/mcp/server.py`
+**Shame Score:** 0/100
+**Findings:**
+* `[Line 26]` **(Critical)**: Instantiates `SurrealDBClient` with deprecated `url=...` arguments. **Server crashes on startup.**
+* `[Line 42]` **(Critical)**: Zero authentication on MCP tools. `analyze_memories` accepts any input.
+* `[Line 21]` **(High)**: Hardcoded `root` defaults for DB connection.
+
+### `khala/interface/cli/main.py`
+**Shame Score:** 5/100
+**Findings:**
+* `[Line 192]` **(Critical)**: `surreal-health` command instantiates `SurrealDBClient` with deprecated arguments. **Command crashes.**
+* `[Line 126]` **(Med)**: Accesses private method `_get_age_hours` on Memory entity.
+* `[Line 85]` **(Nit)**: Uses `asyncio.run` which prevents library usage in existing loops.
+
+### `khala/application/services/memory_lifecycle.py`
+**Shame Score:** 30/100
+**Findings:**
+* `[Line 35]` **(High)**: Instantiates `GeminiClient` in `__init__` default arg logic (potentially). If passed as None, creates new instance.
+* `[Line 275]` **(High)**: O(N^2) loop in `deduplicate_memories` (Python-side vector comparison).
+* `[Line 353]` **(Med)**: Hardcoded prompt string "Summarize the following...".
+* `[Line 390]` **(Med)**: Swallows exceptions in consolidation loop.
+
+### `khala/domain/graph/service.py`
+**Shame Score:** 20/100
+**Findings:**
+* `[Line 25]` **(Critical)**: `getattr(self.repository, 'client', None)` breaks encapsulation and crashes if repo is not `SurrealDBMemoryRepository`.
+* `[Line 250]` **(High)**: In-memory graph processing (NetworkX) for centrality/community detection. Will OOM on real data.
+* `[Line 200]` **(Med)**: Recursive graph traversal logic relies on specific DB schema function.
+
+### `khala/infrastructure/persistence/audit_repository.py`
+**Shame Score:** 40/100
+**Findings:**
+* `[Line 30]` **(High)**: Silently swallows audit logging failures. "Fail Open" security flaw.
+
+### `khala/infrastructure/executors/cli_executor.py`
+**Shame Score:** 5/100
+**Findings:**
+* `[Line 65]` **(Critical)**: Command Injection via `KHALA_AGENTS_PATH` env var.
+* `[Line 73]` **(High)**: Spawns `npx` process for every single task. Performance suicide.
+
+### `khala/application/services/verification_gate.py`
+**Shame Score:** 10/100
+**Findings:**
+* `[Line 270]` **(Critical)**: Calls `db_client.update_memory(memory_id=...)` with invalid signature. Code has never run.
+* `[Line 130]` **(High)**: Unbounded `verification_history` list. Memory leak.
+* `[Line 260]` **(High)**: Instantiates new `SurrealDBClient` (new pool) for every update. Connection exhaustion.
+
+### `tests/integration/test_novel_strategies.py`
+**Shame Score:** 0/100 (Fraudulent)
+**Findings:**
+* `[Line 77]` **(Critical)**: Fake integration test. Mocks `AsyncSurreal` class to avoid needing a DB, but instantiates `SurrealDBClient` with invalid args. Proves code is broken, yet "passes" via mocking.
+
+### `scripts/verify_creds.py`
+**Shame Score:** 0/100
+**Findings:**
+* `[Line 5]` **(High)**: Brute force tool included in repo.
+* `[Line 5]` **(Critical)**: Calls `SurrealDBClient` with invalid args. Script is broken.
+
+### `scripts/check_conn.py`
+**Shame Score:** 0/100
+**Findings:**
+* `[Line 8]` **(Critical)**: Hardcoded `root`/`root` credentials.
+
+### `khala/domain/memory/entities.py`
+**Shame Score:** 60/100
+**Findings:**
+* `[Line 102]` **(Med)**: Hardcoded business rules (promotion thresholds) in Entity.
+* `[Line 126]` **(High)**: `__post_init__` validation prevents loading invalid data from DB for repair.
+
+### `khala/debug_intent.py`
+**Shame Score:** 0/100
+**Findings:**
+* `[Line 4]` **(Med)**: Zombie code with hardcoded absolute path `/home/suportesaude/...`.
+
+---
+
+## SECTION 2: THE CONSOLIDATED TABLE OF SHAME
 
 | Severity | File:Line | Error Type | Description | The Fix |
 | :--- | :--- | :--- | :--- | :--- |
-| **CRITICAL** | `surrealdb/client.py:44` | Security | Hardcoded `root` credentials. | Require env vars. Fail if missing. |
-| **CRITICAL** | `cli_executor.py:16` | Security | Hardcoded absolute paths (`/home/suportesaude...`). | Use relative paths or config. |
-| **CRITICAL** | `rest/main.py:41` | Security | Unauthenticated `/metrics` endpoint. | Add Auth middleware. |
-| **CRITICAL** | `gemini/client.py:145` | Logic | `asyncio.run` inside async context (Crash). | Use `await`. |
-| **CRITICAL** | `surrealdb/client.py:382` | Security | SQL Injection via f-string construction. | Use parameterized queries. |
-| **HIGH** | `job_processor.py:600` | Concurrency | Worker sleeps on failure, blocking queue. | Reschedule job, don't sleep worker. |
-| **HIGH** | `cli_executor.py:87` | Logic | Logs lost; `wait()` returns exit code. | Use `communicate()`. |
-| **HIGH** | `surrealdb/client.py:87` | Reliability | Startup errors swallowed (`logger.debug`). | Raise exceptions on startup. |
-| **HIGH** | `gemini/client.py:68` | Concurrency | Race condition on cache access. | Add `asyncio.Lock`. |
-| **HIGH** | `memory_lifecycle.py:210` | Logic | Promotion ignores memories beyond limit. | Pagination or iterate all. |
-| **HIGH** | `job_processor.py:354` | Perf | Busy-wait polling for jobs. | Use `BLPOP`. |
-| **MED** | `scheduler.py:95` | Logic | Scheduler drift due to fixed sleep. | Calculate sleep time. |
-| **MED** | `job_processor.py:458` | Perf | Loading all IDs into RAM (`scan_all`). | Use cursor/pagination. |
-| **MED** | `surrealdb/client.py:539` | Integrity | Silent timestamp corruption on error. | Raise parsing error. |
+| **CRITICAL** | `khala/interface/mcp/server.py:26` | Logic | Server entry point instantiates `SurrealDBClient` with invalid arguments (`url=...`). **Server cannot start.** | Fix `SurrealDBClient` instantiation to use `SurrealConfig`. |
+| **CRITICAL** | `khala/interface/cli/main.py:192` | Logic | CLI `surreal-health` command instantiates client with invalid arguments. **Command crashes.** | Update CLI to use `SurrealConfig`. |
+| **CRITICAL** | `khala/infrastructure/surrealdb/client.py:44` | Security | `self.password` stores raw secret. | Use `SecretStr`. |
+| **CRITICAL** | `khala/domain/graph/service.py:25` | Architecture | GraphService assumes `repository.client` exists. Breaks with decorators/mocks. | Inject `SurrealDBClient` directly or add `get_client()` to interface. |
+| **CRITICAL** | `tests/integration/test_novel_strategies.py:77` | Fraud | Fake integration tests hiding broken code. | Delete mocks. Run against Docker. |
+| **CRITICAL** | `khala/infrastructure/executors/cli_executor.py:65` | Security | Command Injection via `KHALA_AGENTS_PATH`. | Sanitize paths. |
+| **CRITICAL** | `khala/application/services/verification_gate.py:270` | Logic | Calls `update_memory` with invalid signature. | Fix call to match `update_memory(memory)`. |
+| **HIGH** | `khala/infrastructure/gemini/client.py:118` | Performance | Memory leak in `_complexity_cache`. | Use `TTLCache`. |
+| **HIGH** | `khala/application/services/memory_lifecycle.py:275` | Performance | O(N^2) deduplication in Python. | Move vector distance check to DB. |
+| **HIGH** | `khala/infrastructure/persistence/audit_repository.py:30` | Security | Audit failures are swallowed ("Fail Open"). | Raise exception or fallback to safe mode. |
+| **HIGH** | `khala/domain/graph/service.py:250` | Performance | In-memory graph processing (NetworkX) on DB data. | Move graph algos to DB or external engine. |
+| **MED** | `khala/infrastructure/surrealdb/client.py:120` | Logic | Deserialization crashes on invalid enum. | Add fallback/error handling. |
+| **MED** | `khala/infrastructure/surrealdb/client.py:353` | Security | Manual SQL construction in `_build_filter_query`. | Use parameterized queries for everything. |
 
-**Final Verdict:** The codebase is a "Prototyping Disaster". It works on the developer's machine (`/home/suportesaude`) under low load, but is riddled with security holes, race conditions, and scalability bottlenecks that ensure it will die in production. **Burn it down and rebuild the infrastructure layer.**
+---
+
+**AUTOPSY CONCLUSION:**
+The codebase exhibits a pattern of "Refactoring Scars" where the `SurrealDBClient` signature was changed, but consumers (`server.py`, `cli/main.py`, `tests`, `verification_gate.py`) were never updated. This proves the absence of a working CI/CD pipeline and the falsity of the "Production Ready" claim. The "Integration Tests" are actively deceiving developers by mocking the very components they are supposed to verify.

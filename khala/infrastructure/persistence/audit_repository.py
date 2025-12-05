@@ -13,7 +13,11 @@ class AuditRepository:
         self.client = client
 
     async def log(self, entry: AuditLog) -> str:
-        """Record an audit log entry."""
+        """Record an audit log entry.
+
+        Raises:
+            RuntimeError: If audit logging fails. We fail closed for security.
+        """
         query = """
         CREATE type::thing('audit_log', $id) CONTENT {
             user_id: $user_id,
@@ -32,7 +36,5 @@ class AuditRepository:
                 await conn.query(query, params)
             return entry.id
         except Exception as e:
-            logger.error(f"Failed to record audit log: {e}")
-            # We don't raise here to prevent audit failure from blocking main operation,
-            # but in strict compliance mode, we might want to.
-            return ""
+            logger.critical(f"AUDIT FAILURE: Could not record audit log: {e}")
+            raise RuntimeError(f"Audit Failure: {e}") from e
