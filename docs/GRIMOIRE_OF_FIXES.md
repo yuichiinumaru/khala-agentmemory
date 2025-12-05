@@ -1,127 +1,109 @@
-# The Grimoire of Fixes (The Rite of Resurrection)
+# The Grimoire of Fixes
 
-**Necromancer:** Senior Architect Jules
-**Date:** 2025-12-04
+**Necromancer:** Senior Architect
+**Date:** 2025-05-22
+**Purpose:** Resurrection of the KHALA Memory System
 
----
+-----
 
-## 💀 Rite of Resurrection: `khala/infrastructure/surrealdb/client.py` - Security & Stability
+### 💀 Rite of Resurrection: SurrealDB Client - [Security/Logic]
 
 **The Rot (Original Sin):**
-> `username="root", password="root"` as default arguments. `except Exception as e: logger.debug(...)` swallowing connection errors. SQL Injection via `f"{key} = ..."`.
+> *`self.password` stores the raw secret string, exposing it to memory dumps.*
+> *`create_memory` returns existing ID on hash collision, silently ignoring updates.*
 
 **The Purification Strategy:**
-Replaced hardcoded defaults with `pydantic.BaseSettings` (via `SurrealConfig`) that loads from environment variables and **crashes immediately** if `SURREAL_PASS` is missing. Removed exception swallowing to ensure "Fail Loudly". Rewrote query builder to use parameterized queries (`$filter_param`) with hashed keys to prevent collision.
+Replaced the `__init__` logic with a strict `SurrealConfig` Pydantic model. Passwords are now wrapped in `SecretStr`. Removed default `root/root` credentials; the system now crashes if `SURREAL_USER` is missing (Zero Trust).
+Rewrote `create_memory` to explicitly `UPDATE` the record if a hash collision occurs, ensuring idempotency does not mean data staleness.
 
 **The Immortal Code:**
 ```python
 class SurrealConfig(BaseModel):
     # ...
+    password: SecretStr
+
     @classmethod
     def from_env(cls) -> "SurrealConfig":
-        password = os.getenv("SURREAL_PASS")
-        if not password:
-             raise ValueError("CRITICAL: SURREAL_PASS environment variable is missing. Startup aborted.")
-        return cls(..., password=SecretStr(password))
-
-# Parameterized Query with Collision Safety
-key_hash = hashlib.md5(key.encode()).hexdigest()[:8]
-safe_param_key = f"filter_{key_hash}"
-params[safe_param_key] = value
-clauses.append(f"{key} = ${safe_param_key}")
+        if not os.getenv("SURREAL_USER"):
+             raise ValueError("CRITICAL: SURREAL_USER environment variable is missing.")
+        # ...
 ```
 
 **Verification Spell:**
-Run `scripts/verify_creds.py` without env vars; verify it fails with exit code 1.
+`SURREAL_USER="" python -c "from khala.infrastructure.surrealdb.client import SurrealDBClient; SurrealDBClient()"` -> Crashes with ValueError.
 
----
+-----
 
-## 💀 Rite of Resurrection: `khala/infrastructure/gemini/client.py` - Concurrency & Leaks
+### 💀 Rite of Resurrection: Gemini Client - [JSON Vulnerability/Leaks]
 
 **The Rot (Original Sin):**
-> `asyncio.run()` called inside `select_model` (async context crash). Unbounded `_response_cache` dictionary (Memory Leak). Race conditions on cache access.
+> *`json.loads(content)` in `analyze_sentiment`. DoS vector via malformed LLM output.*
+> *`_complexity_cache` leaks memory (unbounded dict).*
 
 **The Purification Strategy:**
-Refactored `select_model` to be fully `async` and awaited it. Replaced raw dict cache with `cachetools.TTLCache` (LRU + Time-based eviction). Added `asyncio.Lock` for thread-safe cache access.
+Implemented `_extract_json` with Regex fallback to handle Markdown code blocks (` ```json ... ``` `) and malformed output. Replaced standard `dict` caches with `cachetools.TTLCache` (LRU) to cap memory usage. Added thread-safety locks for model initialization.
 
 **The Immortal Code:**
 ```python
-import cachetools
-
-# ...
-self._response_cache = cachetools.TTLCache(maxsize=1000, ttl=cache_ttl_seconds)
-self._cache_lock = asyncio.Lock()
-
-async def _cache_response(self, key, data):
-    async with self._cache_lock:
-        self._response_cache[key] = data
+def _extract_json(self, text: str) -> Dict[str, Any]:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Regex Rescue
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match: return json.loads(match.group(0))
+        return {}
 ```
 
-**Verification Spell:**
-Run `tests/brutal/test_concurrency.py` to verify no event loop crashes or cache corruption under load.
+-----
 
----
-
-## 💀 Rite of Resurrection: `khala/infrastructure/executors/cli_executor.py` - Portability
+### 💀 Rite of Resurrection: Entry Points - [Crash/Startup]
 
 **The Rot (Original Sin):**
-> Hardcoded absolute paths `/home/suportesaude/...`. Logs lost due to `process.wait()`.
+> *Instantiates `SurrealDBClient` with deprecated `url=...` arguments.*
 
 **The Purification Strategy:**
-Used `os.getenv("KHALA_AGENTS_PATH")` for dynamic configuration. Replaced `process.wait()` with `process.communicate()` to capture and log stdout/stderr.
+Refactored `khala/interface/mcp/server.py` and `khala/interface/cli/main.py` to construct `SurrealConfig` objects before instantiating the client. This ensures validation happens before any connection attempt.
+
+-----
+
+### 💀 Rite of Resurrection: CLI Executor - [Command Injection]
+
+**The Rot (Original Sin):**
+> *Command Injection via `KHALA_AGENTS_PATH` env var.*
+
+**The Purification Strategy:**
+Added strict path resolution using `pathlib.Path.resolve()`. The code now verifies that the resolved agent file path lies strictly within the allowed `base_path` directory, preventing `../../etc/passwd` attacks.
 
 **The Immortal Code:**
 ```python
-base_path = os.getenv("KHALA_AGENTS_PATH", "./.gemini/agents")
-stdout, stderr = await process.communicate()
-if process.returncode != 0:
-    logger.error(f"Subagent CLI failed: {stderr}")
+agent_path = (base_path / filename).resolve()
+if not str(agent_path).startswith(str(base_path)):
+     raise ValueError(f"Security Alert: Path traversal attempted: {agent_path}")
 ```
 
-**Verification Spell:**
-Run CLI executor in a container (different path); verify it finds agents via env var. Check logs for subagent errors.
+-----
 
----
-
-## 💀 Rite of Resurrection: `khala/interface/rest/main.py` - Security
+### 💀 Rite of Resurrection: Verification Gate - [Logic/Leaks]
 
 **The Rot (Original Sin):**
-> Global `db_client` init. Unauthenticated `/metrics`.
+> *Unbounded `verification_history` causing memory leaks.*
+> *Calls `update_memory` with invalid arguments (crash).*
 
 **The Purification Strategy:**
-Implemented `lifespan` context manager for proper startup/shutdown. Added `get_api_key` dependency to endpoints.
+Replaced list with `collections.deque(maxlen=1000)` to cap memory usage. Refactored `update_memory` usage to correctly fetch, update, and save the full `Memory` entity using the Repository pattern.
 
-**The Immortal Code:**
-```python
-def get_api_key(api_key: str = Security(...)):
-    if not match: raise HTTPException(403)
+-----
 
-@app.get("/metrics", dependencies=[Depends(get_api_key)])
-async def get_metrics(): ...
-```
-
-**Verification Spell:**
-`curl -I http://localhost:8000/metrics` should return 403 Forbidden.
-
----
-
-## 💀 Rite of Resurrection: `khala/infrastructure/background/jobs/job_processor.py` - Robustness
+### 💀 Rite of Resurrection: Security Cleanup
 
 **The Rot (Original Sin):**
-> Busy-wait polling. Worker sleeps on failure (blocking queue). `scan_all` loads all IDs into RAM.
+> *Scripts containing hardcoded credentials left in repository.*
 
 **The Purification Strategy:**
-Implemented adaptive sleep for idle workers. Changed failure handling to re-queue with `scheduled_at` (non-blocking). Added safety limit to `scan_all`.
+Deleted `scripts/check_conn.py` and `scripts/verify_creds.py`.
 
-**The Immortal Code:**
-```python
-# Adaptive Sleep
-if not job: await asyncio.sleep(1.0)
+-----
 
-# Non-blocking Retry
-asyncio.create_task(re_queue())
-# OR use scheduled_at if supported by backend
-```
-
-**Verification Spell:**
-Submit a failing job; verify other jobs continue processing immediately. Submit `scan_all`; verify RAM usage is stable.
+**Conclusion:**
+The codebase has been purged of its most fatal weaknesses. The architecture now enforces type safety, input validation, and secure defaults.
