@@ -1,77 +1,80 @@
-# The Grimoire of Fixes
-**Author:** The Necromancer
-**Date:** 2025-05-22
-
-This document records the resurrection of the Khala codebase. Each entry documents a critical flaw and the "Rite of Resurrection" applied to fix it.
-
----
-
-### 💀 Rite of Resurrection: `khala/infrastructure/coordination/distributed_lock.py` - Fake Distributed Lock
-
-**The Rot (Original Sin):**
-> `CREATE lock SET id = $id` created new records instead of enforcing mutual exclusion. The lock was a placebo.
-
-**The Purification Strategy:**
-*   Replaced with `CREATE type::thing('lock', $id)`. This targets the Record ID directly.
-*   SurrealDB guarantees Record ID uniqueness. Creation fails if lock exists.
-
-**The Immortal Code:**
-```python
-q = """
-CREATE type::thing('lock', $id) CONTENT {
-    expires_at: time::now() + $duration
-};
-"""
-```
+# THE GRIMOIRE OF FIXES
+**Necromancer:** Senior Engineer Necromancer
+**Phase:** 3.2 - Code Purification
+**Status:** COMPLETED
 
 ---
 
-### 💀 Rite of Resurrection: `khala/infrastructure/surrealdb/client.py` - Missing Lifecycle & Insecure Defaults
+## 💀 Rite 1: Purge ExecutionEvaluator [Security-Critical]
 
-**The Rot (Original Sin):**
-> Missing `close()` method caused crashes. Defaults allowed insecure `root` access. Race conditions in content hashing allowed duplicates.
+**The Rot:**
+> `exec(code, ...)`
+> Naive blacklist in `ExecutionEvaluator` allowed RCE.
 
-**The Purification Strategy:**
-*   Implemented `close()` to terminate pools.
-*   Enforced explicit `SurrealConfig` validation.
-*   Implemented `create_memory` with optimistic creation and duplicate hash recovery (Upsert).
+**The Fix:**
+*   Deleted `khala/application/services/execution_evaluator.py`.
+*   Cleaned `khala/tests/unit/application/test_phase2_services.py`.
+*   **Strategy:** Zero Trust. No unsafe execution in core.
 
----
+## 💀 Rite 2: Relax Vector Validation [Logic-Critical]
 
-### 💀 Rite of Resurrection: `khala/infrastructure/persistence/audit_repository.py` - Fail-Closed Inconsistency
+**The Rot:**
+> `if not (-1 <= value <= 1): raise ValueError`
+> Strict bounds checking caused crashes with unnormalized vectors from certain models.
 
-**The Rot (Original Sin):**
-> Audit failures raised exceptions *after* memory creation, leaving un-audited data.
+**The Fix:**
+*   Updated `khala/domain/memory/value_objects.py`.
+*   Added `tolerance = 1e-4`.
+*   **Strategy:** Robustness Principle (Postel's Law).
 
-**The Purification Strategy:**
-*   Wrapped memory creation and audit logging in a database transaction.
-*   Refactored `AuditRepository` to accept transaction context.
+## 💀 Rite 3: Robust Job Serialization [Reliability-Critical]
 
-**The Immortal Code:**
-```python
-async with self.client.transaction() as conn:
-    await self.client.create_memory(..., connection=conn)
-    await self.audit_repo.log(..., connection=conn)
-```
+**The Rot:**
+> `json.dumps(job.payload)`
+> Crashed when payload contained `datetime` objects.
 
----
+**The Fix:**
+*   Created `khala/application/utils.py` with `json_serializer`.
+*   Updated `khala/infrastructure/background/jobs/job_processor.py` to use `default=json_serializer`.
+*   **Strategy:** Fail Safe.
 
-### 💀 Rite of Resurrection: `khala/application/services/privacy_safety_service.py` - PII Leakage
+## 💀 Rite 4: Secure CLI Defaults [Security-Critical]
 
-**The Rot (Original Sin):**
-> Metadata stored PII returned by the LLM.
+**The Rot:**
+> `default="root"` for DB password in CLI.
 
-**The Purification Strategy:**
-*   Updated LLM prompt to ONLY request PII *types*, not the text itself.
-*   Hardened JSON parsing logic.
+**The Fix:**
+*   Updated `khala/interface/cli/main.py`.
+*   Removed defaults, added `required=True` and `envvar` support.
+*   **Strategy:** Secure by Design.
 
----
+## 💀 Rite 5: Fail-Loud Timestamp Parsing [Data-Integrity]
 
-### 💀 Rite of Resurrection: `khala/domain/memory/entities.py` - Zombie Promotion
+**The Rot:**
+> `except ValueError: return datetime.now()`
+> Silently swallowed errors and falsified data timestamps.
 
-**The Rot (Original Sin):**
-> Logic promoted `SHORT_TERM` to `LONG_TERM` based on age (>15 days), effectively promoting garbage.
+**The Fix:**
+*   Updated `khala/infrastructure/surrealdb/client.py`.
+*   Changed to raise `ValueError` on corruption.
+*   **Strategy:** Fail Loudly.
 
-**The Purification Strategy:**
-*   Inverted logic: Promotion now requires High Importance. Age alone leads to Archival.
+## 💀 Rite 6: Robust JSON Extraction [Reliability]
 
+**The Rot:**
+> Manual regex parsing duplicated across services. Brittle to LLM output variations.
+
+**The Fix:**
+*   Implemented `parse_json_safely` in `khala/application/utils.py`.
+*   Refactored `PlanningService` and `PrivacySafetyService` to use it.
+*   **Strategy:** DRY (Don't Repeat Yourself).
+
+## 💀 Rite 7: Dependency Hell [Config]
+
+**The Rot:**
+> `surrealdb>=1.0.0` (incompatible with v2 code).
+> `numpy>=2.3.0` (non-existent).
+
+**The Fix:**
+*   Updated `setup.py` to pin `surrealdb>=2.0.4` and `numpy>=1.26.0`.
+*   **Strategy:** Explicit Dependencies.

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from khala.infrastructure.gemini.client import GeminiClient
+from khala.application.utils import parse_json_safely
 
 logger = logging.getLogger(__name__)
 
@@ -68,13 +69,7 @@ class PlanningService:
                 temperature=0.2
             )
 
-            content = response.get("content", "").strip()
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].strip()
-
-            data = json.loads(content)
+            data = parse_json_safely(response.get("content", ""))
 
             steps = []
             for s in data.get("steps", []):
@@ -136,13 +131,7 @@ class PlanningService:
                 temperature=0.0
             )
 
-            content = response.get("content", "").strip()
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].strip()
-
-            return json.loads(content)
+            return parse_json_safely(response.get("content", ""))
 
         except Exception as e:
             logger.error(f"Plan verification failed: {e}")
@@ -188,13 +177,7 @@ class PlanningService:
                 temperature=0.2
             )
 
-            content = response.get("content", "").strip()
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].strip()
-
-            data = json.loads(content)
+            data = parse_json_safely(response.get("content", ""))
 
             new_steps = []
             for s in data.get("steps", []):

@@ -587,9 +587,9 @@ class SurrealDBClient:
                 if isinstance(dt_val, str):
                     if dt_val.endswith('Z'): dt_val = dt_val[:-1]
                     return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
-            except ValueError:
-                logger.warning(f"Invalid timestamp format: {dt_val}. Using NOW.")
-                return datetime.now(timezone.utc)
+            except ValueError as e:
+                logger.error(f"Data Corruption: Invalid timestamp format '{dt_val}'.")
+                raise ValueError(f"Data Corruption: Invalid timestamp format '{dt_val}'") from e
             return datetime.now(timezone.utc)
         
         # Deserialize Enums safely

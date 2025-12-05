@@ -185,11 +185,11 @@ def simulate_promotion(
 
 
 @cli.command("surreal-health")
-@click.option("--url", default="ws://localhost:8000/rpc", show_default=True)
-@click.option("--namespace", default="khala", show_default=True)
-@click.option("--database", default="memories", show_default=True)
-@click.option("--username", default="root", show_default=True)
-@click.option("--password", default="root", show_default=True)
+@click.option("--url", default="ws://localhost:8000/rpc", show_default=True, envvar="SURREAL_URL")
+@click.option("--namespace", default="khala", show_default=True, envvar="SURREAL_NS")
+@click.option("--database", default="memories", show_default=True, envvar="SURREAL_DB")
+@click.option("--username", required=True, envvar="SURREAL_USER", help="DB Username")
+@click.option("--password", required=True, envvar="SURREAL_PASS", help="DB Password")
 def surreal_health(
     url: str,
     namespace: str,

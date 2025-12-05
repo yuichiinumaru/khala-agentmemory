@@ -26,6 +26,7 @@ from ....domain.memory.entities import Memory, MemoryTier
 from ....domain.memory.services import MemoryService
 from ....application.services.temporal_analyzer import TemporalAnalysisService
 from ...surrealdb.client import SurrealDBClient, SurrealConfig
+from khala.application.utils import json_serializer
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,6 @@ class JobProcessor:
                 self.redis_client = None
             
             # Initialize SurrealDB with strict config
-            # Note: This relies on Env Vars being set.
             self.db_client = SurrealDBClient()
 
             self.memory_service = MemoryService()
@@ -373,9 +373,6 @@ class JobProcessor:
         
         return JobResult(job.job_id, True, {"processed": processed_count}, (time.time() - start_time) * 1000)
 
-    # ... (Other executors remain similar but with safe imports)
-    # Including placeholders for completeness of file
-    
     async def _execute_deduplication(self, job): return JobResult(job.job_id, True, {"status": "not_implemented"}, 0)
     async def _execute_consistency_check(self, job): return JobResult(job.job_id, True, {"status": "not_implemented"}, 0)
     async def _execute_index_repair(self, job): return JobResult(job.job_id, True, {"status": "not_implemented"}, 0)
@@ -413,7 +410,8 @@ class JobProcessor:
     def _serialize_job(self, job: JobDefinition) -> Dict[str, str]:
         return {
             "job_id": job.job_id, "job_type": job.job_type, "job_class": job.job_class,
-            "priority": str(job.priority.value), "payload": json.dumps(job.payload),
+            "priority": str(job.priority.value),
+            "payload": json.dumps(job.payload, default=json_serializer), # FIX: Safe Serialization
             "created_at": job.created_at.isoformat(), "max_retries": str(job.max_retries),
             "retry_count": str(job.retry_count), "timeout_seconds": str(job.timeout_seconds),
             "status": job.status.value
@@ -431,7 +429,8 @@ class JobProcessor:
     def _serialize_result(self, result: JobResult) -> Dict[str, str]:
         return {
             "job_id": result.job_id, "success": str(result.success),
-            "result": json.dumps(result.result), "execution_time_ms": str(result.execution_time_ms),
+            "result": json.dumps(result.result, default=json_serializer), # FIX: Safe Serialization
+            "execution_time_ms": str(result.execution_time_ms),
             "completed_at": result.completed_at.isoformat()
         }
 
