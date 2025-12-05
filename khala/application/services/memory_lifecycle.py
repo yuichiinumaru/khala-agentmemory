@@ -25,13 +25,27 @@ from khala.infrastructure.gemini.models import ModelRegistry
 
 logger = logging.getLogger(__name__)
 
+PROMPT_SUMMARIZE = """Summarize the following content in under 50 words:
+
+{content}"""
+
+PROMPT_CONSOLIDATE = """
+Consolidate the following {count} memory fragments into a single, comprehensive memory.
+Maintain all key details but remove redundancies.
+
+Memories:
+{memory_list}
+
+New Memory Content:
+"""
+
 class MemoryLifecycleService:
     """Service to manage the lifecycle of memories."""
 
     def __init__(
         self,
         repository: MemoryRepository,
-        gemini_client: Optional[GeminiClient] = None,
+        gemini_client: GeminiClient, # Required Dependency
         memory_service: Optional[MemoryService] = None,
         decay_service: Optional[DecayService] = None,
         deduplication_service: Optional[DeduplicationService] = None,
@@ -41,7 +55,10 @@ class MemoryLifecycleService:
         significance_scorer: Optional[SignificanceScorer] = None
     ):
         self.repository = repository
-        self.gemini_client = gemini_client or GeminiClient()
+        if not gemini_client:
+             raise ValueError("MemoryLifecycleService requires a GeminiClient instance.")
+        self.gemini_client = gemini_client
+
         self.memory_service = memory_service or MemoryService()
         self.decay_service = decay_service or DecayService()
         self.deduplication_service = deduplication_service or DeduplicationService()
@@ -67,11 +84,8 @@ class MemoryLifecycleService:
                 }
 
         # Strategy 17 & 31: Significance Scoring & Natural Triggers
-        # We recalculate importance if it seems default or low, or to catch natural triggers
         if self.significance_scorer:
-             # Calculate new score
              new_score = await self.significance_scorer.calculate_significance(memory.content)
-             # Update if higher than current (assuming we want to boost importance)
              if new_score.value > memory.importance.value:
                  memory.importance = new_score
 
@@ -81,7 +95,6 @@ class MemoryLifecycleService:
 
         # Strategy 152: Bias Detection
         if check_privacy and self.privacy_safety_service:
-            # We don't block ingestion for bias, but we tag it
             bias_result = await self.privacy_safety_service.detect_bias(memory.content)
             if bias_result.is_biased:
                 if not memory.metadata:
@@ -96,40 +109,32 @@ class MemoryLifecycleService:
         # Auto-summarize if content is long (> 500 chars) and summary is missing
         if len(memory.content) > 500 and not memory.summary:
             try:
-                # Use Gemini Flash for fast summarization
-                prompt = f"Summarize the following content in under 50 words:\n\n{memory.content}"
                 response = await self.gemini_client.generate_text(
-                    prompt=prompt,
+                    prompt=PROMPT_SUMMARIZE.format(content=memory.content),
                     task_type="generation",
-                    model_id=ModelRegistry.get_model("gemini-2.0-flash").model_id
+                    model_id="gemini-2.0-flash" # Use fast model
                 )
                 memory.summary = response.get("content", "").strip()
-            except Exception as e:
-                logger.warning(f"Failed to auto-summarize memory: {e}")
+            except Exception:
+                logger.exception("Failed to auto-summarize memory.")
 
         # Strategy 86: Conflict Resolution
-        # Check for potential conflicts before creation
         if self.conflict_resolution_service and memory.embedding:
             try:
                 conflicts = await self.conflict_resolution_service.find_potential_conflicts(memory)
                 if conflicts:
                     logger.info(f"Detected {len(conflicts)} potential conflicts for memory {memory.id}")
-                    # Tag metadata with conflict info
                     if not memory.metadata:
                         memory.metadata = {}
-
                     memory.metadata["potential_conflicts"] = [c.id for c in conflicts]
                     memory.metadata["conflict_detected"] = True
-            except Exception as e:
-                logger.warning(f"Failed to check conflicts: {e}")
+            except Exception:
+                logger.exception("Failed to check conflicts.")
 
         return await self.repository.create(memory)
 
     async def run_lifecycle_job(self, user_id: str) -> Dict[str, int]:
-        """Run all lifecycle tasks for a user.
-
-        Returns a summary of actions taken.
-        """
+        """Run all lifecycle tasks for a user."""
         logger.info(f"Starting lifecycle job for user {user_id}")
         stats = {
             "promoted": 0,
@@ -139,29 +144,27 @@ class MemoryLifecycleService:
             "consolidated": 0
         }
 
-        # 1. Promotion
         stats["promoted"] = await self.promote_memories(user_id)
-
-        # 2. Decay & Archival
         decay_stats = await self.decay_and_archive_memories(user_id)
         stats["decayed"] = decay_stats["decayed"]
         stats["archived"] = decay_stats["archived"]
-
-        # 3. Deduplication
         stats["deduplicated"] = await self.deduplicate_memories(user_id)
 
         # 4. Consolidation (Optional/Heavy operation)
-        # We use a distributed lock here to ensure only one instance performs consolidation
-        # for a given user at a time.
-        lock = SurrealDBLock(self.repository.client, f"consolidation_lock_{user_id}")
-        if await lock.acquire():
-            try:
-                # Placeholder: Consolidation requires LLM integration which is handled separately.
-                stats["consolidated"] = await self.consolidate_memories(user_id)
-            finally:
-                await lock.release()
+        # Assuming repository exposes client for locking. Ideally repo should provide lock method.
+        # But lock relies on SurrealDBClient directly.
+        if hasattr(self.repository, 'client'):
+            lock = SurrealDBLock(self.repository.client, f"consolidation_lock_{user_id}")
+            if await lock.acquire():
+                try:
+                    stats["consolidated"] = await self.consolidate_memories(user_id)
+                finally:
+                    await lock.release()
+            else:
+                logger.info(f"Skipping consolidation for user {user_id}: Lock acquired by another process.")
         else:
-            logger.info(f"Skipping consolidation for user {user_id}: Lock acquired by another process.")
+             logger.warning("Repository does not expose client; skipping distributed lock for consolidation.")
+             stats["consolidated"] = await self.consolidate_memories(user_id)
 
         logger.info(f"Lifecycle job completed for user {user_id}: {stats}")
         return stats
@@ -169,11 +172,8 @@ class MemoryLifecycleService:
     async def promote_memories(self, user_id: str) -> int:
         """Check and promote memories to the next tier."""
         promoted_count = 0
-
-        # Iterate through tiers that can be promoted
         for tier in [MemoryTier.WORKING, MemoryTier.SHORT_TERM]:
             memories = await self.repository.get_by_tier(user_id, tier.value, limit=1000)
-
             for memory in memories:
                 if memory.should_promote_to_next_tier():
                     try:
@@ -181,30 +181,20 @@ class MemoryLifecycleService:
                         memory.promote()
                         await self.repository.update(memory)
                         promoted_count += 1
-                        logger.debug(
-                            f"Promoted memory {memory.id} from {old_tier.value} "
-                            f"to {memory.tier.value}"
-                        )
+                        logger.debug(f"Promoted memory {memory.id} from {old_tier.value} to {memory.tier.value}")
                     except ValueError as e:
                         logger.warning(f"Failed to promote memory {memory.id}: {e}")
-
         return promoted_count
 
     async def decay_and_archive_memories(self, user_id: str) -> Dict[str, int]:
         """Update decay scores and archive memories if needed."""
         stats = {"decayed": 0, "archived": 0}
-
-        # We need to check all active memories.
-        # Since we don't have get_all_active, we iterate by tier.
         for tier in MemoryTier:
             memories = await self.repository.get_by_tier(user_id, tier.value, limit=1000)
-
             for memory in memories:
-                # Update decay score
                 self.decay_service.update_decay_score(memory)
                 stats["decayed"] += 1
 
-                # Check for archival
                 should_archive = (
                     memory.should_archive() or
                     self.decay_service.should_archive_based_on_decay(memory)
@@ -219,9 +209,7 @@ class MemoryLifecycleService:
                     except ValueError as e:
                         logger.warning(f"Failed to archive memory {memory.id}: {e}")
                 else:
-                    # Just update the decay score in DB
                     await self.repository.update(memory)
-
         return stats
 
     async def deduplicate_memories(self, user_id: str) -> int:
@@ -229,17 +217,12 @@ class MemoryLifecycleService:
         duplicates_removed = 0
 
         # 1. Exact duplicates (Global)
-        # Using efficient repository method to find all exact content matches
         try:
             duplicate_groups = await self.repository.find_duplicate_groups(user_id)
             for group in duplicate_groups:
-                if len(group) < 2:
-                    continue
-
-                # Keep the oldest one (first in list due to ORDER BY created_at ASC)
+                if len(group) < 2: continue
                 original = group[0]
                 duplicates = group[1:]
-
                 for dupe in duplicates:
                     if not dupe.is_archived:
                         dupe.archive(force=True)
@@ -248,27 +231,24 @@ class MemoryLifecycleService:
                         await self.repository.update(dupe)
                         duplicates_removed += 1
                         logger.info(f"Archived exact duplicate {dupe.id} of {original.id}")
-        except Exception as e:
-            logger.error(f"Global exact deduplication failed: {e}")
+        except Exception:
+            logger.exception("Global exact deduplication failed.")
 
         # 2. Semantic duplicates (Strategy 90: Vector Deduplication)
-        # We iterate by tier for a partial check of recent memories against each other.
-        # This is an O(N^2) check on the batch, so we limit the batch size.
-
         processed_ids = set()
+        # Reduced limit to avoid O(N^2) explosion
+        BATCH_LIMIT = 50
 
-        # Focus on active tiers for semantic dupes
         for tier in [MemoryTier.WORKING, MemoryTier.SHORT_TERM]:
-            memories = await self.repository.get_by_tier(user_id, tier.value, limit=200)
+            memories = await self.repository.get_by_tier(user_id, tier.value, limit=BATCH_LIMIT)
 
             for i, memory in enumerate(memories):
-                if memory.id in processed_ids or not memory.embedding:
-                    continue
+                if memory.id in processed_ids or not memory.embedding: continue
+                if memory.is_archived: continue
 
-                if memory.is_archived:
-                    continue
-
+                # Look ahead in the batch
                 candidates = memories[i+1:]
+                if not candidates: continue
 
                 semantic_dupes = self.deduplication_service.find_semantic_duplicates(
                     memory, candidates
@@ -287,26 +267,18 @@ class MemoryLifecycleService:
         return duplicates_removed
 
     async def schedule_consolidation(self, user_id: str) -> Dict[str, Any]:
-        """
-        Strategy 106: Intelligent Consolidation Scheduling.
-        Determines if consolidation should run based on system load, time of day, and memory accumulation.
-        """
-        # 1. Check accumulated short-term memories
+        """Determines if consolidation should run."""
         memories = await self.repository.get_by_tier(
             user_id, MemoryTier.SHORT_TERM.value, limit=500
         )
-
         count = len(memories)
         should_run = False
         reason = "insufficient_data"
 
-        # Heuristic 1: Volume threshold (Strategy 106)
         if count > 50:
             should_run = True
             reason = "volume_threshold_exceeded"
 
-        # Heuristic 2: Time of day (Nightly consolidation)
-        # Assuming UTC, "night" might be 02:00 - 05:00. This is just a basic check.
         current_hour = datetime.now(timezone.utc).hour
         if 2 <= current_hour <= 5 and count > 10:
              should_run = True
@@ -320,64 +292,41 @@ class MemoryLifecycleService:
         return {"status": "skipped", "reason": reason}
 
     async def consolidate_memories(self, user_id: str, force: bool = False) -> int:
-        """Consolidate memories.
-
-        Uses LLM to summarize and merge groups of similar memories.
-
-        Args:
-            user_id: The user ID.
-            force: If True, bypass heuristics and force consolidation (e.g. scheduled).
-        """
+        """Consolidate memories."""
         consolidated_count = 0
-
-        # Focus on SHORT_TERM tier for consolidation usually
-        # Fetch more than threshold (which is > 100 in should_consolidate)
         memories = await self.repository.get_by_tier(
             user_id, MemoryTier.SHORT_TERM.value, limit=200
         )
 
-        # Re-using the check or forcing it if called directly
         if force or self.memory_service.should_consolidate(memories):
             groups = self.consolidation_service.group_memories_for_consolidation(memories)
 
             for group in groups:
                 if len(group) > 1:
                     try:
-                        # 1. Summarize group content
                         contents = [m.content for m in group]
                         memory_list_str = "\n".join([f'- {c}' for c in contents])
-                        prompt = f"""
-                        Consolidate the following {len(contents)} memory fragments into a single, comprehensive memory.
-                        Maintain all key details but remove redundancies.
 
-                        Memories:
-                        {memory_list_str}
-
-                        New Memory Content:
-                        """
-
-                        # Use the "smart" model (gemini-2.5-pro) which is defined in ModelRegistry
                         response = await self.gemini_client.generate_text(
-                            prompt=prompt,
+                            prompt=PROMPT_CONSOLIDATE.format(
+                                count=len(contents),
+                                memory_list=memory_list_str
+                            ),
                             task_type="generation",
                             model_id="gemini-2.5-pro"
                         )
                         new_content = response.get("content", "").strip()
 
                         if new_content:
-                            # 2. Create new consolidated memory
                             new_memory = Memory(
                                 user_id=user_id,
                                 content=new_content,
-                                tier=MemoryTier.LONG_TERM, # Promote to long-term
-                                importance=0.8, # Reset importance or calculate avg
+                                tier=MemoryTier.LONG_TERM,
+                                importance=ImportanceScore(0.8),
                                 metadata={"consolidated_from": [m.id for m in group]}
                             )
-                            # Embed if possible (omitted for brevity, handled by create trigger or separate service usually)
-
                             await self.repository.create(new_memory)
 
-                            # 3. Archive original memories
                             for m in group:
                                 m.archive(force=True)
                                 m.metadata["consolidated_into"] = new_memory.id
@@ -386,7 +335,7 @@ class MemoryLifecycleService:
                             consolidated_count += len(group)
                             logger.info(f"Consolidated {len(group)} memories into new memory {new_memory.id}")
 
-                    except Exception as e:
-                        logger.error(f"Failed to consolidate group: {e}")
+                    except Exception:
+                        logger.exception("Failed to consolidate group.")
 
         return consolidated_count

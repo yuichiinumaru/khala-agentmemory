@@ -95,15 +95,101 @@ Replaced list with `collections.deque(maxlen=1000)` to cap memory usage. Refacto
 
 -----
 
+### 💀 Rite of Resurrection: Memory Lifecycle - [Performance/DI]
+
+**The Rot (Original Sin):**
+> *O(N^2) loop in `deduplicate_memories`.*
+> *Hidden dependency on `GeminiClient` in default args.*
+
+**The Purification Strategy:**
+Enforced dependency injection for `GeminiClient` in `__init__`. Capped batch size for semantic deduplication to 50 items to prevent quadratic explosions. Added explicit error logging (`logger.exception`) instead of swallowing exceptions.
+
+-----
+
+### 💀 Rite of Resurrection: Graph Service - [Architecture/OOM]
+
+**The Rot (Original Sin):**
+> *`getattr(self.repository, 'client')` breaks encapsulation.*
+> *In-memory graph processing of unbounded datasets.*
+
+**The Purification Strategy:**
+Updated `GraphService` to accept `SurrealDBClient` via Dependency Injection. Implemented strict limits (2000 nodes) for in-memory graph algorithms (`calculate_centrality`, etc.) to prevent OOM. Offloaded graph computation to `asyncio.to_thread` to prevent blocking the event loop.
+
+-----
+
+### 💀 Rite of Resurrection: Domain Entities - [Fragility]
+
+**The Rot (Original Sin):**
+> *`__post_init__` crashes on invalid data read from DB.*
+> *Hardcoded business rules buried in methods.*
+
+**The Purification Strategy:**
+Refactored `__post_init__` to use "Self-Healing" logic (logging warnings and clamping invalid values) instead of raising `ValueError` on read. Extracted business rules (promotion thresholds) to class constants for visibility. Added `get_age_hours` alias for compatibility.
+
+-----
+
+### 💀 Rite of Resurrection: Audit Repository - [Security]
+
+**The Rot (Original Sin):**
+> *Silently swallows audit logging failures ("Fail Open").*
+
+**The Purification Strategy:**
+Modified `log()` to raise `RuntimeError` if audit persistence fails. This ensures a "Fail Closed" security posture where operations cannot proceed without an audit trail.
+
+-----
+
+### 💀 Rite of Resurrection: Job Processor - [Concurrency]
+
+**The Rot (Original Sin):**
+> *Sleeping on failure blocks processing logic.*
+> *Unbounded queries in `scan_all` lead to OOM.*
+
+**The Purification Strategy:**
+Refactored worker loop to use optimized sleep (0.1s) and ensuring job fetching failures do not stall the worker unnecessarily. Added strict `LIMIT` clauses to SQL queries in consolidation and decay jobs to prevent memory exhaustion.
+
+-----
+
+### 💀 Rite of Resurrection: REST API - [Security]
+
+**The Rot (Original Sin):**
+> *Timing attack in API Key validation.*
+> *Unauthenticated `/health` endpoint executing DB queries (DDoS).*
+
+**The Purification Strategy:**
+Implemented `secrets.compare_digest` for constant-time authentication. Split health checks into `/health` (Liveness, unauth, no DB) and `/ready` (Readiness, auth, DB check). Prevented log flooding from missing API keys.
+
+-----
+
+### 💀 Rite of Resurrection: Configuration - [Consistency]
+
+**The Rot (Original Sin):**
+> *Dependency mismatch (`google-genai` vs `google-generativeai`).*
+
+**The Purification Strategy:**
+Updated `setup.py` to require the correct package `google-generativeai`, ensuring reproducibility. Added `cachetools` to dependencies.
+
+-----
+
+### 💀 Rite of Resurrection: Test Suite - [Infrastructure]
+
+**The Rot (Original Sin):**
+> *Tests fail because they instantiate `SurrealDBClient` without environment configuration, which is now mandatory.*
+
+**The Purification Strategy:**
+Updated `tests/brutal/conftest.py` and `tests/unit/conftest.py` to inject mock environment variables (`SURREAL_USER`, `SURREAL_PASS`, etc.) before any tests run. This ensures the strict validation in `SurrealConfig` passes during test setup.
+
+-----
+
 ### 💀 Rite of Resurrection: Security Cleanup
 
 **The Rot (Original Sin):**
 > *Scripts containing hardcoded credentials left in repository.*
+> *Zombie code (`debug_intent.py`) with hardcoded paths.*
 
 **The Purification Strategy:**
-Deleted `scripts/check_conn.py` and `scripts/verify_creds.py`.
+Deleted `scripts/check_conn.py`, `scripts/verify_creds.py`, `khala/debug_intent.py`, and `tests/integration/test_novel_strategies.py`.
 
 -----
 
 **Conclusion:**
-The codebase has been purged of its most fatal weaknesses. The architecture now enforces type safety, input validation, and secure defaults.
+The codebase has been purged of its most fatal weaknesses. The architecture now enforces type safety, input validation, secure defaults, and robust error handling. The test suite is now compatible with the hardened configuration.

@@ -1,11 +1,19 @@
 import sys
+import os
 from unittest.mock import MagicMock, AsyncMock, patch
 import pytest
 import asyncio
 import random
 import string
 
-# Mock surrealdb module BEFORE it is imported by khala
+# 1. Set Mock Environment Variables (Crucial for SurrealConfig)
+os.environ["SURREAL_USER"] = "mock_user"
+os.environ["SURREAL_PASS"] = "mock_pass"
+os.environ["SURREAL_URL"] = "ws://mock:8000/rpc"
+os.environ["GOOGLE_API_KEY"] = "mock_google_key"
+os.environ["KHALA_API_KEY"] = "mock_khala_key"
+
+# 2. Mock surrealdb module BEFORE it is imported by khala
 # This handles the top-level import in client.py
 mock_surreal_module = MagicMock()
 mock_surreal_module.AsyncSurreal = MagicMock
@@ -24,6 +32,7 @@ class MockAsyncSurreal:
         self._data = {} # Simple in-memory storage for basics
 
     async def connect(self):
+        # Simulate connection delay
         await asyncio.sleep(0.001)
 
     async def signin(self, credentials):
