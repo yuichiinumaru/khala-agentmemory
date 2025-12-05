@@ -3,41 +3,53 @@
 **Project**: KHALA (Knowledge Hierarchical Adaptive Long-term Agent)
 **Version**: 2.1 (Resurrection)
 **Framework**: Agno + SurrealDB
-**Date**: May 2025
-**Status**: REFACTORING / HARDENING
+**Date**: December 2025
+**Status**: STRUCTURAL RESURRECTION
 
 ---
 
 ## 1. Executive Summary
 
 ### Project Vision
-Resurrect and harden the KHALA memory system into a production-grade, secure, and reliable foundation. The initial "Feature Rush" is over; the "Structure Era" has begun.
+Resurrect and harden the KHALA memory system into a production-grade, secure, and reliable foundation. The Autopsy (Dec 2025) revealed critical structural and security failures. We are now in the "Resurrection Era".
 
 ### Core Objective
-Fix critical security, reliability, and logic flaws identified in the Autopsy. Enforce strict DDD architecture.
+Systematic elimination of fragility. Fix critical security holes, data corruption bugs, and architectural deviations.
 
-### Key Deliverables (Phase 3)
-1.  **Secure Foundation**: No RCE risks, no hardcoded secrets.
-2.  **Reliable Infrastructure**: Robust DB clients, safe serialization.
-3.  **Strict Governance**: Documentation matches code.
+### Key Deliverables
+1.  **Governance Enforcement**: `AGENTS.md` is the law. `docs/` is the truth.
+2.  **Security Hardening**: Eliminate RCE and DoS vectors.
+3.  **Data Integrity**: Ensure timestamps and versions are immutable and correct.
+4.  **Performance Optimization**: Remove O(N) loops and blocking I/O.
 
 ---
 
 ## 2. Project Scope
 
 ### Phase 3.1: Structural Resurrection (Current)
--   Governance Enforcement (`docs/` fix).
--   Task Purification.
+-   [x] Governance Audit & File Cleanup.
+-   [x] Documentation Alignment (`01`, `02`, `03`).
+-   [x] Task Purification.
 
 ### Phase 3.2: Surgical Intervention (Next)
--   Fix Critical/High Autopsy findings.
--   Refactor `SurrealDBClient` and `JobProcessor`.
+-   [ ] **Critical Security Fixes**: CLI Executor, API Auth.
+-   [ ] **Data Integrity Fixes**: SurrealDB Client.
+-   [ ] **Reliability Fixes**: Gemini Client, Lifecycle Service.
 
-### Phase 3.3: Advanced Features (Resume)
--   Complete Module 15 (Version Control).
--   Optimization.
+### Phase 3.3: Advanced Features (Deferred)
+-   Module 15 (Version Control).
+-   Optimization Strategies.
 
 ---
 
 ## 3. Implementation Strategy
-... (See original plan for feature details)
+
+1.  **Stop the Bleeding**: No new features until Critical tasks in `02-tasks.md` are closed.
+2.  **Verify Every Stitch**: Use TDD where possible. Verify fixes with `read_file` or reproduction scripts.
+3.  **Fail Fast**: Crash on error. Do not swallow exceptions.
+4.  **Zero Trust**: Trust no input, trust no path.
+
+---
+
+## 4. Progress Tracking
+See `docs/02-tasks.md` for the active execution queue.

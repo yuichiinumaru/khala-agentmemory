@@ -1,8 +1,8 @@
-from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi import FastAPI, HTTPException, Depends, Security, Request
 from fastapi.security import APIKeyHeader
 import logging
 import secrets
-from typing import Dict, Any, AsyncGenerator
+from typing import Dict, Any, AsyncGenerator, Optional
 from contextlib import asynccontextmanager
 import os
 
@@ -18,23 +18,12 @@ logger = logging.getLogger(__name__)
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
-def get_api_key(api_key_header: str = Security(api_key_header)):
-    """Validate API Key using constant-time comparison."""
-    expected_key = os.getenv("KHALA_API_KEY")
-    if not expected_key:
-        # Fail closed silently on request path to prevent log flooding
-        raise HTTPException(status_code=500, detail="Server misconfiguration")
-
-    if not api_key_header or not secrets.compare_digest(api_key_header, expected_key):
-        raise HTTPException(status_code=403, detail="Invalid credentials")
-
-    return api_key_header
-
 # Global state container
 class AppState:
-    db_client: SurrealDBClient = None
-    repository: SurrealDBMemoryRepository = None
-    tools: KHALASubagentTools = None
+    db_client: Optional[SurrealDBClient] = None
+    repository: Optional[SurrealDBMemoryRepository] = None
+    tools: Optional[KHALASubagentTools] = None
+    api_key: Optional[str] = None
 
 state = AppState()
 
@@ -43,10 +32,13 @@ async def lifespan(app: FastAPI):
     """Lifecycle manager for the application."""
     logger.info("Initializing KHALA API...")
 
-    # Pre-flight check
-    if not os.getenv("KHALA_API_KEY"):
-        logger.critical("KHALA_API_KEY not set. API is insecure/broken.")
-        # We don't raise here to allow app to start for fixing, but requests will fail 500.
+    # Load Secrets ONCE
+    api_key = os.getenv("KHALA_API_KEY")
+    if not api_key:
+        logger.critical("KHALA_API_KEY not set. Refusing to start.")
+        raise RuntimeError("KHALA_API_KEY environment variable is missing.")
+
+    state.api_key = api_key
 
     try:
         # Load config safely
@@ -57,17 +49,34 @@ async def lifespan(app: FastAPI):
         state.repository = SurrealDBMemoryRepository(state.db_client)
         state.tools = KHALASubagentTools(repository=state.repository)
         logger.info("KHALA API initialized successfully.")
+
         yield
+
     except Exception as e:
         logger.critical(f"Startup failed: {e}")
-        # Allow shutdown cleanup
-        yield
+        # Fail Fast: Do not yield control if startup fails
+        raise RuntimeError(f"Application Startup Failed: {e}") from e
+
     finally:
         if state.db_client:
             await state.db_client.close()
         logger.info("KHALA API shutdown complete.")
 
 app = FastAPI(title="Khala Memory API", version="2.1.0", lifespan=lifespan)
+
+def get_api_key(api_key_header: str = Security(api_key_header)):
+    """Validate API Key using constant-time comparison.
+
+    Uses state loaded at startup to avoid OS calls per request.
+    """
+    if not state.api_key:
+        # Should be unreachable if lifespan works, but defensive coding
+        raise HTTPException(status_code=500, detail="Server misconfiguration")
+
+    if not api_key_header or not secrets.compare_digest(api_key_header, state.api_key):
+        raise HTTPException(status_code=403, detail="Invalid credentials")
+
+    return api_key_header
 
 @app.get("/health")
 async def health_check() -> Dict[str, str]:
