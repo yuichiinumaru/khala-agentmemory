@@ -1,40 +1,61 @@
-# THE REPORT OF SHAME: BRUTAL CODE AUDIT
-**Auditor:** Senior Engineer Hardcore Code Inquisitor (Zero-Mercy)
-**Date:** 2025-05-27
-**Target:** KHALA Memory System
+# Role: The Senior Engineer Hardcore Code Inquisitor (Zero-Mercy Auditor)
 
-## Phase 0: Governance & Documentation (FATAL FAILURE)
+**Status:** BRUTAL AUDIT COMPLETE
+**Date:** 2025-12-05
+**Verdict:** **UNACCEPTABLE**
 
-The project violates the **FORGE** protocols. The `docs/` directory is a graveyard of unorganized markdown files.
+---
 
-| Severity | File | Error Type | Description of Failure | The Fix (Ruthless) |
-| :--- | :--- | :--- | :--- | :--- |
-| **CRITICAL** | `docs/` | Governance | Missing strict numbered hierarchy (00-06). Found chaos like `03-architecture-technical.md` instead of `03-architecture.md`. | Rename files to match FORGE spec. Delete orphans. |
-| **HIGH** | `AGENTS.md` | Governance | Mentions "Module 15 is missing" but code shows `branch_table`. Inconsistent truth. | Update `AGENTS.md` to reflect reality or delete the ghost code. |
-| **MED** | `README.md` | Entropy | Contains architectural details that belong in `03-architecture.md`. | purge `README.md` to a landing page only. |
+## Phase 0: The Bureaucratic Purge (Governance & Documentation)
 
-## Phase 1-4: The Codebase Massacre
+The project violates the **FORGE v2 Protocol** in multiple areas.
+
+| Violation Type | File/Path | Description | The Fix |
+| :--- | :--- | :--- | :--- |
+| **Illegal Artifact** | `docs/` | Found files outside the canonical sequence: `api-integration.md`, `strategies.md`, `database-schema.md`. | **DELETE or RENAME** to follow `NN-name.md` format. |
+| **Zombie Docs** | `docs/` | Orphaned reports: `CODE_AUDIT_REPORT.md`, `CODE_AUDIT_REPORT_V2.md`, etc. | **MOVE** to `docs/_archive/` immediately. |
+| **Loose Governance** | `docs/03-codebase-assessment.md` | Breaks the numbered sequence. | **MERGE** into `00-draft.md` or `01-plan.md`. |
+| **Entropy** | `tests/` | Found non-standard test roots: `brutal/`, `resurrection/`. | **CONSOLIDATE** into `unit/`, `integration/`. |
+
+---
+
+## The Table of Shame (Code Findings)
 
 | Severity | File:Line | Error Type | Description of Failure | The Fix (Ruthless) |
 | :--- | :--- | :--- | :--- | :--- |
-| **CRITICAL** | `khala/interface/cli/main.py` | Security | `password` default value is "root". **Hardcoded credential.** | Remove default. Require env var or prompt. |
-| **CRITICAL** | `khala/application/services/execution_evaluator.py` | Security | `exec()` usage. `safe_builtins` is not a sandbox. `forbidden` list is naive. | **DELETE THIS FILE.** Use Docker/Firecracker via MCP. |
-| **HIGH** | `khala/infrastructure/surrealdb/client.py:206` | Logic | `parse_dt` swallows errors and returns `now()`. This falsifies memory timestamps. | Raise error. Data integrity > Availability. |
-| **HIGH** | `khala/application/services/memory_lifecycle.py` | Logic | `get_by_tier(..., limit=1000)` loop. Creates "zombie memories" if >1000 items exist. | Use pagination (cursor) to process ALL items. |
-| **HIGH** | `khala/application/services/memory_lifecycle.py:118` | Reliability | `except Exception` blocks swallow errors silently or with weak logging. | Catch specific exceptions. Fail loudly if critical. |
-| **HIGH** | `khala/infrastructure/gemini/client.py` | Security | JSON extraction uses Regex fallbacks. Vulnerable to injection/hallucination. | Use strict JSON mode or schema validation (Pydantic). |
-| **MED** | `khala/infrastructure/surrealdb/client.py` | Concurrency | `get_connection` logic with `Semaphore` + `Lock` is complex and prone to deadlocks/races. | Use a battle-tested pool library or simplify. |
-| **MED** | `khala/infrastructure/surrealdb/schema.py` | Complexity | `_deserialize_memory` has local imports. Code smell. | Fix circular imports properly at module level. |
-| **MED** | `khala/infrastructure/gemini/client.py` | Performance | `_setup_models` calls `genai.configure` globally. | Isolate configuration to the client instance if possible. |
-| **NIT** | `khala/interface/rest/main.py` | Hygiene | Global `state` object. | Use FastAPI `app.state` or Dependency Injection. |
+| **CRITICAL** | `khala/infrastructure/executors/cli_executor.py:53` | **Security (RCE)** | Implicit reliance on `npx` in shell command (`cmd = ["npx", ...]`). Vulnerable to PATH hijacking. | Use absolute path for `npx` or invoke via managed node runtime. |
+| **CRITICAL** | `khala/infrastructure/executors/cli_executor.py:91` | **Stability (DoS)** | `process.communicate()` buffers all output in memory. Malicious tool can OOM the service. | specific `asyncio.StreamReader` with chunks. |
+| **HIGH** | `khala/infrastructure/surrealdb/client.py:440` | **Data Integrity** | `parse_dt` defaults to `now()` when timestamp is missing/invalid. **This corrupts historical data.** | Raise `ValueError`. If data is missing, the write is invalid. |
+| **HIGH** | `khala/interface/rest/main.py:19` | **Performance** | `get_api_key` calls `os.getenv` on **every single request**. IO overhead for auth. | Load config ONCE at startup into `AppState`. |
+| **HIGH** | `khala/infrastructure/gemini/client.py:270` | **Reliability** | `generate_embeddings` swallows exceptions in batch loop (`except Exception as e: logger.error...`). Data loss is silent. | Aggregate errors and return partial success or fail the whole batch loudly. |
+| **MED** | `khala/infrastructure/surrealdb/client.py:382` | **Architecture** | `_deserialize_memory` contains local imports (`from ... entities`). Hides circular deps. | Refactor `entities.py` to break cycles or use `TYPE_CHECKING`. |
+| **MED** | `khala/domain/memory/entities.py:100` | **Logic** | `__post_init__` "Self-Healing" resets negative values (e.g. `access_count`). Masks logic bugs elsewhere. | Raise `ValueError`. Do not hide upstream bugs. |
+| **MED** | `khala/interface/rest/main.py:47` | **Stability** | `lifespan` catches startup exceptions and `yields`. API starts in "Zombie Mode" (no DB). | Raise `RuntimeError` and crash the container. Fail fast. |
+| **MED** | `khala/infrastructure/gemini/client.py:328` | **Duplication** | `_extract_json` re-implements fragile regex logic found in `khala/application/utils.py`. | **Import `parse_json_safely`** from utils. DRY violation. |
+| **LOW** | `khala/infrastructure/surrealdb/client.py:126` | **Concurrency** | `_borrow_connection` accepts optional `connection` but bypasses semaphore tracking. | Ensure borrowed connections are tracked or explicitly untracked. |
+| **LOW** | `khala/infrastructure/background/jobs/job_processor.py:246` | **Completeness** | Multiple jobs (`deduplication`, `consistency_check`) return "not_implemented". | Implement them or remove the job types. |
 
-## Execution Plan for Remediation
+---
 
-1.  **Purge `execution_evaluator.py`**: It is a security hole.
-2.  **Sanitize CLI**: Remove "root" password default.
-3.  **Fix Timestamp Logic**: Stop lying about time in `SurrealDBClient`.
-4.  **Paginate Lifecycle**: Ensure all memories are processed, not just top 1000.
-5.  **Reorganize Docs**: Force alignment with FORGE.
+## Phase 4: Chaos Simulation Results
 
-**Signed,**
-*The Inquisitor*
+1.  **"What if the database is down?"**
+    *   API starts anyway (`lifespan` swallows error).
+    *   Health check returns 503 (Correct).
+    *   **Verdict**: Partial Failure. The service should not start.
+
+2.  **"What if the LLM returns garbage JSON?"**
+    *   `GeminiClient` has fragile regex.
+    *   `PlanningService` uses `parse_json_safely` (Good).
+    *   **Verdict**: Inconsistent.
+
+3.  **"What if I inject a command?"**
+    *   `CLIExecutor` checks for `..` in paths (Good).
+    *   But relies on system `npx`.
+    *   **Verdict**: VULNERABLE.
+
+---
+
+**Final Instruction:**
+The codebase is **REJECTED**.
+Immediate remediation of CRITICAL and HIGH issues is mandatory before any feature work.
