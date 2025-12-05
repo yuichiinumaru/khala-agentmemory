@@ -10,10 +10,12 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Callable
 from enum import Enum
 import logging
+from collections import deque
 
 from .self_verification import SelfVerificationLoop, VerificationCheck, VerificationStatus
 from .debate_system import DebateSession, DebateResult
 from ...domain.memory.entities import Memory
+from ...domain.memory.repository import MemoryRepository
 from ...infrastructure.gemini.client import GeminiClient
 
 
@@ -160,17 +162,29 @@ class VerificationGate:
     """Main verification gate coordinator."""
     
     def __init__(self, 
+                 repository: Optional[MemoryRepository] = None,
                  gemini_client: Optional[GeminiClient] = None,
                  verification_loop: Optional[SelfVerificationLoop] = None):
         self.client = gemini_client or GeminiClient()
         self.verification_loop = verification_loop or SelfVerificationLoop(self.client)
+        self.repository = repository
+
+        # Auto-initialize repository if not provided (Best Effort)
+        if not self.repository:
+            try:
+                from ...infrastructure.surrealdb.client import SurrealDBClient
+                from ...infrastructure.persistence.surrealdb_repository import SurrealDBMemoryRepository
+                # This will use env vars via SurrealConfig logic
+                self.repository = SurrealDBMemoryRepository(SurrealDBClient())
+            except Exception as e:
+                logger.warning(f"Could not initialize default repository: {e}")
         
         # Configuration
         self.default_gate_type = GateType.STANDARD
         self.debate_threshold = 0.7  # Trigger debate for high-importance memories
         
-        # Performance tracking
-        self.verification_history: List[VerificationResult] = []
+        # Performance tracking (Bounded to prevent leak)
+        self.verification_history: deque = deque(maxlen=1000)
     
     async def verify_memory(self, 
                           memory: Memory, 
@@ -334,17 +348,16 @@ class VerificationGate:
         if 'debate_threshold' in config:
             self.debate_threshold = config['debate_threshold']
         
-        # Update verification loop configuration if needed
-        if 'verification_loop' in config:
-            loop_config = config['verification_loop']
-            # Apply configuration to verification loop (implementation would depend on loop interface)
-        
         logger.info("Verification gate configuration updated")
     
     async def _update_memory_verification(self, memory: Memory, result: VerificationResult):
         """Update memory with verification result."""
+        if not self.repository:
+            logger.warning("Skipping database update: No repository available.")
+            return
+
         try:
-            # Update memory fields
+            # Update memory fields locally
             memory.verification_count += 1
             memory.verification_status = result.final_status
             memory.verified_at = datetime.now(timezone.utc)
@@ -353,19 +366,9 @@ class VerificationGate:
             if hasattr(memory, 'verification_score'):
                 memory.verification_score = result.final_score
             
-            # Update in database
-            from ...infrastructure.surrealdb.client import SurrealDBClient
-            db_client = SurrealDBClient()
-            
-            await db_client.update_memory(
-                memory_id=memory.id,
-                updates={
-                    "verification_count": memory.verification_count,
-                    "verification_status": memory.verification_status,
-                    "verified_at": memory.verified_at.isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }
-            )
+            # Persist to database
+            # Note: We update the whole object which is safe/idempotent in our architecture
+            await self.repository.update(memory)
             
         except Exception as e:
             logger.warning(f"Failed to update memory verification in database: {e}")
@@ -376,7 +379,7 @@ class VerificationGate:
             return {"total_verified": 0}
         
         # Filter for recent verifications
-        recent_history = self.verification_history[-limit:]
+        recent_history = list(self.verification_history)[-limit:]
         
         # Calculate statistics
         total_verified = len(recent_history)
@@ -425,7 +428,7 @@ class VerificationGate:
     
     def get_recent_verifications(self, memory_id: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent verification results."""
-        verifications = self.verification_history[-limit:]
+        verifications = list(self.verification_history)[-limit:]
         
         if memory_id:
             verifications = [v for v in verifications if v.memory_id == memory_id]
@@ -438,4 +441,4 @@ def create_verification_gate(gemini_api_key: Optional[str] = None,
                             gate_type: Optional[GateType] = None) -> VerificationGate:
     """Create a configured verification gate."""
     client = GeminiClient(api_key=gemini_api_key) if gemini_api_key else GeminiClient()
-    return VerificationGate(client)
+    return VerificationGate(gemini_client=client)
