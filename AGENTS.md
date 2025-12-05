@@ -1,70 +1,45 @@
-# AGENTS.md: AI Developer Guide
+# AGENTS.md: The Constitution of KHALA
 
-**Project**: KHALA (Knowledge Hierarchical Adaptive Long-term Agent)
-**Version**: 2.0.1 (Forge v2 Compliant)
-**Status**: Advanced Implementation Phase (Audit: Critical Issues Resolved in Module 11)
-
----
-
-## 1. Prime Directives (The Law)
-
-1.  **Documentation is King**: The code is NOT the source of truth. The documentation is. If code contradicts documentation, the code is wrong.
-2.  **No Ghost Features**: You are forbidden from implementing features not explicitly listed in `docs/02-tasks-implementation.md`.
-3.  **No Binary Files**: Never commit `__pycache__`, `*.pyc`, `.DS_Store`, or compiled binaries.
-4.  **Stop-Loss Protocol**: If you fail to fix an error after **3 attempts**, STOP. Document the failure and ask for help.
+**Protocol**: FORGE v2 (Strict Governance)
+**Status**: RESURRECTION PHASE
+**Authority**: Absolute
 
 ---
 
-## 2. Project Context
+## 1. The Prime Directives (The Law)
 
-KHALA is an advanced memory system for AI agents, built on **SurrealDB** and **Agno**.
-
--   **Current State**: Modules 01-10 are complete. Module 11 (Spatial) is fixed. Module 15 (Version Control) is missing.
--   **Architecture**: Domain-Driven Design (DDD).
-    -   `khala/domain/`: Pure entities/logic.
-    -   `khala/application/`: Services/orchestration.
-    -   `khala/infrastructure/`: DB/API clients.
-    -   `khala/interface/`: API/CLI/Tools.
+1.  **Hierarchy of Truth**: `docs/` > `src/`. If the code contradicts the documentation, the code is **WRONG**.
+2.  **No Ghost Features**: You are forbidden from touching `src/` unless a specific task exists in `docs/02-tasks.md`.
+3.  **Atomic Decomposition**: No task shall be vague. "Fix bugs" is illegal. "Fix SQL Injection in auth.py" is legal.
+4.  **Stop-Loss Protocol**: If you fail to fix an error after **3 attempts**, STOP. Revert. Document. Ask for help.
+5.  **Test-Driven Development (TDD)**: You must write the test *before* the fix. (Suspended during Phase 3.1 Resurrection).
 
 ---
 
-## 3. Documentation Map
+## 2. The Canonical Structure
 
-You **MUST** consult these before working:
+You must maintain this structure. Any deviation is Heresy.
 
-### 🔴 Critical (Read First)
--   **[docs/02-tasks-implementation.md](docs/02-tasks-implementation.md)**: The **active backlog**. Check here for what to do. Update it when done.
--   **[docs/06-strategies-master.md](docs/06-strategies-master.md)**: The Strategy Bible. Definitions of all 170 strategies.
-
-### 🔵 Technical
--   **[docs/04-database-schema.md](docs/04-database-schema.md)**: SurrealDB schema reference. (Code: `khala/infrastructure/surrealdb/schema.py`).
--   **[docs/11-surrealdb-optimization.md](docs/11-surrealdb-optimization.md)**: Optimization specs.
--   **[docs/12-novel-experimental.md](docs/12-novel-experimental.md)**: Experimental features.
-
-### ⚪ Archive
--   `docs/_archive/`: Old files. Do not use for current status.
+### The Documentation Temple (`docs/`)
+-   **`00-draft.md`**: Scratchpad. Transient thoughts.
+-   **`01-plan.md`**: The Strategic Map. The "Why" and "What".
+-   **`02-tasks.md`**: The Execution Queue. The "How". **Source of Action.**
+-   **`03-architecture.md`**: The Blueprint. Module boundaries.
+-   **`04-changelog.md`**: The History. Record of Life and Death.
+-   **`05-ideas.md`**: The Parking Lot. Future dreams.
+-   **`06-rules.md`**: The Coding Standards. Style, Patterns, Linters.
 
 ---
 
-## 4. Development Workflow
+## 3. Workflow (The Ritual)
 
-1.  **Plan**: Read the task in `docs/02-tasks-implementation.md`. Create a plan using `set_plan`.
-2.  **Verify Environment**: Ensure `surrealdb` is accessible (use `scripts/check_conn.py` if needed).
-3.  **Implement**: Write code in `khala/`. Follow DDD.
-4.  **Verify**:
-    -   Write a temporary verification script in `scripts/verify_mytask.py`.
-    -   Run it.
-    -   Delete it before submitting.
-    -   OR run existing tests: `python scripts/run_all_tests.py`.
-5.  **Document**: Mark the task `[x]` in `docs/02-tasks-implementation.md`.
-6.  **Submit**: Follow pre-commit instructions.
-
-## 5. Scripts & Tools
-
--   **`scripts/`**: Utility scripts for checking connections, strategies, and running tests.
--   **`tests/`**: Unit and integration tests.
--   **`setup.py`**: Project installation (`pip install -e .`).
+1.  **Consult the Oracle**: Read `docs/02-tasks.md`. Pick the top priority task.
+2.  **Plan**: Use `set_plan` to outline your move.
+3.  **Execute**: Modify code.
+4.  **Verify**: Run tests.
+5.  **Record**: Update `docs/04-changelog.md`. Mark task complete in `docs/02-tasks.md`.
+6.  **Submit**: Commit with semantic message.
 
 ---
 
-**Welcome to the Forge.**
+**"Code without documentation is a zombie. Resurrect the soul first."**

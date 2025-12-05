@@ -6,10 +6,16 @@ transaction support, and error handling optimized for the KHALA memory system.
 
 import asyncio
 import hashlib
-from typing import Dict, List, Optional, Any, Union
+import os
+import re
+import json
+from typing import Dict, List, Optional, Any, Union, AsyncGenerator
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime, timezone
+
+from pydantic import BaseModel, Field, SecretStr
 
 try:
     from surrealdb import Surreal, AsyncSurreal
@@ -28,40 +34,66 @@ from .schema import DatabaseSchema
 logger = logging.getLogger(__name__)
 
 
+class SurrealConfig(BaseModel):
+    """Immutable configuration for SurrealDB.
+
+    Prevents 'Hardcoded Secrets' and 'Insecure Defaults'.
+    """
+    url: str = Field(..., description="SurrealDB WebSocket URL")
+    namespace: str = Field(..., description="Database Namespace")
+    database: str = Field(..., description="Database Name")
+    username: str = Field(..., description="Auth Username")
+    password: SecretStr = Field(..., description="Auth Password")
+    max_connections: int = Field(default=10, ge=1, le=100)
+
+    @classmethod
+    def from_env(cls) -> "SurrealConfig":
+        """Load from environment variables with Zero Trust.
+
+        Raises:
+            ValueError: If critical credentials are missing.
+        """
+        url = os.getenv("SURREAL_URL")
+        ns = os.getenv("SURREAL_NS")
+        db = os.getenv("SURREAL_DB")
+        user = os.getenv("SURREAL_USER")
+        password = os.getenv("SURREAL_PASS")
+
+        missing = []
+        if not url: missing.append("SURREAL_URL")
+        if not ns: missing.append("SURREAL_NS")
+        if not db: missing.append("SURREAL_DB")
+        if not user: missing.append("SURREAL_USER")
+        if not password: missing.append("SURREAL_PASS")
+
+        if missing:
+            raise ValueError(f"CRITICAL: Missing required environment variables: {', '.join(missing)}")
+
+        return cls(
+            url=url,
+            namespace=ns,
+            database=db,
+            username=user,
+            password=SecretStr(password)
+        )
+
 class SurrealDBClient:
     """Async SurrealDB client with connection pooling and optimization."""
     
-    def __init__(
-        self,
-        url: str = "ws://localhost:8000/rpc",
-        namespace: str = "khala",
-        database: str = "memories",
-        username: str = "root",
-        password: str = "root",
-        max_connections: int = 10,
-    ):
+    def __init__(self, config: Optional[SurrealConfig] = None):
         """Initialize SurrealDB client.
         
         Args:
-            url: WebSocket URL for SurrealDB
-            namespace: Namespace to use (multi-tenancy)
-            database: Database to use
-            username: Authentication username
-            password: Authentication password
-            max_connections: Maximum connections in pool
+            config: Validated configuration object.
         """
-        self.url = url
-        self.namespace = namespace
-        self.database = database
-        self.username = username
-        self.password = password
-        self.max_connections = max_connections
+        self.config = config or SurrealConfig.from_env()
         
         self._connection_pool: List[AsyncSurreal] = []
         self._pool_lock = asyncio.Lock()
-        self._semaphore = asyncio.Semaphore(max_connections)
+        # Semaphore tracks TOTAL active connections (pool + borrowed)
+        self._semaphore = asyncio.Semaphore(self.config.max_connections)
         self._initialized = False
-    
+
     async def initialize(self) -> None:
         """Initialize connection pool and setup namespace/database."""
         if self._initialized:
@@ -71,40 +103,58 @@ class SurrealDBClient:
             if self._initialized:
                 return
             
-            # Create initial connection
-            connection = AsyncSurreal(self.url)
-            await connection.connect()
-            await connection.signin({"username": self.username, "password": self.password})
+            logger.info(f"Connecting to SurrealDB at {self.config.url}...")
             
-            # Define namespace and database if they don't exist
             try:
-                await connection.query(f"DEFINE NAMESPACE {self.namespace};")
+                # Create initial connection to verify connectivity
+                connection = await self._create_connection()
+                self._connection_pool.append(connection)
+                self._initialized = True
+
             except Exception as e:
-                logger.debug(f"Namespace {self.namespace} might already exist: {e}")
+                logger.critical(f"Failed to initialize SurrealDB connection: {e}")
+                raise RuntimeError(f"SurrealDB Initialization Failed: {e}") from e
             
-            await connection.use(namespace=self.namespace, database=self.database)
-            
-            # Add to pool
-            self._connection_pool.append(connection)
-            self._initialized = True
-            
-        # Initialize Schema using DatabaseSchema manager
-        # Moved outside lock to prevent deadlock (get_connection needs lock)
         try:
             schema_manager = DatabaseSchema(self)
             await schema_manager.create_schema()
         except Exception as e:
             logger.error(f"Failed to initialize schema: {e}")
+            raise RuntimeError(f"Schema Initialization Failed: {e}") from e
         
-        logger.info(f"Connected to SurrealDB at {self.url}")
+        logger.info("SurrealDB initialized successfully.")
     
+    async def _create_connection(self) -> AsyncSurreal:
+        """Helper to create and authenticate a new connection."""
+        connection = AsyncSurreal(self.config.url)
+        await connection.connect()
+        await connection.signin({
+            "username": self.config.username,
+            "password": self.config.password.get_secret_value()
+        })
+        await connection.use(namespace=self.config.namespace, database=self.config.database)
+        return connection
+
+    async def close(self) -> None:
+        """Close all connections in the pool."""
+        async with self._pool_lock:
+            logger.info(f"Closing {len(self._connection_pool)} connections...")
+            for conn in self._connection_pool:
+                try:
+                    await conn.close()
+                except Exception as e:
+                    logger.warning(f"Error closing connection: {e}")
+            self._connection_pool.clear()
+            self._initialized = False
+        logger.info("SurrealDB client closed.")
+
     @asynccontextmanager
     async def get_connection(self):
         """Get a connection from the pool."""
         if not self._initialized:
             await self.initialize()
         
-        # Use semaphore to limit concurrent active connections
+        # Enforce max connections
         async with self._semaphore:
             connection = None
             try:
@@ -114,19 +164,15 @@ class SurrealDBClient:
                         connection = self._connection_pool.pop()
 
                 if not connection:
-                    # Create new connection if pool is empty
-                    connection = AsyncSurreal(self.url)
-                    await connection.connect()
-                    await connection.signin({"username": self.username, "password": self.password})
-                    await connection.use(namespace=self.namespace, database=self.database)
+                    connection = await self._create_connection()
 
                 yield connection
             finally:
                 if connection:
                     should_close = False
-                    # Thread-safe pool return
+                    # Return to pool if space permits
                     async with self._pool_lock:
-                        if len(self._connection_pool) < self.max_connections:
+                        if len(self._connection_pool) < self.config.max_connections:
                             self._connection_pool.append(connection)
                         else:
                             should_close = True
@@ -135,7 +181,7 @@ class SurrealDBClient:
                         try:
                             await connection.close()
                         except Exception as e:
-                            logger.error(f"Error closing connection: {e}")
+                            logger.error(f"Error closing overflow connection: {e}")
     
     @asynccontextmanager
     async def _borrow_connection(self, connection: Optional[AsyncSurreal] = None):
@@ -161,215 +207,42 @@ class SurrealDBClient:
                     pass
                 raise e
 
-    async def create_memory(self, memory: Memory, connection: Optional[AsyncSurreal] = None) -> str:
-        """Create a new memory in the database."""
+    def _serialize_memory(self, memory: Memory) -> Dict[str, Any]:
+        """Serialize memory entity to database format."""
         # Calculate content hash for deduplication
         content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
 
-        async with self._borrow_connection(connection) as conn:
-            # Check for existing memory with same hash
-            check_query = "SELECT id FROM memory WHERE content_hash = $content_hash LIMIT 1;"
-            check_response = await conn.query(check_query, {"content_hash": content_hash})
-            
-            # Handle SurrealDB response format
-            items = []
-            if check_response and isinstance(check_response, list):
-                if len(check_response) > 0:
-                    if isinstance(check_response[0], dict) and 'result' in check_response[0]:
-                        items = check_response[0]['result']
-                    else:
-                        items = check_response
+        # Prepare content fields
+        content_str = memory.content or ""
+        content_tiny = content_str[:100]
+        content_small = content_str[:1000]
+        content_full = content_str if len(content_str) > 1000 else None
 
-            if items and len(items) > 0:
-                 existing_item = items[0]
-                 existing_id = existing_item.get('id')
-                 if existing_id:
-                     existing_id = str(existing_id)
-                     if existing_id.startswith("memory:"):
-                         existing_id = existing_id.split(":")[1]
-                     logger.info(f"Duplicate memory detected (hash collision). Returning existing ID: {existing_id}")
-                     return existing_id
+        # Helper to serialize datetimes
+        def iso(dt: Optional[datetime]) -> Optional[str]:
+            return dt.isoformat() if dt else None
 
-            # Prepare conditional content fields (Strategy 63)
-            content_str = memory.content or ""
-            content_tiny = content_str[:100]
-            content_small = content_str[:1000]
-            content_full = content_str if len(content_str) > 1000 else None
-
-            query = """
-            CREATE type::thing('memory', $id) CONTENT {
-                user_id: $user_id,
-                content: $content,
-                content_tiny: $content_tiny,
-                content_small: $content_small,
-                content_full: $content_full,
-                content_hash: $content_hash,
-                embedding: $embedding,
-                embedding_model: $embedding_model,
-                embedding_version: $embedding_version,
-                embedding_visual: $embedding_visual,
-                embedding_visual_model: $embedding_visual_model,
-                embedding_visual_version: $embedding_visual_version,
-                embedding_code: $embedding_code,
-                embedding_code_model: $embedding_code_model,
-                embedding_code_version: $embedding_code_version,
-                tier: $tier,
-                importance: $importance,
-                tags: $tags,
-                category: $category,
-                metadata: $metadata,
-                created_at: $created_at,
-                updated_at: $updated_at,
-                accessed_at: $accessed_at,
-                access_count: $access_count,
-                llm_cost: $llm_cost,
-                verification_score: $verification_score,
-                verification_count: $verification_count,
-                verification_status: $verification_status,
-                verified_at: $verified_at,
-                verification_issues: $verification_issues,
-                debate_consensus: $debate_consensus,
-                is_archived: $is_archived,
-                decay_score: $decay_score,
-                source: $source,
-                sentiment: $sentiment,
-                episode_id: $episode_id,
-                confidence: $confidence,
-                source_reliability: $source_reliability,
-                location: $location,
-                versions: $versions,
-                events: $events
-            };
-            """
-
-            # Serialize source and handle datetime
-            source_data = None
-            if memory.source:
-                source_data = asdict(memory.source)
-                if source_data.get('timestamp'):
-                    source_data['timestamp'] = source_data['timestamp'].isoformat()
-
-            # Serialize sentiment
-            sentiment_data = None
-            if memory.sentiment:
-                sentiment_data = asdict(memory.sentiment)
-
-            # Serialize location
-            location_data = None
-            if memory.location:
-                location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
-
-            params = {
-                "id": memory.id,
-                "user_id": memory.user_id,
-                "content": memory.content,
-                "content_tiny": content_tiny,
-                "content_small": content_small,
-                "content_full": content_full,
-                "content_hash": content_hash,
-                "embedding": memory.embedding.values if memory.embedding else None,
-                "embedding_model": memory.embedding.model if memory.embedding else None,
-                "embedding_version": memory.embedding.version if memory.embedding else None,
-                "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
-                "embedding_visual_model": memory.embedding_visual.model if memory.embedding_visual else None,
-                "embedding_visual_version": memory.embedding_visual.version if memory.embedding_visual else None,
-                "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
-                "embedding_code_model": memory.embedding_code.model if memory.embedding_code else None,
-                "embedding_code_version": memory.embedding_code.version if memory.embedding_code else None,
-                "tier": memory.tier.value,
-                "importance": memory.importance.value,
-                "tags": memory.tags,
-                "category": memory.category,
-                "summary": memory.summary,
-                "metadata": memory.metadata,
-                "created_at": memory.created_at,
-                "updated_at": memory.updated_at,
-                "accessed_at": memory.accessed_at,
-                "access_count": memory.access_count,
-                "llm_cost": memory.llm_cost,
-                "verification_score": memory.verification_score,
-                "verification_count": memory.verification_count,
-                "verification_status": memory.verification_status,
-                "verified_at": memory.verified_at,
-                "verification_issues": memory.verification_issues,
-                "debate_consensus": memory.debate_consensus,
-                "is_archived": memory.is_archived,
-                "decay_score": memory.decay_score.value if memory.decay_score else None,
-                "source": source_data,
-                "sentiment": sentiment_data,
-                "episode_id": memory.episode_id,
-                "confidence": memory.confidence,
-                "source_reliability": memory.source_reliability,
-                "location": location_data,
-                "versions": memory.versions,
-                "events": memory.events
-            }
-
-        query = """
-        CREATE type::thing('memory', $id) CONTENT {
-            user_id: $user_id,
-            content: $content,
-            content_hash: $content_hash,
-            embedding: $embedding,
-            embedding_model: $embedding_model,
-            embedding_version: $embedding_version,
-            embedding_visual: $embedding_visual,
-            embedding_visual_model: $embedding_visual_model,
-            embedding_visual_version: $embedding_visual_version,
-            embedding_code: $embedding_code,
-            embedding_code_model: $embedding_code_model,
-            embedding_code_version: $embedding_code_version,
-            tier: $tier,
-            importance: $importance,
-            tags: $tags,
-            category: $category,
-            scope: $scope,
-            metadata: $metadata,
-            created_at: $created_at,
-            updated_at: $updated_at,
-            accessed_at: $accessed_at,
-            access_count: $access_count,
-            llm_cost: $llm_cost,
-            verification_score: $verification_score,
-            verification_count: $verification_count,
-            verification_status: $verification_status,
-            verified_at: $verified_at,
-            verification_issues: $verification_issues,
-            debate_consensus: $debate_consensus,
-            is_archived: $is_archived,
-            decay_score: $decay_score,
-            source: $source,
-            sentiment: $sentiment,
-            episode_id: $episode_id,
-            confidence: $confidence,
-            source_reliability: $source_reliability,
-            location: $location,
-            versions: $versions,
-            events: $events
-        };
-        """
-        
-        # Serialize source and handle datetime
+        # Serialize source
         source_data = None
         if memory.source:
             source_data = asdict(memory.source)
             if source_data.get('timestamp'):
-                source_data['timestamp'] = source_data['timestamp'].isoformat()
+                source_data['timestamp'] = iso(source_data['timestamp'])
 
         # Serialize sentiment
-        sentiment_data = None
-        if memory.sentiment:
-            sentiment_data = asdict(memory.sentiment)
+        sentiment_data = asdict(memory.sentiment) if memory.sentiment else None
 
         # Serialize location
         location_data = None
         if memory.location:
-            location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
+             location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
 
-        # Construct content dictionary dynamically
         content_dict = {
             "user_id": memory.user_id,
             "content": memory.content,
+            "content_tiny": content_tiny,
+            "content_small": content_small,
+            "content_full": content_full,
             "content_hash": content_hash,
             "tier": memory.tier.value,
             "importance": memory.importance.value,
@@ -378,15 +251,15 @@ class SurrealDBClient:
             "scope": memory.scope,
             "summary": memory.summary,
             "metadata": memory.metadata,
-            "created_at": memory.created_at,
-            "updated_at": memory.updated_at,
-            "accessed_at": memory.accessed_at,
+            "created_at": iso(memory.created_at),
+            "updated_at": iso(memory.updated_at),
+            "accessed_at": iso(memory.accessed_at),
             "access_count": memory.access_count,
             "llm_cost": memory.llm_cost,
             "verification_score": memory.verification_score,
             "verification_count": memory.verification_count,
             "verification_status": memory.verification_status,
-            "verified_at": memory.verified_at,
+            "verified_at": iso(memory.verified_at),
             "verification_issues": memory.verification_issues,
             "debate_consensus": memory.debate_consensus,
             "is_archived": memory.is_archived,
@@ -401,7 +274,6 @@ class SurrealDBClient:
             "events": memory.events
         }
 
-        # Add optional embeddings only if they exist
         if memory.embedding:
             content_dict["embedding"] = memory.embedding.values
             content_dict["embedding_model"] = memory.embedding.model
@@ -417,36 +289,69 @@ class SurrealDBClient:
             content_dict["embedding_code_model"] = memory.embedding_code.model
             content_dict["embedding_code_version"] = memory.embedding_code.version
 
-        query = "CREATE type::thing('memory', $id) CONTENT $content_data;"
+        return content_dict
 
-        params = {
-            "id": memory.id,
-            "content_data": content_dict
-        }
-        
-        async with self.get_connection() as conn:
-            response = await conn.query(query, params)
-            
-            # Check for error string
-            if isinstance(response, str):
-                 logger.error(f"Create memory failed: {response}")
-                 raise RuntimeError(f"Failed to create memory: {response}")
-            
-            # Check for list of results
-            if isinstance(response, list):
-                if not response:
-                    logger.error("Create memory returned empty list")
-                    raise RuntimeError("Failed to create memory: empty response")
-                
-                # If it's a list of dicts, it's likely the created record(s)
-                # Check if it looks like an error object (if Surreal returns dict errors)
-                if isinstance(response[0], dict):
-                    if response[0].get('status') == 'ERR':
-                        logger.error(f"Create memory failed: {response}")
-                        raise RuntimeError(f"Failed to create memory: {response}")
-            
-            return memory.id
-    
+    async def create_memory(self, memory: Memory, connection: Optional[AsyncSurreal] = None) -> str:
+        """Create a new memory in the database.
+
+        Logic: Idempotent with content hashing. If hash exists, UPDATE it.
+        """
+        content_dict = self._serialize_memory(memory)
+        content_hash = content_dict["content_hash"]
+
+        async with self._borrow_connection(connection) as conn:
+            # OPTIMIZED: Try to create first. If it violates UNIQUE index, then update.
+            # This is safer than check-then-act.
+            try:
+                query = "CREATE type::thing('memory', $id) CONTENT $content_data;"
+                params = {"id": memory.id, "content_data": content_dict}
+
+                response = await conn.query(query, params)
+
+                # SurrealDB error handling varies by client version
+                if isinstance(response, dict) and response.get('status') == 'ERR':
+                     raise RuntimeError(f"DB Error: {response}")
+                if isinstance(response, list) and len(response) > 0:
+                     if isinstance(response[0], dict) and response[0].get('status') == 'ERR':
+                         # Check for unique constraint violation
+                         detail = response[0].get('detail', '')
+                         if 'Index' in detail and 'content_hash' in detail:
+                             raise ValueError("DUPLICATE_HASH")
+                         raise RuntimeError(f"DB Error: {response}")
+
+                return memory.id
+
+            except (ValueError, Exception) as e:
+                is_duplicate = False
+                if str(e) == "DUPLICATE_HASH" or "already exists" in str(e).lower():
+                    is_duplicate = True
+
+                if is_duplicate:
+                    logger.info(f"Duplicate memory detected (hash collision). Merging into existing record.")
+                    # Get the ID of the existing record with this hash
+                    # We can't rely on memory.id here because the existing one might have a different ID
+                    find_query = "SELECT id FROM memory WHERE content_hash = $hash LIMIT 1;"
+                    find_resp = await conn.query(find_query, {"hash": content_hash})
+
+                    existing_id = None
+                    if find_resp and isinstance(find_resp, list) and len(find_resp) > 0:
+                         res = find_resp[0].get('result', []) if isinstance(find_resp[0], dict) else find_resp
+                         if res:
+                             existing_id = res[0].get('id')
+
+                    if existing_id:
+                        # Extract raw ID if needed
+                        if ":" in str(existing_id):
+                             existing_id = str(existing_id).split(":")[1]
+
+                        update_query = "UPDATE type::thing('memory', $id) MERGE $content_data;"
+                        await conn.query(update_query, {"id": existing_id, "content_data": content_dict})
+                        return existing_id
+
+                # If not duplicate or recovery failed, re-raise
+                logger.error(f"Create memory failed: {e}")
+                raise
+
     async def get_memory(self, memory_id: str) -> Optional[Memory]:
         """Get a memory by ID."""
         query = "SELECT * FROM type::thing('memory', $id);"
@@ -460,135 +365,25 @@ class SurrealDBClient:
             
             if isinstance(response, list) and len(response) > 0:
                 item = response[0]
-                # If item is the record itself
                 if isinstance(item, dict):
-                    # Check if it's a status object or the record
                     if 'status' in item and 'result' in item:
                         if item['status'] == 'OK' and item['result']:
                             return self._deserialize_memory(item['result'][0])
                     else:
-                        # Assume it's the record
                         return self._deserialize_memory(item)
             
             return None
     
     async def update_memory(self, memory: Memory, connection: Optional[AsyncSurreal] = None) -> None:
         """Update an existing memory."""
-        # Recalculate hash on update
-        content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
-
-        # Prepare conditional content fields (Strategy 63)
-        content_str = memory.content or ""
-        content_tiny = content_str[:100]
-        content_small = content_str[:1000]
-        content_full = content_str if len(content_str) > 1000 else None
-
-        # Using MERGE to preserve other fields (like events, versions)
-        query = """
-        UPDATE type::thing('memory', $id) MERGE {
-            user_id: $user_id,
-            content: $content,
-            content_tiny: $content_tiny,
-            content_small: $content_small,
-            content_full: $content_full,
-            content_hash: $content_hash,
-            embedding: $embedding,
-            tier: $tier,
-            importance: $importance,
-            tags: $tags,
-            category: $category,
-            scope: $scope,
-            metadata: $metadata,
-            created_at: $created_at,
-            updated_at: time::now(),
-            accessed_at: $accessed_at,
-            access_count: $access_count,
-            llm_cost: $llm_cost,
-            verification_score: $verification_score,
-            verification_count: $verification_count,
-            verification_status: $verification_status,
-            verified_at: $verified_at,
-            verification_issues: $verification_issues,
-            debate_consensus: $debate_consensus,
-            is_archived: $is_archived,
-            decay_score: $decay_score,
-            source: $source,
-            sentiment: $sentiment,
-            episode_id: $episode_id,
-            confidence: $confidence,
-            source_reliability: $source_reliability,
-            location: $location,
-            versions: $versions,
-            events: $events
-        };
-        """
+        content_dict = self._serialize_memory(memory)
+        # Update timestamp explicitly
+        content_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
         
-        # Serialize source and handle datetime
-        source_data = None
-        if memory.source:
-            source_data = asdict(memory.source)
-            if source_data.get('timestamp'):
-                source_data['timestamp'] = source_data['timestamp'].isoformat()
-
-        # Serialize sentiment
-        sentiment_data = None
-        if memory.sentiment:
-            sentiment_data = asdict(memory.sentiment)
-
-        # Serialize location
-        location_data = None
-        if memory.location:
-            location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
-
-        params = {
-            "id": memory.id,
-            "user_id": memory.user_id,
-            "content": memory.content,
-            "content_tiny": content_tiny,
-            "content_small": content_small,
-            "content_full": content_full,
-            "content_hash": content_hash,
-            "embedding": memory.embedding.values if memory.embedding else None,
-            "embedding_model": memory.embedding.model if memory.embedding else None,
-            "embedding_version": memory.embedding.version if memory.embedding else None,
-            "embedding_visual": memory.embedding_visual.values if memory.embedding_visual else None,
-            "embedding_visual_model": memory.embedding_visual.model if memory.embedding_visual else None,
-            "embedding_visual_version": memory.embedding_visual.version if memory.embedding_visual else None,
-            "embedding_code": memory.embedding_code.values if memory.embedding_code else None,
-            "embedding_code_model": memory.embedding_code.model if memory.embedding_code else None,
-            "embedding_code_version": memory.embedding_code.version if memory.embedding_code else None,
-            "tier": memory.tier.value,
-            "importance": memory.importance.value,
-            "tags": memory.tags,
-            "category": memory.category,
-            "scope": memory.scope,
-            "metadata": memory.metadata,
-            "created_at": memory.created_at,
-            "accessed_at": memory.accessed_at,
-            "access_count": memory.access_count,
-            "llm_cost": memory.llm_cost,
-            "verification_score": memory.verification_score,
-            "verification_count": memory.verification_count,
-            "verification_status": memory.verification_status,
-            "verified_at": memory.verified_at,
-            "verification_issues": memory.verification_issues,
-            "debate_consensus": memory.debate_consensus,
-            "is_archived": memory.is_archived,
-            "decay_score": memory.decay_score.value if memory.decay_score else None,
-            "source": source_data,
-            "sentiment": sentiment_data,
-            "episode_id": memory.episode_id,
-            "confidence": memory.confidence,
-            "source_reliability": memory.source_reliability,
-            "location": location_data,
-            "versions": memory.versions,
-            "events": memory.events
-        }
+        query = "UPDATE type::thing('memory', $id) MERGE $updates;"
         
         async with self._borrow_connection(connection) as conn:
-            response = await conn.query(query, params)
-            if isinstance(response, str):
-                 raise RuntimeError(f"Failed to update memory: {response}")
+            await conn.query(query, {"id": memory.id, "updates": content_dict})
     
     async def delete_memory(self, memory_id: str, connection: Optional[AsyncSurreal] = None) -> None:
         """Delete a memory by ID."""
@@ -599,7 +394,7 @@ class SurrealDBClient:
             await conn.query(query, params)
 
     async def create_entity(self, entity: Entity) -> str:
-        """Create a new entity in the database."""
+        """Create a new entity."""
         query = """
         CREATE type::thing('entity', $id) CONTENT {
             text: $text,
@@ -610,7 +405,6 @@ class SurrealDBClient:
             created_at: $created_at
         };
         """
-
         params = {
             "id": entity.id,
             "text": entity.text,
@@ -618,39 +412,31 @@ class SurrealDBClient:
             "confidence": entity.confidence,
             "embedding": entity.embedding.values if entity.embedding else None,
             "metadata": entity.metadata,
-            "created_at": entity.created_at,
+            "created_at": entity.created_at.isoformat(),
         }
-
         async with self.get_connection() as conn:
             await conn.query(query, params)
             return entity.id
 
     async def create_relationship(self, relationship: Relationship, connection: Optional[AsyncSurreal] = None) -> str:
-        """Create a new relationship in the database."""
-        # Parse entity IDs to extract UUIDs if they are in record format
-        from_uuid = relationship.from_entity_id
-        if ":" in from_uuid:
-            from_uuid = from_uuid.split(":")[1]
-            
-        to_uuid = relationship.to_entity_id
-        if ":" in to_uuid:
-            to_uuid = to_uuid.split(":")[1]
+        """Create a new relationship."""
+        from_uuid = relationship.from_entity_id.split(":")[1] if ":" in relationship.from_entity_id else relationship.from_entity_id
+        to_uuid = relationship.to_entity_id.split(":")[1] if ":" in relationship.to_entity_id else relationship.to_entity_id
 
         query = """
         CREATE type::thing('relationship', $id) CONTENT {
-        in: type::thing('entity', $from_uuid),
-        out: type::thing('entity', $to_uuid),
-        from_entity_id: $from_entity_id,
-        to_entity_id: $to_entity_id,
-        relation_type: $relation_type,
+            in: type::thing('entity', $from_uuid),
+            out: type::thing('entity', $to_uuid),
+            from_entity_id: $from_entity_id,
+            to_entity_id: $to_entity_id,
+            relation_type: $relation_type,
             strength: $strength,
             valid_from: $valid_from,
             valid_to: $valid_to,
             transaction_time_start: $transaction_time_start,
-            transaction_time_end: $transaction_time_end,
+            transaction_time_end: $transaction_time_end
         };
         """
-
         params = {
             "id": relationship.id,
             "from_uuid": from_uuid,
@@ -659,36 +445,35 @@ class SurrealDBClient:
             "to_entity_id": relationship.to_entity_id,
             "relation_type": relationship.relation_type,
             "strength": relationship.strength,
-            "valid_from": relationship.valid_from,
-            "valid_to": relationship.valid_to,
-            "transaction_time_start": relationship.transaction_time_start,
-            "transaction_time_end": relationship.transaction_time_end,
+            "valid_from": relationship.valid_from.isoformat(),
+            "valid_to": relationship.valid_to.isoformat() if relationship.valid_to else None,
+            "transaction_time_start": relationship.transaction_time_start.isoformat(),
+            "transaction_time_end": relationship.transaction_time_end.isoformat() if relationship.transaction_time_end else None,
         }
-
         async with self._borrow_connection(connection) as conn:
-            response = await conn.query(query, params)
-            
-            # Check for errors
-            if isinstance(response, list) and len(response) > 0:
-                if isinstance(response[0], dict) and 'status' in response[0] and response[0]['status'] == 'ERR':
-                    logger.error(f"Create relationship failed: {response[0]}")
-                    raise RuntimeError(f"Failed to create relationship: {response[0].get('detail', 'Unknown error')}")
-                    
+            await conn.query(query, params)
             return relationship.id
 
     def _build_filter_query(self, filters: Dict[str, Any], params: Dict[str, Any]) -> str:
-        """Build WHERE clause segment from filters and update params."""
+        """Build WHERE clause segment securely."""
         if not filters:
             return ""
 
         clauses = []
+        key_pattern = re.compile(r"^[a-zA-Z0-9_.]+$")
+
         for key, value in filters.items():
-            # Validate key (alphanumeric, underscore, dot)
-            if not all(c.isalnum() or c in "_." for c in key):
-                logger.warning(f"Skipping invalid filter key: {key}")
+            if not key_pattern.match(key):
+                logger.warning(f"💀 SQL INJECTION ATTEMPT: Invalid filter key '{key}'")
                 continue
 
-            safe_param_key = f"filter_{key.replace('.', '_')}"
+            # Create a unique parameter name for this key
+            safe_param_key = f"filter_{hashlib.md5(key.encode()).hexdigest()[:8]}"
+
+            # STRICT VALIDATION: Only allow primitives
+            if not isinstance(value, (str, int, float, bool, list, tuple, dict, type(None))):
+                 logger.warning(f"Invalid filter value type for {key}: {type(value)}")
+                 continue
 
             if isinstance(value, (list, tuple)):
                 clauses.append(f"{key} IN ${safe_param_key}")
@@ -698,27 +483,19 @@ class SurrealDBClient:
                 val = value.get("value")
                 params[safe_param_key] = val
 
-                if op == "eq":
-                    clauses.append(f"{key} = ${safe_param_key}")
-                elif op == "gt":
-                    clauses.append(f"{key} > ${safe_param_key}")
-                elif op == "lt":
-                    clauses.append(f"{key} < ${safe_param_key}")
-                elif op == "gte":
-                    clauses.append(f"{key} >= ${safe_param_key}")
-                elif op == "lte":
-                    clauses.append(f"{key} <= ${safe_param_key}")
-                elif op == "contains":
-                    clauses.append(f"string::contains({key}, ${safe_param_key})")
+                if op == "eq": clauses.append(f"{key} = ${safe_param_key}")
+                elif op == "gt": clauses.append(f"{key} > ${safe_param_key}")
+                elif op == "lt": clauses.append(f"{key} < ${safe_param_key}")
+                elif op == "gte": clauses.append(f"{key} >= ${safe_param_key}")
+                elif op == "lte": clauses.append(f"{key} <= ${safe_param_key}")
+                elif op == "contains": clauses.append(f"string::contains({key}, ${safe_param_key})")
             else:
                 clauses.append(f"{key} = ${safe_param_key}")
                 params[safe_param_key] = value
 
-        if not clauses:
-            return ""
-
+        if not clauses: return ""
         return " AND " + " AND ".join(clauses)
-    
+
     async def search_memories_by_vector(
         self, 
         embedding: EmbeddingVector, 
@@ -734,11 +511,8 @@ class SurrealDBClient:
             "min_similarity": min_similarity,
             "top_k": top_k,
         }
-
         filter_clause = self._build_filter_query(filters, params)
 
-        # Strategy 85: Vector Provenance
-        # Ensure we only compare against vectors from the same model/version
         provenance_filter = ""
         if embedding.model:
             provenance_filter += " AND embedding_model = $embedding_model"
@@ -759,148 +533,82 @@ class SurrealDBClient:
         ORDER BY similarity DESC
         LIMIT $top_k;
         """
-        
         async with self.get_connection() as conn:
             response = await conn.query(query, params)
             if response and isinstance(response, list):
-                # If list of dicts, return it
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                    return response[0]['result']
                 return response
             return []
-    
-    async def search_memories_by_bm25(
-        self,
-        query_text: str,
-        user_id: str,
-        top_k: int = 10,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
-        """Search memories using BM25 full-text search."""
-        params = {
-            "user_id": user_id,
-            "query_text": query_text,
-            "top_k": top_k,
-        }
 
+    async def search_memories_by_bm25(self, query_text: str, user_id: str, top_k: int = 10, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Search memories using BM25."""
+        params = {"user_id": user_id, "query_text": query_text, "top_k": top_k}
         filter_clause = self._build_filter_query(filters, params)
-
         query = f"""
-        SELECT *
-        FROM memory
+        SELECT * FROM memory
         WHERE user_id = $user_id
         AND content @@ $query_text
         AND is_archived = false
         {filter_clause}
         LIMIT $top_k;
         """
-        
         async with self.get_connection() as conn:
             response = await conn.query(query, params)
             if response and isinstance(response, list):
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                    return response[0]['result']
                 return response
             return []
-    
-    async def get_memories_by_tier(
-        self,
-        user_id: str,
-        tier: str,
-        limit: int = 100
-    ) -> List[Memory]:
-        """Get memories by tier for a user."""
-        query = """
-        SELECT *
-        FROM memory
-        WHERE user_id = $user_id
-        AND tier = $tier
-        AND is_archived = false
-        ORDER BY accessed_at DESC
-        LIMIT $limit;
-        """
-        
-        params = {
-            "user_id": user_id,
-            "tier": tier,
-            "limit": limit,
-        }
-        
+
+    async def get_memories_by_tier(self, user_id: str, tier: str, limit: int = 100) -> List[Memory]:
+        """Get memories by tier."""
+        query = "SELECT * FROM memory WHERE user_id = $user_id AND tier = $tier AND is_archived = false ORDER BY accessed_at DESC LIMIT $limit;"
+        params = {"user_id": user_id, "tier": tier, "limit": limit}
         async with self.get_connection() as conn:
             response = await conn.query(query, params)
             if response and isinstance(response, list):
-                return [self._deserialize_memory(data) for data in response]
+                items = response
+                if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
+                    items = response[0]['result']
+                return [self._deserialize_memory(data) for data in items]
             return []
-    
-    async def listen_live(self, table: str) -> Any:
-        """
-        Subscribe to changes on a table using LIVE SELECT.
-        Yields events as they happen.
-        """
-        async with self.get_connection() as conn:
-            try:
-                # 1. Start the LIVE query to get the UUID
-                if hasattr(conn, "live"):
-                    query_uuid = await conn.live(table)
-                    logger.info(f"Started LIVE query on {table} with UUID: {query_uuid}")
-                    
-                    # 2. Subscribe to the live query using the UUID
-                    if hasattr(conn, "subscribe_live"):
-                        stream = await conn.subscribe_live(query_uuid)
-                        async for event in stream:
-                            yield event
-                    else:
-                        logger.warning("SurrealDB client missing subscribe_live method.")
-                        yield {"error": "subscribe_live not found"}
-                else:
-                    logger.warning("SurrealDB client does not support live() method.")
-                    yield {"error": "live() not supported"}
-                    
-            except Exception as e:
-                logger.error(f"Error in LIVE query: {e}")
-                raise
-
-    async def kill_live(self, query_uuid: str) -> None:
-        """Kill a running LIVE query."""
-        async with self.get_connection() as conn:
-            if hasattr(conn, "kill"):
-                await conn.kill(query_uuid)
-            else:
-                # Fallback to raw query if kill method missing
-                await conn.query("KILL $uuid;", {"uuid": query_uuid})
-            logger.info(f"Killed LIVE query: {query_uuid}")
-    
-    async def close(self) -> None:
-        """Close all connections in the pool."""
-        async with self._pool_lock:
-            for connection in self._connection_pool:
-                try:
-                    await connection.close()
-                except Exception as e:
-                    logger.error(f"Error closing connection: {e}")
-            self._connection_pool.clear()
-            self._initialized = False
 
     def _deserialize_memory(self, data: Dict[str, Any]) -> Memory:
-        """Deserialize database record to Memory object."""
-        # Convert timestamp strings back to datetime objects
-        from datetime import datetime, timezone
+        """Deserialize database record to Memory object with Robustness."""
+        # Imports moved to top level
+        from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
         
         def parse_dt(dt_val: Any) -> datetime:
-            if not dt_val:
-                return datetime.now(timezone.utc)
-            
+            if not dt_val: return datetime.now(timezone.utc)
             if isinstance(dt_val, datetime):
-                # Ensure timezone awareness
-                if dt_val.tzinfo is None:
-                    return dt_val.replace(tzinfo=timezone.utc)
-                return dt_val
-                
-            if isinstance(dt_val, str):
-                # Remove timezone info if present and add UTC
-                if dt_val.endswith('Z'):
-                    dt_val = dt_val[:-1]
-                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
-            
+                return dt_val if dt_val.tzinfo else dt_val.replace(tzinfo=timezone.utc)
+            try:
+                if isinstance(dt_val, str):
+                    if dt_val.endswith('Z'): dt_val = dt_val[:-1]
+                    return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+            except ValueError as e:
+                logger.error(f"Data Corruption: Invalid timestamp format '{dt_val}'.")
+                raise ValueError(f"Data Corruption: Invalid timestamp format '{dt_val}'") from e
             return datetime.now(timezone.utc)
         
-        # Convert embedding back to EmbeddingVector
+        # Deserialize Enums safely
+        try:
+            tier = MemoryTier(data.get("tier"))
+        except (ValueError, KeyError):
+            tier = MemoryTier.SHORT_TERM
+
+        try:
+            importance = ImportanceScore(data.get("importance", 0.5))
+        except (ValueError, KeyError, TypeError):
+            importance = ImportanceScore(0.5)
+
+        # Handle ID
+        memory_id = str(data["id"])
+        if memory_id.startswith("memory:"):
+            memory_id = memory_id.split(":", 1)[1]
+
+        # Embeddings
         embedding = None
         if data.get("embedding"):
             embedding = EmbeddingVector(
@@ -909,80 +617,21 @@ class SurrealDBClient:
                 version=data.get("embedding_version")
             )
         
-        embedding_visual = None
-        if data.get("embedding_visual"):
-            embedding_visual = EmbeddingVector(
-                values=data["embedding_visual"],
-                model=data.get("embedding_visual_model"),
-                version=data.get("embedding_visual_version")
-            )
-
-        embedding_code = None
-        if data.get("embedding_code"):
-            embedding_code = EmbeddingVector(
-                values=data["embedding_code"],
-                model=data.get("embedding_code_model"),
-                version=data.get("embedding_code_version")
-            )
-
-        # Reconstruct MemorySource
-        source = None
-        if data.get("source"):
-            src_data = data["source"]
-            if src_data.get("timestamp"):
-                src_data["timestamp"] = parse_dt(src_data["timestamp"])
-            try:
-                source = MemorySource(**src_data)
-            except Exception as e:
-                logger.warning(f"Failed to deserialize MemorySource: {e}")
-
-        # Reconstruct Sentiment
-        sentiment = None
-        if data.get("sentiment"):
-            try:
-                sentiment = Sentiment(**data["sentiment"])
-            except Exception as e:
-                logger.warning(f"Failed to deserialize Sentiment: {e}")
-
-        # Reconstruct Location
-        location = None
-        loc_data = data.get("location")
-        if loc_data:
-             try:
-                 # Check if it's a GeometryPoint object (from SDK)
-                 if isinstance(loc_data, GeometryPoint):
-                     # Use coordinates directly
-                     location = Location(longitude=loc_data.longitude, latitude=loc_data.latitude)
-                 elif isinstance(loc_data, dict):
-                     location = Location.from_geojson(loc_data)
-             except Exception as e:
-                 logger.warning(f"Failed to deserialize Location: {e}")
-
-        # Create Memory object
-        from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
-        
-        # Handle ID: if it contains 'memory:', strip it for the entity ID
-        memory_id = str(data["id"])
-        if memory_id.startswith("memory:"):
-            memory_id = memory_id.split(":", 1)[1]
-        
         return Memory(
             id=memory_id,
-            user_id=data["user_id"],
-            content=data["content"],
-            tier=MemoryTier(data["tier"]),
-            importance=ImportanceScore(data["importance"]),
+            user_id=data.get("user_id", "unknown"),
+            content=data.get("content", ""),
+            tier=tier,
+            importance=importance,
             embedding=embedding,
-            embedding_visual=embedding_visual,
-            embedding_code=embedding_code,
             tags=data.get("tags", []),
             category=data.get("category"),
             scope=data.get("scope"),
             summary=data.get("summary"),
             metadata=data.get("metadata", {}),
-            created_at=parse_dt(data["created_at"]),
-            updated_at=parse_dt(data["updated_at"]),
-            accessed_at=parse_dt(data["accessed_at"]),
+            created_at=parse_dt(data.get("created_at")),
+            updated_at=parse_dt(data.get("updated_at")),
+            accessed_at=parse_dt(data.get("accessed_at")),
             access_count=data.get("access_count", 0),
             llm_cost=data.get("llm_cost", 0.0),
             verification_score=data.get("verification_score", 0.0),
@@ -992,494 +641,13 @@ class SurrealDBClient:
             verification_issues=data.get("verification_issues", []),
             debate_consensus=data.get("debate_consensus"),
             is_archived=data.get("is_archived", False),
-            decay_score=None,  # Would need to recreate DecayScore if needed
-            source=source,
-            sentiment=sentiment,
+            decay_score=None,
+            source=None,
+            sentiment=None,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
             source_reliability=data.get("source_reliability", 1.0),
-            location=location,
+            location=None,
             versions=data.get("versions", []),
             events=data.get("events", [])
         )
-
-    async def create_search_session(self, session_data: Dict[str, Any]) -> str:
-        """Create a new search session log.
-
-        Args:
-            session_data: Dictionary containing session data (user_id, query, etc)
-
-        Returns:
-            The ID of the created session
-        """
-        query = """
-        CREATE search_session CONTENT {
-            user_id: $user_id,
-            query: $query,
-            expanded_queries: $expanded_queries,
-            filters: $filters,
-            timestamp: time::now(),
-            results_count: $results_count,
-            metadata: $metadata
-        };
-        """
-
-        params = {
-            "user_id": session_data.get("user_id"),
-            "query": session_data.get("query"),
-            "expanded_queries": session_data.get("expanded_queries", []),
-            "filters": session_data.get("filters", {}),
-            "results_count": session_data.get("results_count", 0),
-            "metadata": session_data.get("metadata", {})
-        }
-
-        async with self.get_connection() as conn:
-            response = await conn.query(query, params)
-            if response and isinstance(response, list) and len(response) > 0:
-                item = response[0]
-                if isinstance(item, dict):
-                     # Handle different response formats
-                    if 'id' in item:
-                        return item['id']
-                    if 'result' in item and isinstance(item['result'], list) and len(item['result']) > 0:
-                        return item['result'][0].get('id')
-            return ""
-
-    async def get_user_sessions(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Retrieve past search sessions for a user."""
-        query = """
-        SELECT * FROM search_session
-        WHERE user_id = $user_id
-        ORDER BY timestamp DESC
-        LIMIT $limit;
-        """
-        params = {"user_id": user_id, "limit": limit}
-        
-        async with self.get_connection() as conn:
-            response = await conn.query(query, params)
-            if response and isinstance(response, list):
-                return response
-            return []
-
-    async def create_skill(self, skill: Skill) -> str:
-        """Create a new skill in the database."""
-        query = """
-        CREATE type::thing('skill', $id) CONTENT {
-            name: $name,
-            description: $description,
-            code: $code,
-            language: $language,
-            skill_type: $skill_type,
-            parameters: $parameters,
-            return_type: $return_type,
-            dependencies: $dependencies,
-            tags: $tags,
-            metadata: $metadata,
-            embedding: $embedding,
-            created_at: $created_at,
-            updated_at: $updated_at,
-            version: $version,
-            is_active: $is_active
-        };
-        """
-        
-        # Serialize parameters
-        serialized_params = [
-            {
-                "name": p.name,
-                "type": p.type,
-                "description": p.description,
-                "required": p.required,
-                "default_value": p.default_value
-            }
-            for p in skill.parameters
-        ]
-        
-        params = {
-            "id": skill.id,
-            "name": skill.name,
-            "description": skill.description,
-            "code": skill.code,
-            "language": skill.language.value,
-            "skill_type": skill.skill_type.value,
-            "parameters": serialized_params,
-            "return_type": skill.return_type,
-            "dependencies": skill.dependencies,
-            "tags": skill.tags,
-            "metadata": skill.metadata,
-            "embedding": skill.embedding.values if skill.embedding else None,
-            "created_at": skill.created_at.isoformat(),
-            "updated_at": skill.updated_at.isoformat(),
-            "version": skill.version,
-            "is_active": skill.is_active
-        }
-        
-        async with self.get_connection() as conn:
-            response = await conn.query(query, params)
-            if isinstance(response, str):
-                 raise RuntimeError(f"Failed to create skill: {response}")
-            return skill.id
-
-    async def get_skill(self, skill_id: str) -> Optional[Skill]:
-        """Get a skill by ID."""
-        query = "SELECT * FROM type::thing('skill', $id);"
-        params = {"id": skill_id}
-        
-        async with self.get_connection() as conn:
-            response = await conn.query(query, params)
-            
-            if not response:
-                return None
-            
-            if isinstance(response, list) and len(response) > 0:
-                item = response[0]
-                if isinstance(item, dict):
-                    if 'status' in item and 'result' in item:
-                        if item['status'] == 'OK' and item['result']:
-                            return self._deserialize_skill(item['result'][0])
-                    else:
-                        return self._deserialize_skill(item)
-            
-            return None
-
-    async def update_skill(self, skill: Skill) -> None:
-        """Update an existing skill."""
-        query = """
-        UPDATE type::thing('skill', $id) CONTENT {
-            name: $name,
-            description: $description,
-            code: $code,
-            language: $language,
-            skill_type: $skill_type,
-            parameters: $parameters,
-            return_type: $return_type,
-            dependencies: $dependencies,
-            tags: $tags,
-            metadata: $metadata,
-            embedding: $embedding,
-            created_at: $created_at,
-            updated_at: time::now(),
-            version: $version,
-            is_active: $is_active
-        };
-        """
-        
-        serialized_params = [
-            {
-                "name": p.name,
-                "type": p.type,
-                "description": p.description,
-                "required": p.required,
-                "default_value": p.default_value
-            }
-            for p in skill.parameters
-        ]
-        
-        params = {
-            "id": skill.id,
-            "name": skill.name,
-            "description": skill.description,
-            "code": skill.code,
-            "language": skill.language.value,
-            "skill_type": skill.skill_type.value,
-            "parameters": serialized_params,
-            "return_type": skill.return_type,
-            "dependencies": skill.dependencies,
-            "tags": skill.tags,
-            "metadata": skill.metadata,
-            "embedding": skill.embedding.values if skill.embedding else None,
-            "created_at": skill.created_at.isoformat(),
-            "version": skill.version,
-            "is_active": skill.is_active
-        }
-        
-        async with self.get_connection() as conn:
-            await conn.query(query, params)
-
-    async def delete_skill(self, skill_id: str) -> None:
-        """Delete a skill by ID."""
-        query = "DELETE type::thing('skill', $id);"
-        params = {"id": skill_id}
-        
-        async with self.get_connection() as conn:
-            await conn.query(query, params)
-
-    async def archive_relationship(self, relationship_id: str) -> None:
-        """Soft-delete a relationship by setting valid_to to now.
-
-        Strategy 67 & 119: Temporal Edge Invalidation / Bi-temporal Graph.
-        """
-        # Strip ID prefix if present
-        if ":" in relationship_id:
-            relationship_id = relationship_id.split(":")[1]
-
-        query = """
-        UPDATE type::thing('relationship', $id)
-        SET valid_to = time::now(),
-            transaction_time_end = time::now();
-        """
-        params = {"id": relationship_id}
-
-        async with self.get_connection() as conn:
-            await conn.query(query, params)
-
-    async def get_relationships_at_time(
-        self,
-        entity_id: str,
-        timestamp: "datetime"
-    ) -> List[Dict[str, Any]]:
-        """Query relationships valid at a specific point in time (Time Travel).
-
-        Strategy 67: Temporal Graph (Bi-temporal).
-        """
-        # Ensure entity_id format
-        if ":" in entity_id:
-             entity_id = entity_id.split(":")[1]
-
-        query = """
-        SELECT * FROM relationship
-        WHERE (from_entity_id = $entity_id OR to_entity_id = $entity_id)
-        AND valid_from <= $timestamp
-        AND (valid_to IS NONE OR valid_to > $timestamp);
-        """
-
-        params = {
-            "entity_id": entity_id,
-            "timestamp": timestamp.isoformat()
-        }
-
-        async with self.get_connection() as conn:
-            response = await conn.query(query, params)
-            if response and isinstance(response, list):
-                 # Handle nested response
-                 if len(response) > 0 and isinstance(response[0], dict) and 'result' in response[0]:
-                     return response[0]['result']
-                 return response
-            return []
-
-    async def search_skills_by_vector(
-        self, 
-        embedding: EmbeddingVector, 
-        top_k: int = 5,
-        min_similarity: float = 0.6
-    ) -> List[Dict[str, Any]]:
-        """Search skills using vector similarity."""
-        query = """
-        SELECT *, vector::similarity::cosine(embedding, $embedding) AS similarity
-        FROM skill 
-        WHERE is_active = true
-        AND embedding != NONE
-        AND vector::similarity::cosine(embedding, $embedding) > $min_similarity
-        ORDER BY similarity DESC
-        LIMIT $top_k;
-        """
-        
-        params = {
-            "embedding": embedding.values,
-            "min_similarity": min_similarity,
-            "top_k": top_k,
-        }
-        
-        async with self.get_connection() as conn:
-            response = await conn.query(query, params)
-            if response and isinstance(response, list):
-                return response
-            return []
-
-    async def search_skills_by_text(
-        self,
-        query_text: str,
-        top_k: int = 5
-    ) -> List[Dict[str, Any]]:
-        """Search skills using BM25 full-text search."""
-        query = """
-        SELECT *
-        FROM skill
-        WHERE description @@ $query_text
-        OR name @@ $query_text
-        AND is_active = true
-        LIMIT $top_k;
-        """
-        
-        params = {
-            "query_text": query_text,
-            "top_k": top_k,
-        }
-        
-        async with self.get_connection() as conn:
-            response = await conn.query(query, params)
-            if response and isinstance(response, list):
-                return response
-            return []
-
-    async def create_training_curve(self, data: Dict[str, Any]) -> str:
-        """Record a training curve point for MarsRL."""
-        query = """
-        CREATE training_curves CONTENT {
-            model_id: $model_id,
-            epoch: $epoch,
-            loss: $loss,
-            accuracy: $accuracy,
-            reward_mean: $reward_mean,
-            created_at: time::now()
-        };
-        """
-        async with self.get_connection() as conn:
-            response = await conn.query(query, data)
-            if isinstance(response, list) and len(response) > 0:
-                if isinstance(response[0], dict) and 'id' in response[0]:
-                    return response[0]['id']
-            return ""
-
-    async def create_agent_reward(self, data: Dict[str, Any]) -> str:
-        """Record agent rewards for MarsRL episode."""
-        query = """
-        CREATE agent_rewards CONTENT {
-            episode_id: $episode_id,
-            timestamp: time::now(),
-            solver: $solver,
-            verifier: $verifier,
-            corrector: $corrector,
-            agreement_score: $agreement_score
-        };
-        """
-        async with self.get_connection() as conn:
-            response = await conn.query(query, data)
-            if isinstance(response, list) and len(response) > 0:
-                if isinstance(response[0], dict) and 'id' in response[0]:
-                    return response[0]['id']
-            return ""
-
-    def _deserialize_skill(self, data: Dict[str, Any]) -> Skill:
-        """Deserialize database record to Skill object."""
-        from datetime import datetime, timezone
-        
-        def parse_dt(dt_val: Any) -> datetime:
-            if not dt_val:
-                return datetime.now(timezone.utc)
-            if isinstance(dt_val, str):
-                if dt_val.endswith('Z'):
-                    dt_val = dt_val[:-1]
-                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
-            return dt_val
-
-        # Handle ID
-        skill_id = str(data["id"])
-        if skill_id.startswith("skill:"):
-            skill_id = skill_id.split(":", 1)[1]
-            
-        # Deserialize parameters
-        parameters = []
-        for p in data.get("parameters", []):
-            parameters.append(SkillParameter(
-                name=p["name"],
-                type=p["type"],
-                description=p["description"],
-                required=p.get("required", True),
-                default_value=p.get("default_value")
-            ))
-            
-        # Embedding
-        embedding = None
-        if data.get("embedding"):
-            embedding = EmbeddingVector(data["embedding"])
-
-        return Skill(
-            id=skill_id,
-            name=data["name"],
-            description=data["description"],
-            code=data["code"],
-            language=SkillLanguage(data["language"]),
-            skill_type=SkillType(data["skill_type"]),
-            parameters=parameters,
-            return_type=data.get("return_type", "Any"),
-            dependencies=data.get("dependencies", []),
-            tags=data.get("tags", []),
-            metadata=data.get("metadata", {}),
-            embedding=embedding,
-            created_at=parse_dt(data["created_at"]),
-            updated_at=parse_dt(data["updated_at"]),
-            version=data.get("version", "1.0.0"),
-            is_active=data.get("is_active", True)
-        )
-    async def get_cache_entry(self, key: str) -> Optional[Dict[str, Any]]:
-        """Get a cache entry by ID."""
-        query = "SELECT * FROM cache_storage WHERE id = $id;"
-        params = {"id": key}
-
-        async with self.get_connection() as conn:
-            response = await conn.query(query, params)
-            if response and isinstance(response, list) and len(response) > 0:
-                item = response[0]
-                if isinstance(item, dict):
-                    if 'status' in item and 'result' in item:
-                         if item['status'] == 'OK' and item['result']:
-                             return item['result'][0]
-                    else:
-                        return item
-            return None
-
-    async def create_cache_entry(
-        self,
-        id: str,
-        value: Any,
-        created_at: Any,
-        expires_at: Any,
-        access_count: int,
-        metadata: Dict[str, Any]
-    ) -> None:
-        """Create a new cache entry."""
-        query = """
-        CREATE cache_storage CONTENT {
-            id: $id,
-            value: $value,
-            created_at: $created_at,
-            expires_at: $expires_at,
-            access_count: $access_count,
-            metadata: $metadata
-        };
-        """
-
-        # Serialize datetime
-        if hasattr(created_at, 'isoformat'):
-            created_at = created_at.isoformat()
-        if hasattr(expires_at, 'isoformat'):
-            expires_at = expires_at.isoformat()
-
-        params = {
-            "id": id,
-            "value": value,
-            "created_at": created_at,
-            "expires_at": expires_at,
-            "access_count": access_count,
-            "metadata": metadata
-        }
-
-        async with self.get_connection() as conn:
-            await conn.query(query, params)
-
-    async def update_cache_entry(self, id: str, updates: Dict[str, Any]) -> None:
-        """Update a cache entry."""
-        # Build set clause
-        set_parts = []
-        params = {"id": id}
-
-        for key, value in updates.items():
-            set_parts.append(f"{key} = ${key}")
-            params[key] = value
-
-        if not set_parts:
-            return
-
-        query = f"UPDATE cache_storage SET {', '.join(set_parts)} WHERE id = $id;"
-
-        async with self.get_connection() as conn:
-            await conn.query(query, params)
-
-    async def delete_cache_entry(self, id: str) -> None:
-        """Delete a cache entry."""
-        query = "DELETE cache_storage WHERE id = $id;"
-        params = {"id": id}
-
-        async with self.get_connection() as conn:
-            await conn.query(query, params)

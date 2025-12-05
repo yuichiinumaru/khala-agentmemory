@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import logging
 import tempfile
 import time
 from pathlib import Path
@@ -8,25 +10,46 @@ from typing import Dict, Any
 from ...application.orchestration.executor import SubagentExecutor
 from ...application.orchestration.types import SubagentTask, SubagentResult, SubagentRole, ModelTier
 
+logger = logging.getLogger(__name__)
+
 class CLISubagentExecutor(SubagentExecutor):
     """
     Executes subagent tasks using the external 'gemini-mcp-tool' CLI.
     """
     
     def _get_agent_file(self, role: SubagentRole) -> Path:
-        """Get path to agent configuration file."""
-        # TODO: Make this configurable via environment variables or config file
+        """Get path to agent configuration file with Path Traversal Protection."""
+        base_env = os.getenv("KHALA_AGENTS_PATH", "./.gemini/agents")
+        base_path = Path(base_env).resolve()
+
+        # Guard: Ensure base path exists and is a directory
+        if not base_path.exists() or not base_path.is_dir():
+             # Fallback to current dir if env is bad, or raise error?
+             # Fail loudly.
+             raise ValueError(f"KHALA_AGENTS_PATH is invalid: {base_path}")
+
         agent_files = {
-            SubagentRole.ANALYZER: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/research-analyst.md",
-            SubagentRole.SYNTHESIZER: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/knowledge-synthesizer.md",
-            SubagentRole.CURATOR: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/code-quality-reviewer.md",
-            SubagentRole.RESEARCHER: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/research-analyst.md",
-            SubagentRole.VALIDATOR: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/test-coverage-reviewer.md",
-            SubagentRole.CONSOLIDATOR: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/knowledge-synthesizer.md",
-            SubagentRole.EXTRACTOR: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/data-analyst.md",
-            SubagentRole.OPTIMIZER: "/home/suportesaude/YUICHI/06-NEXUS/.gemini/agents/performance-reviewer.md"
+            SubagentRole.ANALYZER: "research-analyst.md",
+            SubagentRole.SYNTHESIZER: "knowledge-synthesizer.md",
+            SubagentRole.CURATOR: "code-quality-reviewer.md",
+            SubagentRole.RESEARCHER: "research-analyst.md",
+            SubagentRole.VALIDATOR: "test-coverage-reviewer.md",
+            SubagentRole.CONSOLIDATOR: "knowledge-synthesizer.md",
+            SubagentRole.EXTRACTOR: "data-analyst.md",
+            SubagentRole.OPTIMIZER: "performance-reviewer.md"
         }
-        return agent_files.get(role, agent_files[SubagentRole.ANALYZER])
+
+        filename = agent_files.get(role, "research-analyst.md")
+        agent_path = (base_path / filename).resolve()
+
+        # Guard: Path Traversal Check
+        if not str(agent_path).startswith(str(base_path)):
+             raise ValueError(f"Security Alert: Path traversal attempted for agent file: {agent_path}")
+
+        if not agent_path.exists():
+             raise FileNotFoundError(f"Agent configuration file not found: {agent_path}")
+
+        return agent_path
 
     def _get_model_for_tier(self, tier: ModelTier) -> str:
         """Resolve model name from tier."""
@@ -41,6 +64,8 @@ class CLISubagentExecutor(SubagentExecutor):
         start_time = time.time()
         
         try:
+            agent_file = self._get_agent_file(task.role)
+
             # Prepare temporary workspace
             with tempfile.TemporaryDirectory() as workspace:
                 workspace_path = Path(workspace)
@@ -62,10 +87,10 @@ class CLISubagentExecutor(SubagentExecutor):
                     }
                     json.dump(task_data, f, indent=2, default=str)
                 
-                agent_file = self._get_agent_file(task.role)
                 model_name = self._get_model_for_tier(task.model_tier)
                 
                 # Execute Gemini CLI subagent
+                # Note: Relying on 'npx' assumes Node environment.
                 cmd = [
                     "npx", "gemini-mcp-tool",
                     "--agent", str(agent_file),
@@ -82,14 +107,23 @@ class CLISubagentExecutor(SubagentExecutor):
                     cwd=str(workspace_path)
                 )
                 
-                # Wait for completion with timeout
+                # Wait for completion with timeout and capture output
                 try:
-                    stdout, stderr = await asyncio.wait_for(
-                        process.wait(),
+                    stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                        process.communicate(),
                         timeout=task.timeout_seconds
                     )
+                    stdout = stdout_bytes.decode() if stdout_bytes else ""
+                    stderr = stderr_bytes.decode() if stderr_bytes else ""
+
+                    if process.returncode != 0:
+                        logger.error(f"Subagent CLI failed: {stderr}")
+
                 except asyncio.TimeoutError:
-                    process.kill()
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
                     raise TimeoutError(f"Task {task.task_id} timed out")
                 
                 # Read output
@@ -120,7 +154,7 @@ class CLISubagentExecutor(SubagentExecutor):
                         reasoning="No output file generated",
                         confidence_score=0.0,
                         execution_time_ms=(time.time() - start_time) * 1000,
-                        error="Missing output file",
+                        error=f"Missing output file. Stderr: {stderr}",
                         metadata=task.input_data
                     )
         

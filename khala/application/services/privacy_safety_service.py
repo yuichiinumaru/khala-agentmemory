@@ -1,16 +1,13 @@
-"""Service for Privacy and Safety checks (Module 12).
-
-This service implements strategies for Sanitization (Strategy 132) and
-Bias Detection (Strategy 152).
-"""
+"""Service for handling privacy (sanitization) and safety (bias) checks."""
 
 import re
 import logging
 import json
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
 from khala.infrastructure.gemini.client import GeminiClient
+from khala.application.utils import parse_json_safely
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +40,6 @@ class PrivacySafetyService:
             "ssn": r'\b\d{3}-\d{2}-\d{4}\b',
             "credit_card": r'\b(?:\d{4}[-\s]?){3}\d{4}\b',
             "ipv4": r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b',
-            # Simple API key heuristics
             "api_key_google": r'AIza[0-9A-Za-z-_]{35}',
             "api_key_generic": r'(?:api_key|access_token|secret)[\s=:]+([a-zA-Z0-9_\-]{20,})'
         }
@@ -67,13 +63,6 @@ class PrivacySafetyService:
 
         # 1. Regex Sanitization
         for pii_type, pattern in self.pii_patterns.items():
-            matches = re.finditer(pattern, sanitized_text)
-            # Process in reverse to avoid index shifting issues if we were doing it differently,
-            # but here we just replace string matches.
-            # However, if we replace with something of different length, subsequent matches might be off?
-            # Regex replacement is safe if done carefully.
-
-            # Simple replace
             def replace_callback(match):
                 redacted_items.append({
                     "type": pii_type,
@@ -83,21 +72,19 @@ class PrivacySafetyService:
 
             sanitized_text = re.sub(pattern, replace_callback, sanitized_text)
 
-        # 2. LLM Sanitization (Optional - Strategy 132 Advanced)
+        # 2. LLM Sanitization
         if use_llm and self.gemini_client:
             try:
+                # FIX: Do NOT ask for the PII text back. Only types.
                 prompt = f"""
                 Analyze the following text for Personally Identifiable Information (PII)
-                or sensitive secrets that standard regex might miss (like names in context,
-                addresses, specific medical info).
+                or sensitive secrets that standard regex might miss.
 
                 If found, replace them with <REDACTED:TYPE>.
-                Return the result as JSON:
+                Return valid JSON:
                 {{
                     "sanitized_text": "text with redactions",
-                    "found_pii": [
-                        {{"type": "NAME", "text": "John Doe"}}
-                    ]
+                    "redacted_types": ["NAME", "ADDRESS"]
                 }}
 
                 Text to sanitize:
@@ -106,31 +93,23 @@ class PrivacySafetyService:
 
                 response = await self.gemini_client.generate_text(
                     prompt=prompt,
-                    task_type="generation", # or extraction
-                    model_id="gemini-2.0-flash", # Fast model
+                    task_type="generation",
+                    model_id="gemini-2.0-flash",
                     temperature=0.0
                 )
 
-                # Parse JSON safely
-                content = response.get("content", "").strip()
-                # Extract JSON block if needed
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[0].strip() # Handle raw block
+                data = parse_json_safely(response.get("content", ""))
 
-                try:
-                    data = json.loads(content)
-                    if "sanitized_text" in data:
-                        sanitized_text = data["sanitized_text"]
-                    if "found_pii" in data and isinstance(data["found_pii"], list):
-                        for item in data["found_pii"]:
-                             redacted_items.append({
-                                 "type": item.get("type", "UNKNOWN"),
-                                 "masked_text": f"<{item.get('type', 'UNKNOWN')}>"
-                             })
-                except json.JSONDecodeError:
-                    logger.warning("Failed to parse LLM sanitization response")
+                if "sanitized_text" in data:
+                    sanitized_text = data["sanitized_text"]
+
+                # We only record the TYPES of what was redacted by LLM to avoid leaking content
+                if "redacted_types" in data and isinstance(data["redacted_types"], list):
+                    for r_type in data["redacted_types"]:
+                        redacted_items.append({
+                            "type": str(r_type),
+                            "masked_text": f"<{r_type}>"
+                        })
 
             except Exception as e:
                 logger.warning(f"LLM sanitization failed: {e}")
@@ -143,28 +122,15 @@ class PrivacySafetyService:
         )
 
     async def detect_bias(self, text: str) -> BiasResult:
-        """Detect bias in text (Strategy 152).
-
-        Args:
-            text: Text to analyze
-
-        Returns:
-            BiasResult object
-        """
+        """Detect bias in text."""
         try:
             prompt = f"""
-            Analyze the following text for various types of bias (gender, racial, political,
-            religious, socioeconomic, etc.).
-
-            Provide a bias score from 0.0 (Neutral) to 1.0 (Highly Biased).
-            Identify categories of bias present.
-            Provide a brief analysis.
-
+            Analyze the following text for bias.
             Return ONLY JSON:
             {{
                 "score": 0.0,
                 "categories": ["political", "gender"],
-                "analysis": "The text assumes..."
+                "analysis": "Brief analysis"
             }}
 
             Text:
@@ -174,18 +140,11 @@ class PrivacySafetyService:
             response = await self.gemini_client.generate_text(
                 prompt=prompt,
                 task_type="classification",
-                model_id="gemini-2.0-flash", # Fast model is usually sufficient
+                model_id="gemini-2.0-flash",
                 temperature=0.0
             )
 
-            content = response.get("content", "").strip()
-            # Cleanup markdown
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[0].strip()
-
-            data = json.loads(content)
+            data = parse_json_safely(response.get("content", ""))
 
             score = float(data.get("score", 0.0))
             categories = data.get("categories", [])
@@ -195,7 +154,7 @@ class PrivacySafetyService:
                 bias_score=score,
                 categories=categories,
                 analysis=analysis,
-                is_biased=score > 0.3 # Threshold
+                is_biased=score > 0.3
             )
 
         except Exception as e:

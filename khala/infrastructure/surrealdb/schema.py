@@ -104,8 +104,8 @@ class DatabaseSchema:
         -- Primary index (multi-tenancy)
         DEFINE INDEX user_index ON memory FIELDS user_id;
         
-        -- Deduplication index
-        DEFINE INDEX content_hash_index ON memory FIELDS content_hash;
+        -- Deduplication index (Enforce Uniqueness)
+        DEFINE INDEX content_hash_index ON memory FIELDS content_hash UNIQUE;
 
         -- Search indexes
         DEFINE INDEX vector_search ON memory FIELDS embedding HNSW DIMENSION 768 DIST COSINE M 16;

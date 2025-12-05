@@ -10,6 +10,7 @@ from time import perf_counter
 from typing import Any, TypeVar
 
 import click
+from pydantic import ValidationError, SecretStr
 from rich.console import Console
 from rich.table import Table
 
@@ -18,7 +19,7 @@ from ...domain.memory.entities import Memory
 from ...domain.memory.services import MemoryService
 from ...domain.memory.value_objects import ImportanceScore, MemoryTier
 from ...infrastructure.cache.cache_manager import create_cache_manager
-from ...infrastructure.surrealdb.client import SurrealDBClient
+from ...infrastructure.surrealdb.client import SurrealDBClient, SurrealConfig
 
 console = Console()
 T = TypeVar("T")
@@ -177,18 +178,18 @@ def simulate_promotion(
     table.add_row("Next Tier", next_tier.value if next_tier else "n/a")
     table.add_row("Importance", f"{memory.importance.value:.2f}")
     table.add_row("Access Count", str(memory.access_count))
-    table.add_row("Age (hours)", f"{memory._get_age_hours():.2f}")
+    table.add_row("Age (hours)", f"{memory.get_age_hours():.2f}") # Use public method
     table.add_row("Promotion Score", f"{promotion_score:.2f}")
     table.add_row("Promotion Eligible", "Yes" if should_promote else "No")
     console.print(table)
 
 
 @cli.command("surreal-health")
-@click.option("--url", default="ws://localhost:8000/rpc", show_default=True)
-@click.option("--namespace", default="khala", show_default=True)
-@click.option("--database", default="memories", show_default=True)
-@click.option("--username", default="root", show_default=True)
-@click.option("--password", default="root", show_default=True)
+@click.option("--url", default="ws://localhost:8000/rpc", show_default=True, envvar="SURREAL_URL")
+@click.option("--namespace", default="khala", show_default=True, envvar="SURREAL_NS")
+@click.option("--database", default="memories", show_default=True, envvar="SURREAL_DB")
+@click.option("--username", required=True, envvar="SURREAL_USER", help="DB Username")
+@click.option("--password", required=True, envvar="SURREAL_PASS", help="DB Password")
 def surreal_health(
     url: str,
     namespace: str,
@@ -202,7 +203,7 @@ def surreal_health(
         result = _run_async(
             _surreal_health_check(url, namespace, database, username, password)
         )
-    except RuntimeError as exc:
+    except Exception as exc: # Catch generic to display in CLI
         raise click.ClickException(str(exc)) from exc
 
     table = Table(title="SurrealDB Health", show_header=False)
@@ -274,13 +275,20 @@ async def _surreal_health_check(
     username: str,
     password: str,
 ) -> dict[str, Any]:
-    client = SurrealDBClient(
-        url=url,
-        namespace=namespace,
-        database=database,
-        username=username,
-        password=password,
-    )
+
+    # Use SurrealConfig for validation and safety
+    try:
+        config = SurrealConfig(
+            url=url,
+            namespace=namespace,
+            database=database,
+            username=username,
+            password=SecretStr(password)
+        )
+    except ValidationError as e:
+        raise ValueError(f"Invalid Configuration: {e}")
+
+    client = SurrealDBClient(config)
 
     connect_start = perf_counter()
     try:

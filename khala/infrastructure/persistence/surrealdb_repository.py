@@ -21,48 +21,55 @@ class SurrealDBMemoryRepository(MemoryRepository):
         self.audit_repo = audit_repo or AuditRepository(client)
         
     async def create(self, memory: Memory) -> str:
-        """Save a new memory."""
-        memory_id = await self.client.create_memory(memory)
-        await self.audit_repo.log(AuditLog(
-            user_id=memory.user_id,
-            action="create",
-            target_id=memory_id,
-            target_type="memory",
-            details={"tier": memory.tier.value}
-        ))
-        return memory_id
+        """Save a new memory with transactional audit logging."""
+        async with self.client.transaction() as conn:
+            memory_id = await self.client.create_memory(memory, connection=conn)
+
+            await self.audit_repo.log(AuditLog(
+                user_id=memory.user_id,
+                action="create",
+                target_id=memory_id,
+                target_type="memory",
+                details={"tier": memory.tier.value}
+            ), connection=conn)
+
+            return memory_id
         
     async def get_by_id(self, memory_id: str) -> Optional[Memory]:
         """Retrieve a memory by its ID."""
-        # Auditing reads might be too verbose, but can be enabled if strict audit is required.
-        # For now, we only audit state changes.
         return await self.client.get_memory(memory_id)
         
     async def update(self, memory: Memory) -> None:
-        """Update an existing memory."""
-        await self.client.update_memory(memory)
-        await self.audit_repo.log(AuditLog(
-            user_id=memory.user_id,
-            action="update",
-            target_id=memory.id,
-            target_type="memory",
-            details={"tier": memory.tier.value}
-        ))
+        """Update an existing memory with transactional audit logging."""
+        async with self.client.transaction() as conn:
+            await self.client.update_memory(memory, connection=conn)
+
+            await self.audit_repo.log(AuditLog(
+                user_id=memory.user_id,
+                action="update",
+                target_id=memory.id,
+                target_type="memory",
+                details={"tier": memory.tier.value}
+            ), connection=conn)
         
     async def delete(self, memory_id: str) -> None:
-        """Delete a memory."""
+        """Delete a memory with transactional audit logging."""
         # We need to fetch the memory first to get user_id for audit
+        # This read happens outside the write transaction, which is acceptable
+        # unless strict serializability is needed for the read.
         memory = await self.get_by_id(memory_id)
         user_id = memory.user_id if memory else "unknown"
 
-        await self.client.delete_memory(memory_id)
-        await self.audit_repo.log(AuditLog(
-            user_id=user_id,
-            action="delete",
-            target_id=memory_id,
-            target_type="memory",
-            details={}
-        ))
+        async with self.client.transaction() as conn:
+            await self.client.delete_memory(memory_id, connection=conn)
+
+            await self.audit_repo.log(AuditLog(
+                user_id=user_id,
+                action="delete",
+                target_id=memory_id,
+                target_type="memory",
+                details={}
+            ), connection=conn)
         
     async def search_by_vector(
         self, 

@@ -1,6 +1,11 @@
 """Audit repository implementation."""
 import logging
-from typing import Dict, Any
+from typing import Optional, Any
+try:
+    from surrealdb import AsyncSurreal
+except ImportError:
+    pass
+
 from khala.domain.audit.entities import AuditLog
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 
@@ -12,8 +17,17 @@ class AuditRepository:
     def __init__(self, client: SurrealDBClient):
         self.client = client
 
-    async def log(self, entry: AuditLog) -> str:
-        """Record an audit log entry."""
+    async def log(self, entry: AuditLog, connection: Optional["AsyncSurreal"] = None) -> str:
+        """
+        Record an audit log entry.
+
+        Args:
+            entry: The audit log entity.
+            connection: Optional existing connection for transactions.
+
+        Raises:
+            RuntimeError: If audit logging fails. We fail closed for security.
+        """
         query = """
         CREATE type::thing('audit_log', $id) CONTENT {
             user_id: $user_id,
@@ -27,12 +41,20 @@ class AuditRepository:
 
         params = entry.to_dict()
 
+        # Use helper from client to manage connection borrowing
+        # But here we are in a separate class.
+        # Ideally we use self.client._borrow_connection(connection)
+        # But _borrow_connection is protected (single underscore).
+        # We can respect the API or access it if we consider this infra package internal.
+        # Or we implement the logic here.
+
         try:
-            async with self.client.get_connection() as conn:
-                await conn.query(query, params)
+            if connection:
+                await connection.query(query, params)
+            else:
+                async with self.client.get_connection() as conn:
+                    await conn.query(query, params)
             return entry.id
         except Exception as e:
-            logger.error(f"Failed to record audit log: {e}")
-            # We don't raise here to prevent audit failure from blocking main operation,
-            # but in strict compliance mode, we might want to.
-            return ""
+            logger.critical(f"AUDIT FAILURE: Could not record audit log: {e}")
+            raise RuntimeError(f"Audit Failure: {e}") from e

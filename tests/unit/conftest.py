@@ -1,5 +1,13 @@
 import sys
+import os
 from unittest.mock import MagicMock
+
+# 1. Set Mock Environment Variables
+os.environ["SURREAL_USER"] = "mock_user"
+os.environ["SURREAL_PASS"] = "mock_pass"
+os.environ["SURREAL_URL"] = "ws://mock:8000/rpc"
+os.environ["GOOGLE_API_KEY"] = "mock_google_key"
+os.environ["KHALA_API_KEY"] = "mock_khala_key"
 
 # Mock dependencies globally before any test import
 if "surrealdb" not in sys.modules:

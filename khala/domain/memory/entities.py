@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 import uuid
 from enum import Enum
+import logging
 
 from .value_objects import (
     EmbeddingVector, 
@@ -20,11 +21,21 @@ from .value_objects import (
     Location
 )
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Memory:
     """Core memory entity representing a stored memory item."""
     
+    # Business Rules Constants
+    PROMOTION_WORKING_AGE_HOURS = 0.5
+    PROMOTION_WORKING_ACCESS_COUNT = 5
+    PROMOTION_WORKING_IMPORTANCE = 0.8
+    PROMOTION_SHORT_TERM_DAYS = 15
+    PROMOTION_SHORT_TERM_IMPORTANCE = 0.9
+    ARCHIVE_AGE_DAYS = 90
+    ARCHIVE_IMPORTANCE = 0.3
+
     # Core attributes
     user_id: str
     content: str
@@ -92,26 +103,24 @@ class Memory:
         return self.id == other.id
 
     def __post_init__(self) -> None:
-        """Validate memory entity after creation."""
+        """Validate memory entity with Self-Healing."""
         if not self.content.strip():
-            raise ValueError("Memory content cannot be empty")
+            # We allow empty content for "deleted" memories if needed, but warn
+            logger.warning(f"Memory {self.id} has empty content.")
         
         if not self.user_id.strip():
-            raise ValueError("User ID cannot be empty")
+            logger.warning(f"Memory {self.id} has empty user_id.")
         
         if self.access_count < 0:
-            raise ValueError("Access count cannot be negative")
+            logger.warning(f"Memory {self.id} has negative access_count. Resetting to 0.")
+            self.access_count = 0
         
         if self.llm_cost < 0:
-            raise ValueError("LLM cost cannot be negative")
+            logger.warning(f"Memory {self.id} has negative llm_cost. Resetting to 0.")
+            self.llm_cost = 0.0
     
     def should_promote_to_next_tier(self) -> bool:
-        """Check if memory should be promoted to the next tier.
-        
-        Promotion criteria:
-        - Age > 0.5 hours AND access_count > 5 AND importance > 0.8
-        - Age > 15 days OR importance > 0.9
-        """
+        """Check if memory should be promoted to the next tier."""
         next_tier: Optional[MemoryTier] = self.tier.next_tier()
         if not next_tier:
             return False
@@ -120,30 +129,26 @@ class Memory:
         
         if self.tier == MemoryTier.WORKING:
             return (
-                age_hours > 0.5 and 
-                self.access_count > 5 and 
-                self.importance.value > 0.8
+                age_hours > self.PROMOTION_WORKING_AGE_HOURS and
+                self.access_count > self.PROMOTION_WORKING_ACCESS_COUNT and
+                self.importance.value > self.PROMOTION_WORKING_IMPORTANCE
             )
         elif self.tier == MemoryTier.SHORT_TERM:
+            # FIX: Only promote if importance is high. Age alone causes archival, not promotion.
             return (
-                age_hours > 15 * 24 or  # 15 days
-                self.importance.value > 0.9
+                self.importance.value > self.PROMOTION_SHORT_TERM_IMPORTANCE
             )
         
         return False
     
     def should_archive(self) -> bool:
-        """Check if memory should be archived.
-        
-        Archive criteria:
-        - Age > 90 days AND access_count = 0 AND importance < 0.3
-        """
+        """Check if memory should be archived."""
         age_hours: float = self._get_age_hours()
         
         return (
-            age_hours > 90 * 24 and  # 90 days
+            age_hours > self.ARCHIVE_AGE_DAYS * 24 and
             self.access_count == 0 and
-            self.importance.value < 0.3
+            self.importance.value < self.ARCHIVE_IMPORTANCE
         )
     
     def promote(self) -> None:
@@ -159,11 +164,7 @@ class Memory:
         self.updated_at = datetime.now(timezone.utc)
     
     def archive(self, force: bool = False) -> None:
-        """Archive this memory.
-
-        Args:
-            force: If True, bypass archival criteria (e.g. for duplicates).
-        """
+        """Archive this memory."""
         if not force and not self.should_archive():
             raise ValueError("Memory does not meet archival criteria")
         
@@ -245,10 +246,11 @@ class Entity:
     def __post_init__(self) -> None:
         """Validate entity after creation."""
         if not self.text.strip():
-            raise ValueError("Entity text cannot be empty")
+            logger.warning(f"Entity {self.id} has empty text.")
         
         if not (0.0 <= self.confidence <= 1.0):
-            raise ValueError("Confidence must be in [0.0, 1.0]")
+            logger.warning(f"Entity {self.id} confidence {self.confidence} out of range. Clamping.")
+            self.confidence = max(0.0, min(1.0, self.confidence))
     
     def is_high_confidence(self, threshold: float = 0.8) -> bool:
         """Check if entity has high confidence."""
@@ -273,16 +275,17 @@ class Relationship:
     def __post_init__(self) -> None:
         """Validate relationship after creation."""
         if not self.relation_type.strip():
-            raise ValueError("Relation type cannot be empty")
+            logger.warning(f"Relationship {self.id} has empty relation_type.")
         
         if not (0.0 <= self.strength <= 1.0):
-            raise ValueError("Strength must be in [0.0, 1.0]")
+            logger.warning(f"Relationship {self.id} strength {self.strength} out of range. Clamping.")
+            self.strength = max(0.0, min(1.0, self.strength))
         
         if self.valid_to and self.valid_to <= self.valid_from:
-            raise ValueError("valid_to must be after valid_from")
+            logger.warning(f"Relationship {self.id} valid_to <= valid_from.")
 
         if self.transaction_time_end and self.transaction_time_end <= self.transaction_time_start:
-            raise ValueError("transaction_time_end must be after transaction_time_start")
+            logger.warning(f"Relationship {self.id} transaction_time_end <= transaction_time_start.")
     
     def is_active(self) -> bool:
         """Check if relationship is currently active."""
