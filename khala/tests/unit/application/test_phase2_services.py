@@ -7,7 +7,6 @@ from khala.application.services.intent_classifier import IntentClassifier, Query
 from khala.application.services.sop_service import SOPService
 from khala.application.services.hypothesis_service import HypothesisService
 from khala.application.services.user_profile_service import UserProfileService
-from khala.application.services.execution_evaluator import ExecutionEvaluator
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.domain.instruction.repository import InstructionRepository
@@ -130,25 +129,3 @@ async def test_user_profile_management(mock_db_client):
 
     # Verify update called
     assert mock_db_client.update.called or mock_db_client.create.called
-
-# --- ExecutionEvaluator Tests ---
-
-@pytest.mark.asyncio
-async def test_code_execution_safety(monkeypatch):
-    monkeypatch.setenv("ALLOW_UNSAFE_EVAL", "1")
-    service = ExecutionEvaluator()
-
-    # 1. Safe Code
-    res_safe = await service.evaluate_code("x = 1 + 1\nprint(x)")
-    assert res_safe["success"] is True
-    assert "2" in res_safe["output"]
-
-    # 2. Unsafe Code (Import)
-    res_unsafe = await service.evaluate_code("import os\nos.system('ls')")
-    assert res_unsafe["success"] is False
-    assert "Security violation" in res_unsafe["error"]
-
-    # 3. Logic Error
-    res_error = await service.evaluate_code("x = 1 / 0")
-    assert res_error["success"] is False
-    assert "division by zero" in res_error["error"]

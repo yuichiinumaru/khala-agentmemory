@@ -1,8 +1,4 @@
-"""Service for Privacy and Safety checks (Module 12).
-
-This service implements strategies for Sanitization (Strategy 132) and
-Bias Detection (Strategy 152).
-"""
+"""Service for handling privacy (sanitization) and safety (bias) checks."""
 
 import re
 import logging
@@ -11,6 +7,7 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
 from khala.infrastructure.gemini.client import GeminiClient
+from khala.application.utils import parse_json_safely
 
 logger = logging.getLogger(__name__)
 
@@ -46,26 +43,6 @@ class PrivacySafetyService:
             "api_key_google": r'AIza[0-9A-Za-z-_]{35}',
             "api_key_generic": r'(?:api_key|access_token|secret)[\s=:]+([a-zA-Z0-9_\-]{20,})'
         }
-
-    def _extract_json(self, text: str) -> Dict[str, Any]:
-        """Robustly extract JSON from LLM response."""
-        text = text.strip()
-        # Handle code blocks
-        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-        if match:
-            text = match.group(1)
-        elif "{" in text:
-            # Attempt to find JSON object bounds if not in code block
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            if start != -1 and end != 0:
-                text = text[start:end]
-
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse JSON from response: {text[:100]}...")
-            return {}
 
     async def sanitize_content(
         self,
@@ -121,7 +98,7 @@ class PrivacySafetyService:
                     temperature=0.0
                 )
 
-                data = self._extract_json(response.get("content", ""))
+                data = parse_json_safely(response.get("content", ""))
 
                 if "sanitized_text" in data:
                     sanitized_text = data["sanitized_text"]
@@ -167,7 +144,7 @@ class PrivacySafetyService:
                 temperature=0.0
             )
 
-            data = self._extract_json(response.get("content", ""))
+            data = parse_json_safely(response.get("content", ""))
 
             score = float(data.get("score", 0.0))
             categories = data.get("categories", [])

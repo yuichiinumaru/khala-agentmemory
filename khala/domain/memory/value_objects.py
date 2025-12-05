@@ -34,8 +34,10 @@ class EmbeddingVector:
             )
         
         # Check if all values are valid floats
+        # Relaxed validation with tolerance for floating point errors
+        tolerance = 1e-4
         for value in self.values:
-            if not isinstance(value, (float, int)) or not (-1 <= value <= 1):
+            if not isinstance(value, (float, int)) or not (-1.0 - tolerance <= value <= 1.0 + tolerance):
                 raise ValueError(
                     f"Embedding values must be floats in [-1, 1], got {value}"
                 )
@@ -139,9 +141,10 @@ class MemoryTier(Enum):
     
     def ttl_hours(self) -> int:
         """Get TTL in hours for this tier."""
+        DAYS_IN_HOURS = 24
         ttl_map = {
             MemoryTier.WORKING: 1,
-            MemoryTier.SHORT_TERM: 15 * 24,  # 15 days
+            MemoryTier.SHORT_TERM: 15 * DAYS_IN_HOURS,  # 15 days
             MemoryTier.LONG_TERM: -1,  # Persistent
             MemoryTier.SCRATCHPAD: 1,  # 1 hour max
         }
