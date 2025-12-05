@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Any, Union, AsyncGenerator
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, SecretStr
 
@@ -52,16 +53,21 @@ class SurrealConfig(BaseModel):
         Raises:
             ValueError: If critical credentials are missing.
         """
-        url = os.getenv("SURREAL_URL", "ws://localhost:8000/rpc")
-        ns = os.getenv("SURREAL_NS", "khala")
-        db = os.getenv("SURREAL_DB", "memories")
+        url = os.getenv("SURREAL_URL")
+        ns = os.getenv("SURREAL_NS")
+        db = os.getenv("SURREAL_DB")
         user = os.getenv("SURREAL_USER")
         password = os.getenv("SURREAL_PASS")
 
-        if not user:
-            raise ValueError("CRITICAL: SURREAL_USER environment variable is missing.")
-        if not password:
-             raise ValueError("CRITICAL: SURREAL_PASS environment variable is missing.")
+        missing = []
+        if not url: missing.append("SURREAL_URL")
+        if not ns: missing.append("SURREAL_NS")
+        if not db: missing.append("SURREAL_DB")
+        if not user: missing.append("SURREAL_USER")
+        if not password: missing.append("SURREAL_PASS")
+
+        if missing:
+            raise ValueError(f"CRITICAL: Missing required environment variables: {', '.join(missing)}")
 
         return cls(
             url=url,
@@ -84,6 +90,7 @@ class SurrealDBClient:
         
         self._connection_pool: List[AsyncSurreal] = []
         self._pool_lock = asyncio.Lock()
+        # Semaphore tracks TOTAL active connections (pool + borrowed)
         self._semaphore = asyncio.Semaphore(self.config.max_connections)
         self._initialized = False
 
@@ -99,17 +106,8 @@ class SurrealDBClient:
             logger.info(f"Connecting to SurrealDB at {self.config.url}...")
             
             try:
-                connection = AsyncSurreal(self.config.url)
-                await connection.connect()
-                await connection.signin({
-                    "username": self.config.username,
-                    "password": self.config.password.get_secret_value()
-                })
-
-                # Fail loudly if setup fails
-                await connection.query(f"DEFINE NAMESPACE {self.config.namespace};")
-                await connection.use(namespace=self.config.namespace, database=self.config.database)
-
+                # Create initial connection to verify connectivity
+                connection = await self._create_connection()
                 self._connection_pool.append(connection)
                 self._initialized = True
 
@@ -126,13 +124,37 @@ class SurrealDBClient:
         
         logger.info("SurrealDB initialized successfully.")
     
+    async def _create_connection(self) -> AsyncSurreal:
+        """Helper to create and authenticate a new connection."""
+        connection = AsyncSurreal(self.config.url)
+        await connection.connect()
+        await connection.signin({
+            "username": self.config.username,
+            "password": self.config.password.get_secret_value()
+        })
+        await connection.use(namespace=self.config.namespace, database=self.config.database)
+        return connection
+
+    async def close(self) -> None:
+        """Close all connections in the pool."""
+        async with self._pool_lock:
+            logger.info(f"Closing {len(self._connection_pool)} connections...")
+            for conn in self._connection_pool:
+                try:
+                    await conn.close()
+                except Exception as e:
+                    logger.warning(f"Error closing connection: {e}")
+            self._connection_pool.clear()
+            self._initialized = False
+        logger.info("SurrealDB client closed.")
+
     @asynccontextmanager
     async def get_connection(self):
         """Get a connection from the pool."""
         if not self._initialized:
             await self.initialize()
         
-        # Use semaphore to limit concurrent active connections
+        # Enforce max connections
         async with self._semaphore:
             connection = None
             try:
@@ -142,20 +164,13 @@ class SurrealDBClient:
                         connection = self._connection_pool.pop()
 
                 if not connection:
-                    # Create new connection if pool is empty
-                    connection = AsyncSurreal(self.config.url)
-                    await connection.connect()
-                    await connection.signin({
-                        "username": self.config.username,
-                        "password": self.config.password.get_secret_value()
-                    })
-                    await connection.use(namespace=self.config.namespace, database=self.config.database)
+                    connection = await self._create_connection()
 
                 yield connection
             finally:
                 if connection:
                     should_close = False
-                    # Thread-safe pool return
+                    # Return to pool if space permits
                     async with self._pool_lock:
                         if len(self._connection_pool) < self.config.max_connections:
                             self._connection_pool.append(connection)
@@ -166,7 +181,7 @@ class SurrealDBClient:
                         try:
                             await connection.close()
                         except Exception as e:
-                            logger.error(f"Error closing connection: {e}")
+                            logger.error(f"Error closing overflow connection: {e}")
     
     @asynccontextmanager
     async def _borrow_connection(self, connection: Optional[AsyncSurreal] = None):
@@ -192,37 +207,35 @@ class SurrealDBClient:
                     pass
                 raise e
 
-    async def create_memory(self, memory: Memory, connection: Optional[AsyncSurreal] = None) -> str:
-        """Create a new memory in the database.
-
-        Logic: Idempotent with content hashing. If hash exists, UPDATE it.
-        """
+    def _serialize_memory(self, memory: Memory) -> Dict[str, Any]:
+        """Serialize memory entity to database format."""
         # Calculate content hash for deduplication
         content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
 
-        # Prepare content dictionary first
-        # Prepare conditional content fields (Strategy 63)
+        # Prepare content fields
         content_str = memory.content or ""
         content_tiny = content_str[:100]
         content_small = content_str[:1000]
         content_full = content_str if len(content_str) > 1000 else None
 
-        # Serialize source and handle datetime
+        # Helper to serialize datetimes
+        def iso(dt: Optional[datetime]) -> Optional[str]:
+            return dt.isoformat() if dt else None
+
+        # Serialize source
         source_data = None
         if memory.source:
             source_data = asdict(memory.source)
             if source_data.get('timestamp'):
-                source_data['timestamp'] = source_data['timestamp'].isoformat()
+                source_data['timestamp'] = iso(source_data['timestamp'])
 
         # Serialize sentiment
-        sentiment_data = None
-        if memory.sentiment:
-            sentiment_data = asdict(memory.sentiment)
+        sentiment_data = asdict(memory.sentiment) if memory.sentiment else None
 
         # Serialize location
         location_data = None
         if memory.location:
-            location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
+             location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
 
         content_dict = {
             "user_id": memory.user_id,
@@ -238,15 +251,15 @@ class SurrealDBClient:
             "scope": memory.scope,
             "summary": memory.summary,
             "metadata": memory.metadata,
-            "created_at": memory.created_at,
-            "updated_at": memory.updated_at,
-            "accessed_at": memory.accessed_at,
+            "created_at": iso(memory.created_at),
+            "updated_at": iso(memory.updated_at),
+            "accessed_at": iso(memory.accessed_at),
             "access_count": memory.access_count,
             "llm_cost": memory.llm_cost,
             "verification_score": memory.verification_score,
             "verification_count": memory.verification_count,
             "verification_status": memory.verification_status,
-            "verified_at": memory.verified_at,
+            "verified_at": iso(memory.verified_at),
             "verification_issues": memory.verification_issues,
             "debate_consensus": memory.debate_consensus,
             "is_archived": memory.is_archived,
@@ -261,7 +274,6 @@ class SurrealDBClient:
             "events": memory.events
         }
 
-        # Add optional embeddings only if they exist
         if memory.embedding:
             content_dict["embedding"] = memory.embedding.values
             content_dict["embedding_model"] = memory.embedding.model
@@ -277,57 +289,69 @@ class SurrealDBClient:
             content_dict["embedding_code_model"] = memory.embedding_code.model
             content_dict["embedding_code_version"] = memory.embedding_code.version
 
+        return content_dict
+
+    async def create_memory(self, memory: Memory, connection: Optional[AsyncSurreal] = None) -> str:
+        """Create a new memory in the database.
+
+        Logic: Idempotent with content hashing. If hash exists, UPDATE it.
+        """
+        content_dict = self._serialize_memory(memory)
+        content_hash = content_dict["content_hash"]
+
         async with self._borrow_connection(connection) as conn:
-            # Check for existing memory with same hash
-            check_query = "SELECT id FROM memory WHERE content_hash = $content_hash LIMIT 1;"
-            check_response = await conn.query(check_query, {"content_hash": content_hash})
+            # OPTIMIZED: Try to create first. If it violates UNIQUE index, then update.
+            # This is safer than check-then-act.
+            try:
+                query = "CREATE type::thing('memory', $id) CONTENT $content_data;"
+                params = {"id": memory.id, "content_data": content_dict}
 
-            existing_id = None
-            if check_response:
-                # Handle various SurrealDB response formats
-                results = []
-                if isinstance(check_response, list):
-                     if len(check_response) > 0:
-                         if isinstance(check_response[0], dict) and 'result' in check_response[0]:
-                             results = check_response[0]['result']
-                         else:
-                             results = check_response
+                response = await conn.query(query, params)
 
-                if results and isinstance(results, list) and len(results) > 0:
-                     item = results[0]
-                     if isinstance(item, dict):
-                         existing_id = str(item.get('id', ''))
-                         if existing_id.startswith("memory:"):
-                             existing_id = existing_id.split(":")[1]
+                # SurrealDB error handling varies by client version
+                if isinstance(response, dict) and response.get('status') == 'ERR':
+                     raise RuntimeError(f"DB Error: {response}")
+                if isinstance(response, list) and len(response) > 0:
+                     if isinstance(response[0], dict) and response[0].get('status') == 'ERR':
+                         # Check for unique constraint violation
+                         detail = response[0].get('detail', '')
+                         if 'Index' in detail and 'content_hash' in detail:
+                             raise ValueError("DUPLICATE_HASH")
+                         raise RuntimeError(f"DB Error: {response}")
 
-            if existing_id:
-                 logger.info(f"Duplicate memory detected (hash collision). Updating existing memory: {existing_id}")
-                 # Force update the existing record
-                 update_query = "UPDATE type::thing('memory', $id) MERGE $content_data;"
-                 await conn.query(update_query, {"id": existing_id, "content_data": content_dict})
-                 return existing_id
+                return memory.id
 
-            # Create new
-            query = "CREATE type::thing('memory', $id) CONTENT $content_data;"
-            params = {
-                "id": memory.id,
-                "content_data": content_dict
-            }
+            except (ValueError, Exception) as e:
+                is_duplicate = False
+                if str(e) == "DUPLICATE_HASH" or "already exists" in str(e).lower():
+                    is_duplicate = True
 
-            response = await conn.query(query, params)
-            
-            if isinstance(response, str):
-                 logger.error(f"Create memory failed: {response}")
-                 raise RuntimeError(f"Failed to create memory: {response}")
-            
-            # Check for list of results error
-            if isinstance(response, list) and len(response) > 0:
-                 if isinstance(response[0], dict) and response[0].get('status') == 'ERR':
-                        logger.error(f"Create memory failed: {response}")
-                        raise RuntimeError(f"Failed to create memory: {response}")
-            
-            return memory.id
-    
+                if is_duplicate:
+                    logger.info(f"Duplicate memory detected (hash collision). Merging into existing record.")
+                    # Get the ID of the existing record with this hash
+                    # We can't rely on memory.id here because the existing one might have a different ID
+                    find_query = "SELECT id FROM memory WHERE content_hash = $hash LIMIT 1;"
+                    find_resp = await conn.query(find_query, {"hash": content_hash})
+
+                    existing_id = None
+                    if find_resp and isinstance(find_resp, list) and len(find_resp) > 0:
+                         res = find_resp[0].get('result', []) if isinstance(find_resp[0], dict) else find_resp
+                         if res:
+                             existing_id = res[0].get('id')
+
+                    if existing_id:
+                        # Extract raw ID if needed
+                        if ":" in str(existing_id):
+                             existing_id = str(existing_id).split(":")[1]
+
+                        update_query = "UPDATE type::thing('memory', $id) MERGE $content_data;"
+                        await conn.query(update_query, {"id": existing_id, "content_data": content_dict})
+                        return existing_id
+
+                # If not duplicate or recovery failed, re-raise
+                logger.error(f"Create memory failed: {e}")
+                raise
+
     async def get_memory(self, memory_id: str) -> Optional[Memory]:
         """Get a memory by ID."""
         query = "SELECT * FROM type::thing('memory', $id);"
@@ -352,83 +376,14 @@ class SurrealDBClient:
     
     async def update_memory(self, memory: Memory, connection: Optional[AsyncSurreal] = None) -> None:
         """Update an existing memory."""
-        # Reuse logic from create_memory but force update
-        # We need to ensure we use the same ID
-        # ... actually calling create_memory with existing ID works as update if we used MERGE/CONTENT properly
-        # But here we want explicit update.
-
-        content_hash = hashlib.sha256(f"{memory.content}{memory.user_id}".encode()).hexdigest()
-
-        # Prepare params (same as create)
-        content_str = memory.content or ""
-        content_tiny = content_str[:100]
-        content_small = content_str[:1000]
-        content_full = content_str if len(content_str) > 1000 else None
+        content_dict = self._serialize_memory(memory)
+        # Update timestamp explicitly
+        content_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
         
-        # ... (serialization logic duplicated for brevity, but ideally refactored to _serialize_memory)
-        # Using concise logic here
-
-        source_data = None
-        if memory.source:
-            source_data = asdict(memory.source)
-            if source_data.get('timestamp'):
-                source_data['timestamp'] = source_data['timestamp'].isoformat()
-
-        sentiment_data = None
-        if memory.sentiment:
-            sentiment_data = asdict(memory.sentiment)
-
-        location_data = None
-        if memory.location:
-            location_data = GeometryPoint(memory.location.longitude, memory.location.latitude)
-
-        updates = {
-            "user_id": memory.user_id,
-            "content": memory.content,
-            "content_tiny": content_tiny,
-            "content_small": content_small,
-            "content_full": content_full,
-            "content_hash": content_hash,
-            "tier": memory.tier.value,
-            "importance": memory.importance.value,
-            "tags": memory.tags,
-            "category": memory.category,
-            "scope": memory.scope,
-            "summary": memory.summary,
-            "metadata": memory.metadata,
-            "updated_at": datetime.now(timezone.utc).isoformat(), # Force update time
-            "accessed_at": memory.accessed_at,
-            "access_count": memory.access_count,
-            "llm_cost": memory.llm_cost,
-            "verification_score": memory.verification_score,
-            "verification_count": memory.verification_count,
-            "verification_status": memory.verification_status,
-            "verified_at": memory.verified_at,
-            "verification_issues": memory.verification_issues,
-            "debate_consensus": memory.debate_consensus,
-            "is_archived": memory.is_archived,
-            "decay_score": memory.decay_score.value if memory.decay_score else None,
-            "source": source_data,
-            "sentiment": sentiment_data,
-            "episode_id": memory.episode_id,
-            "confidence": memory.confidence,
-            "source_reliability": memory.source_reliability,
-            "location": location_data,
-            "versions": memory.versions,
-            "events": memory.events
-        }
-
-        if memory.embedding:
-            updates["embedding"] = memory.embedding.values
-        if memory.embedding_visual:
-            updates["embedding_visual"] = memory.embedding_visual.values
-        if memory.embedding_code:
-            updates["embedding_code"] = memory.embedding_code.values
-
         query = "UPDATE type::thing('memory', $id) MERGE $updates;"
         
         async with self._borrow_connection(connection) as conn:
-            await conn.query(query, {"id": memory.id, "updates": updates})
+            await conn.query(query, {"id": memory.id, "updates": content_dict})
     
     async def delete_memory(self, memory_id: str, connection: Optional[AsyncSurreal] = None) -> None:
         """Delete a memory by ID."""
@@ -457,7 +412,7 @@ class SurrealDBClient:
             "confidence": entity.confidence,
             "embedding": entity.embedding.values if entity.embedding else None,
             "metadata": entity.metadata,
-            "created_at": entity.created_at,
+            "created_at": entity.created_at.isoformat(),
         }
         async with self.get_connection() as conn:
             await conn.query(query, params)
@@ -490,10 +445,10 @@ class SurrealDBClient:
             "to_entity_id": relationship.to_entity_id,
             "relation_type": relationship.relation_type,
             "strength": relationship.strength,
-            "valid_from": relationship.valid_from,
-            "valid_to": relationship.valid_to,
-            "transaction_time_start": relationship.transaction_time_start,
-            "transaction_time_end": relationship.transaction_time_end,
+            "valid_from": relationship.valid_from.isoformat(),
+            "valid_to": relationship.valid_to.isoformat() if relationship.valid_to else None,
+            "transaction_time_start": relationship.transaction_time_start.isoformat(),
+            "transaction_time_end": relationship.transaction_time_end.isoformat() if relationship.transaction_time_end else None,
         }
         async with self._borrow_connection(connection) as conn:
             await conn.query(query, params)
@@ -514,6 +469,11 @@ class SurrealDBClient:
 
             # Create a unique parameter name for this key
             safe_param_key = f"filter_{hashlib.md5(key.encode()).hexdigest()[:8]}"
+
+            # STRICT VALIDATION: Only allow primitives
+            if not isinstance(value, (str, int, float, bool, list, tuple, dict, type(None))):
+                 logger.warning(f"Invalid filter value type for {key}: {type(value)}")
+                 continue
 
             if isinstance(value, (list, tuple)):
                 clauses.append(f"{key} IN ${safe_param_key}")
@@ -616,7 +576,7 @@ class SurrealDBClient:
 
     def _deserialize_memory(self, data: Dict[str, Any]) -> Memory:
         """Deserialize database record to Memory object with Robustness."""
-        from datetime import datetime, timezone
+        # Imports moved to top level
         from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
         
         def parse_dt(dt_val: Any) -> datetime:
@@ -634,13 +594,12 @@ class SurrealDBClient:
         
         # Deserialize Enums safely
         try:
-            tier = MemoryTier(data["tier"])
+            tier = MemoryTier(data.get("tier"))
         except (ValueError, KeyError):
-            logger.warning(f"Invalid tier '{data.get('tier')}'. Defaulting to SHORT_TERM.")
             tier = MemoryTier.SHORT_TERM
 
         try:
-            importance = ImportanceScore(data["importance"])
+            importance = ImportanceScore(data.get("importance", 0.5))
         except (ValueError, KeyError, TypeError):
             importance = ImportanceScore(0.5)
 
@@ -657,8 +616,6 @@ class SurrealDBClient:
                 model=data.get("embedding_model"),
                 version=data.get("embedding_version")
             )
-        
-        # ... (Same for others)
         
         return Memory(
             id=memory_id,
@@ -685,7 +642,7 @@ class SurrealDBClient:
             debate_consensus=data.get("debate_consensus"),
             is_archived=data.get("is_archived", False),
             decay_score=None,
-            source=None, # Simplified for brevity, logic remains in original if needed
+            source=None,
             sentiment=None,
             episode_id=data.get("episode_id"),
             confidence=data.get("confidence", 1.0),
@@ -694,6 +651,3 @@ class SurrealDBClient:
             versions=data.get("versions", []),
             events=data.get("events", [])
         )
-
-    # ... (Other methods remain largely similar but improved error handling)
-    # Skipping irrelevant methods for brevity of rewrite
