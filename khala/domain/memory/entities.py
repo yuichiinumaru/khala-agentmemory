@@ -134,8 +134,8 @@ class Memory:
                 self.importance.value > self.PROMOTION_WORKING_IMPORTANCE
             )
         elif self.tier == MemoryTier.SHORT_TERM:
+            # FIX: Only promote if importance is high. Age alone causes archival, not promotion.
             return (
-                age_hours > self.PROMOTION_SHORT_TERM_DAYS * 24 or
                 self.importance.value > self.PROMOTION_SHORT_TERM_IMPORTANCE
             )
         
