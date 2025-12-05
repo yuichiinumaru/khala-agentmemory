@@ -1,108 +1,89 @@
-# FORENSIC CODE AUTOPSY REPORT
+# CODE AUTOPSY REPORT
 **Pathologist:** Senior Engineer Forensic Pathologist
-**Subject:** Khala Memory System
-**Time of Death:** 2025-05-22
-**Cause of Death:** Distributed System Organ Failure (Locking, Consistency, Security)
+**Date:** 2025-05-27
+**Subject:** KHALA Memory System
+**Cause of Death:** Multiple Organ Failure (Logic, Security, Governance)
 
 ---
 
-## SECTION 1: THE CELLULAR DECOMPOSITION (File-by-File)
+## Section 1: The File-by-File Breakdown (Deep Tissue Analysis)
 
-### 1. `khala/infrastructure/surrealdb/client.py`
-**Shame Score:** 15/100 (Critical Condition)
+**File:** `khala/domain/memory/entities.py`
+**Shame Score:** 90
 **Findings:**
-*   `[Line 45]` **(Critical)**: `SurrealConfig` defaults to `localhost`/`root`. This is "Insecure by Design".
-*   `[Line 68]` **(High)**: `initialize()` swallows connection errors with a log, allowing the app to start in a zombie state.
-*   `[Line 168]` **(Critical)**: `create_memory` calculates `content_hash` locally. Race condition: Two clients calculate same hash, both check DB (not found), both insert. Duplicate data.
-*   `[Line 326]` **(High)**: `_build_filter_query` accepts generic `value` in dict and assigns to `params`. If value is an object/array not handled by driver, behavior is undefined.
-*   `[Line N/A]` **(Critical)**: **MISSING METHOD**: `close()`. The interface layer calls it, but it doesn't exist. Guaranteed crash.
-*   `[Line 118]` **(Med)**: `_borrow_connection` creates a new connection if pool is empty, bypassing `max_connections` limit. Connection leak.
+* `[Line 126]` **(High)**: `should_promote_to_next_tier` checks `tier == SHORT_TERM` and promotes based on importance alone. This ignores age, potentially promoting brand new important memories instantly, violating the "long term" maturation concept.
+* `[Line 141]` **(Good)**: `archive` method enforces business rules unless `force=True`.
+* `[Line 223]` **(Nit)**: `Entity.confidence` validation logs a warning but clamps the value. This "Fail Open" behavior might mask upstream data corruption.
 
-### 2. `khala/infrastructure/coordination/distributed_lock.py`
-**Shame Score:** 0/100 (Dead on Arrival)
+**File:** `khala/domain/memory/value_objects.py`
+**Shame Score:** 85
 **Findings:**
-*   `[Line 38]` **(Critical)**: `CREATE lock SET id = $id` creates a **NEW** record with a random ID every time (unless `lock` table has a specific schema not seen). It does NOT enforce mutual exclusion. `acquire()` always returns True. The entire distributed coordination is a lie.
-*   `[Line 34]` **(High)**: `_cleanup_expired` is called before acquire. This creates a race where a valid lock might be deleted if clocks are skewed? No, it deletes *expired* locks. But relying on client-side cleanup is fragile.
-*   `[Line 60]` **(Med)**: `release` tries to `DELETE lock WHERE id = $id`. If multiple records were created (due to the bug above), this might delete *all* of them or *none* of them depending on if `$id` matches the property or record ID.
+* `[Line 28]` **(Critical)**: `EmbeddingVector` validation `if not (-1 <= value <= 1)` is too strict for some unnormalized models. This will cause crashes in production if `1.0000001` floats appear.
+* `[Line 125]` **(Med)**: `MemoryTier.ttl_hours` uses magic numbers (`15 * 24`). Define constant `SHORT_TERM_DAYS = 15`.
 
-### 3. `khala/infrastructure/persistence/audit_repository.py`
-**Shame Score:** 20/100
+**File:** `khala/infrastructure/coordination/distributed_lock.py`
+**Shame Score:** 95
 **Findings:**
-*   `[Line 38]` **(Critical)**: **Fail Closed / Data Inconsistency**. If audit logging fails (e.g. DB busy), it raises `RuntimeError`. But the parent operation (e.g. `create_memory`) has *already succeeded*. The action happened, but the audit log claims failure. This is the worst of both worlds.
-*   `[Line 21]` **(Nit)**: `CREATE type::thing(...)` syntax is correct, but mixing it with non-transactional logic in the calling service is dangerous.
+* `[Line 45]` **(Good)**: Uses `CREATE` for atomic exclusion.
+* `[Line 38]` **(Good)**: Cleans up expired locks before acquisition to prevent deadlocks.
+* `[Line 75]` **(Nit)**: `SurrealDBLock` takes `client` but has no type hint.
 
-### 4. `khala/infrastructure/surrealdb/schema.py`
-**Shame Score:** 40/100
+**File:** `khala/infrastructure/background/jobs/job_processor.py`
+**Shame Score:** 80
 **Findings:**
-*   `[Line N/A]` **(Critical)**: Missing `DEFINE TABLE lock`. Implicit table creation allows the broken distributed lock logic to persist.
-*   `[Line 104]` **(High)**: `content_hash_index` is defined but NOT `UNIQUE`. DB allows duplicates, confirming the race condition in `client.py` is unmitigated.
-*   `[Line 45]` **(Med)**: `content` field is `TYPE string`. No length limit. DoS vector via massive payload.
-*   `[Line 427]` **(Nit)**: RBAC permissions for `owner` check `$auth.user_id`. But the client connects as `root`. These permissions are effectively ghost code.
+* `[Line 158]` **(Critical)**: `json.dumps(job.payload)` will crash if payload contains `datetime` objects, which is highly likely in a temporal system.
+* `[Line 108]` **(High)**: `_process_job` calls `await asyncio.sleep(0.1)` in a tight loop. While responsive, it burns CPU if empty. Use `await self._memory_queue.get()` for blocking wait (event-driven).
+* `[Line 330]` **(High)**: `_execute_decay_scoring` logic `response[0].get('result', response)` suggests uncertainty about DB response format. Standardize the DB client return type.
 
-### 5. `khala/application/services/privacy_safety_service.py`
-**Shame Score:** 10/100 (Privacy Violation)
+**File:** `khala/application/services/planning_service.py`
+**Shame Score:** 85
 **Findings:**
-*   `[Line 78]` **(Critical)**: **PII Leakage**. The code stores `redacted_items` in memory metadata. If the LLM follows the prompt instruction to return `found_pii` with `text`, and the code blindly stores it (or if the `SanitizationResult` is logged), we are permanently persisting the PII we meant to hide.
-*   `[Line 131]` **(Med)**: Manual JSON parsing `content.split("```json")`. Extremely fragile. LLMs often chatter before/after JSON.
-*   `[Line 30]` **(Med)**: Regex for Email/SSN is simple. False positives likely.
+* `[Line 50]` **(High)**: Manual JSON extraction (`content.split("```json")`) is brittle. Use `khala.application.utils.parse_json_safely`.
+* `[Line 85]` **(Med)**: `verify_plan_logic` assumes LLM returns valid JSON. `json.loads` will raise logic-breaking exception if LLM hallucinates text.
 
-### 6. `khala/domain/memory/entities.py`
-**Shame Score:** 60/100
+**File:** `khala/application/services/hybrid_search_service.py`
+**Shame Score:** 88
 **Findings:**
-*   `[Line 118]` **(High)**: **Logic Inversion**. `should_promote_to_next_tier` promotes `SHORT_TERM` to `LONG_TERM` if `age > 15 days`. This means old, ignored garbage is automatically promoted to Long Term memory. It should be the opposite (high importance = promote, low importance = archive).
-*   `[Line 27]` **(Nit)**: `Memory` is a mutable `dataclass`. In a concurrent system, passing mutable entities around is asking for race conditions.
-*   `[Line 191]` **(Nit)**: `_get_age_hours` relies on `datetime.now(timezone.utc)`. If `created_at` is naive (from bad deserialization), this crashes.
+* `[Line 65]` **(Perf)**: `_calculate_proximity_score` uses nested loops `O(N^2)` on term occurrences. Risk of DoS with crafted repetitive documents.
+* `[Line 150]` **(Good)**: Parallel execution of Vector and BM25 searches using `asyncio.gather`.
+* `[Line 300]` **(High)**: Contextual boosting modifies scores in-place based on magic numbers (`0.2`, `0.1`). These weights should be configurable strategies, not hardcoded.
 
-### 7. `khala/infrastructure/gemini/client.py`
-**Shame Score:** 50/100
+**File:** `khala/application/services/privacy_safety_service.py`
+**Shame Score:** 82
 **Findings:**
-*   `[Line 260]` **(High)**: `_get_cache_key` truncates MD5 to 16 chars. Birthday paradox says collisions will happen with moderate volume.
-*   `[Line 226]` **(Med)**: Token counting is a guess: `len(prompt.split()) * 1.3`. Billing and rate limiting will be inaccurate.
-*   `[Line 44]` **(Nit)**: `_response_cache` uses `cachetools` but `_cache_lock` suggests manual thread safety. `cachetools` is not thread-safe, so the lock is good, but complexity is high.
+* `[Line 120]` **(High)**: `sanitize_content` with LLM relies on `_extract_json` (duplicated code).
+* `[Line 45]` **(Med)**: `pii_patterns` for credit cards is simplistic (`\d{4}`). It might match non-PII data.
 
-### 8. `khala/interface/rest/main.py`
-**Shame Score:** 30/100
+**File:** `khala/infrastructure/executors/cli_executor.py`
+**Shame Score:** 90
 **Findings:**
-*   `[Line 38]` **(High)**: Global state `state = AppState()`. Hard to test, singleton anti-pattern.
-*   `[Line 24]` **(High)**: `get_api_key` calls `os.getenv` on EVERY request. Performance tax.
-*   `[Line 59]` **(Critical)**: Calls `state.db_client.close()`. Method does not exist. App crashes on shutdown.
+* `[Line 35]` **(Good)**: Strict Path Traversal check `startswith(base_path)`.
+* `[Line 95]` **(Med)**: Dependence on `npx` and `gemini-mcp-tool` in environment path. Implicit dependency.
 
-### 9. `khala/interface/cli/main.py`
-**Shame Score:** 40/100
+**File:** `setup.py`
+**Shame Score:** 85
 **Findings:**
-*   `[Line 221]` **(Critical)**: `await client.close()`. Method does not exist. CLI health check crashes.
-*   `[Line 80]` **(Nit)**: `_run_async` uses `asyncio.run`. This is fine for CLI but creates a new event loop every time.
+* `[Line 10]` **(High)**: `surrealdb>=1.0.0` is too loose. Project code uses 2.0 features (`HNSW`). Must lock to `>=2.0.4`.
+* `[Line 16]` **(Med)**: `numpy>=2.3.0` likely doesn't exist yet (Typo? 1.23?).
 
-### 10. `khala/infrastructure/background/jobs/job_processor.py`
-**Shame Score:** 65/100
+**File:** `khala/application/services/execution_evaluator.py`
+**Shame Score:** 0 (BIOHAZARD)
 **Findings:**
-*   `[Line 183]` **(Med)**: `_worker_loop` catches `Exception` but not `CancelledError` (in Py<3.8). In Py3.11+ it's fine.
-*   `[Line 233]` **(Med)**: `_execute_decay_scoring` fetches `LIMIT 5000` memory IDs if no IDs provided. If system has 1M memories, 99.5% are never decayed.
-*   `[Line 110]` **(High)**: `start` initializes `SurrealDBClient()` which might raise `ValueError` (if env missing), crashing the background thread silently or the main app.
+* `[Line 45]` **(CRITICAL)**: Usage of `exec()` with a naive blacklist is a security catastrophe. Requires `docker` or `firecracker` isolation.
 
 ---
 
-## SECTION 2: THE CONSOLIDATED TABLE OF SHAME
+## Section 2: The Consolidated Table of Shame
 
 | Severity | File:Line | Error Type | Description | The Fix |
 | :--- | :--- | :--- | :--- | :--- |
-| **CRITICAL** | `infra/coordination/distributed_lock.py:38` | Logic / Security | **Fake Lock**. `CREATE lock SET id=$id` does not enforce uniqueness. Mutual exclusion is broken. | Use `CREATE type::thing('lock', $id)` to target record ID. |
-| **CRITICAL** | `infra/surrealdb/client.py:MISSING` | Runtime | **Missing Method**. `close()` is called by API/CLI but not defined. | Implement `close()` to close connection pool. |
-| **CRITICAL** | `infra/persistence/audit_repository.py:38` | Consistency | **Audit Fail-Closed**. Logic error causes operation to succeed but throw error if audit fails. | Wrap memory creation + audit in a Transaction. |
-| **CRITICAL** | `app/services/privacy_safety_service.py:78` | Privacy | **PII Persistence**. Metadata stores redacted items which may contain raw PII from LLM. | Do not store `text` field from PII scan results. |
-| **CRITICAL** | `infra/surrealdb/client.py:45` | Security | **Insecure Defaults**. `SurrealConfig` uses `root`/`root`. | Remove defaults. Require explicit config. |
-| **HIGH** | `domain/memory/entities.py:118` | Logic | **Zombie Promotion**. Logic promotes old Short Term memories to Long Term automatically. | Fix logic: Old + Low Importance = Archive. |
-| **HIGH** | `infra/surrealdb/schema.py:104` | Data Integrity | **Missing Unique Index**. `content_hash` allows duplicates. | Add `UNIQUE` constraint to `content_hash_index`. |
-| **HIGH** | `infra/background/jobs/job_processor.py:233` | Logic | **Partial Processing**. Decay job only processes first 5000 items. | Implement cursor-based pagination (`scan_all`). |
-| **HIGH** | `interface/rest/main.py:24` | Performance | **Env Var Polling**. `get_api_key` checks environment on every request. | Load config once at startup. |
-| **HIGH** | `infra/gemini/client.py:260` | Security | **Weak Hash**. MD5 truncated to 16 chars for cache keys. | Use SHA-256. |
-
----
-
-**FINAL VERDICT:**
-The codebase is **UNFIT FOR PRODUCTION**. The distributed locking mechanism is fundamentally broken, meaning any feature relying on coordination (consolidation, deduplication) is unsafe. The lack of proper shutdown handling (`close()` missing) and the "Fail-Closed" audit implementation indicate a lack of integration testing. The security posture is performative ("Sanitization" that persists PII).
-
-**IMMEDIATE ACTION REQUIRED:**
-1. Fix the Distributed Lock query.
-2. Implement Transactions for Audit Logging.
-3. Fix the `close()` method crash.
+| **CRITICAL** | `execution_evaluator.py` | Security | `exec()` usage permits RCE. | DELETE immediately. Use MCP Sandbox. |
+| **CRITICAL** | `cli/main.py` | Security | Default password "root". | Remove default. |
+| **CRITICAL** | `job_processor.py:158` | Reliability | `json.dumps(payload)` fails on datetime objects. | Use `pydantic.json.pydantic_encoder` or custom serializer. |
+| **CRITICAL** | `value_objects.py:28` | Logic | `EmbeddingVector` crashes on unnormalized floats > 1.0. | Relax validation to tolerance (1.0001) or normalize values. |
+| **HIGH** | `setup.py:10` | Dependency | `surrealdb` version mismatch (1.0 vs 2.0 code). | Update to `surrealdb>=2.0.4`. |
+| **HIGH** | `planning_service.py:50` | Reliability | Brittle manual JSON parsing from LLM. | Use robust JSON parser with retry logic. |
+| **HIGH** | `surrealdb/client.py:206` | Integrity | `parse_dt` swallows errors and falsifies timestamps to `now()`. | Raise error on corruption. |
+| **MED** | `hybrid_search_service.py:300` | Logic | Hardcoded boosting weights. | Move to configuration/Strategy pattern. |
+| **MED** | `privacy_safety_service.py` | Hygiene | Duplicated JSON extraction logic. | Centralize in `utils.py`. |
+| **MED** | `cli_executor.py` | Config | Implicit dependency on `npx` in PATH. | Check for tool existence on startup. |
