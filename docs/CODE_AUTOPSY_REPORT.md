@@ -1,104 +1,84 @@
 # FORENSIC CODE AUTOPSY REPORT
-
-**Pathologist:** Senior Engineer Hardcore Code Inquisitor
-**Subject:** KHALA Memory System
+**Pathologist:** Senior Engineer Forensic Pathologist
+**Subject:** Khala Memory System
 **Time of Death:** 2025-05-22
-**Cause of Death:** Systemic Negligence, Architectural Incompetence, Fake Tests.
+**Cause of Death:** Distributed System Organ Failure (Locking, Consistency, Security)
 
 ---
 
-## SECTION 1: THE FILE-BY-FILE BREAKDOWN
+## SECTION 1: THE CELLULAR DECOMPOSITION (File-by-File)
 
-### `khala/infrastructure/surrealdb/client.py`
-**Shame Score:** 10/100
+### 1. `khala/infrastructure/surrealdb/client.py`
+**Shame Score:** 15/100 (Critical Condition)
 **Findings:**
-* `[Line 44]` **(Critical)**: `self.password` stores raw secret string. Memory dump vulnerability.
-* `[Line 38]` **(High)**: Defaults to `root`/`root` if env vars missing. "Secure by Default" violation.
-* `[Line 165]` **(High)**: `create_memory` returns existing ID on hash collision, silently ignoring updates. Logic error (Idempotency vs Update).
-* `[Line 120]` **(Med)**: `_deserialize_memory` crashes on invalid enum values. No resilience.
-* `[Line 353]` **(Med)**: `_build_filter_query` manually constructs SQL. Injection risk despite regex.
+*   `[Line 45]` **(Critical)**: `SurrealConfig` defaults to `localhost`/`root`. This is "Insecure by Design".
+*   `[Line 68]` **(High)**: `initialize()` swallows connection errors with a log, allowing the app to start in a zombie state.
+*   `[Line 168]` **(Critical)**: `create_memory` calculates `content_hash` locally. Race condition: Two clients calculate same hash, both check DB (not found), both insert. Duplicate data.
+*   `[Line 326]` **(High)**: `_build_filter_query` accepts generic `value` in dict and assigns to `params`. If value is an object/array not handled by driver, behavior is undefined.
+*   `[Line N/A]` **(Critical)**: **MISSING METHOD**: `close()`. The interface layer calls it, but it doesn't exist. Guaranteed crash.
+*   `[Line 118]` **(Med)**: `_borrow_connection` creates a new connection if pool is empty, bypassing `max_connections` limit. Connection leak.
 
-### `khala/infrastructure/gemini/client.py`
-**Shame Score:** 15/100
+### 2. `khala/infrastructure/coordination/distributed_lock.py`
+**Shame Score:** 0/100 (Dead on Arrival)
 **Findings:**
-* `[Line 651]` **(Critical)**: `json.loads(content)` in `analyze_sentiment`. DoS vector via malformed LLM output.
-* `[Line 118]` **(High)**: `_complexity_cache` leaks memory (unbounded dict).
-* `[Line 157]` **(Med)**: Race condition in `_models` lazy loading.
-* `[Line 133]` **(Med)**: Naive complexity heuristic (`count("?")`) allows cost inflation attacks.
+*   `[Line 38]` **(Critical)**: `CREATE lock SET id = $id` creates a **NEW** record with a random ID every time (unless `lock` table has a specific schema not seen). It does NOT enforce mutual exclusion. `acquire()` always returns True. The entire distributed coordination is a lie.
+*   `[Line 34]` **(High)**: `_cleanup_expired` is called before acquire. This creates a race where a valid lock might be deleted if clocks are skewed? No, it deletes *expired* locks. But relying on client-side cleanup is fragile.
+*   `[Line 60]` **(Med)**: `release` tries to `DELETE lock WHERE id = $id`. If multiple records were created (due to the bug above), this might delete *all* of them or *none* of them depending on if `$id` matches the property or record ID.
 
-### `khala/interface/mcp/server.py`
-**Shame Score:** 0/100
-**Findings:**
-* `[Line 26]` **(Critical)**: Instantiates `SurrealDBClient` with deprecated `url=...` arguments. **Server crashes on startup.**
-* `[Line 42]` **(Critical)**: Zero authentication on MCP tools. `analyze_memories` accepts any input.
-* `[Line 21]` **(High)**: Hardcoded `root` defaults for DB connection.
-
-### `khala/interface/cli/main.py`
-**Shame Score:** 5/100
-**Findings:**
-* `[Line 192]` **(Critical)**: `surreal-health` command instantiates `SurrealDBClient` with deprecated arguments. **Command crashes.**
-* `[Line 126]` **(Med)**: Accesses private method `_get_age_hours` on Memory entity.
-* `[Line 85]` **(Nit)**: Uses `asyncio.run` which prevents library usage in existing loops.
-
-### `khala/application/services/memory_lifecycle.py`
-**Shame Score:** 30/100
-**Findings:**
-* `[Line 35]` **(High)**: Instantiates `GeminiClient` in `__init__` default arg logic (potentially). If passed as None, creates new instance.
-* `[Line 275]` **(High)**: O(N^2) loop in `deduplicate_memories` (Python-side vector comparison).
-* `[Line 353]` **(Med)**: Hardcoded prompt string "Summarize the following...".
-* `[Line 390]` **(Med)**: Swallows exceptions in consolidation loop.
-
-### `khala/domain/graph/service.py`
+### 3. `khala/infrastructure/persistence/audit_repository.py`
 **Shame Score:** 20/100
 **Findings:**
-* `[Line 25]` **(Critical)**: `getattr(self.repository, 'client', None)` breaks encapsulation and crashes if repo is not `SurrealDBMemoryRepository`.
-* `[Line 250]` **(High)**: In-memory graph processing (NetworkX) for centrality/community detection. Will OOM on real data.
-* `[Line 200]` **(Med)**: Recursive graph traversal logic relies on specific DB schema function.
+*   `[Line 38]` **(Critical)**: **Fail Closed / Data Inconsistency**. If audit logging fails (e.g. DB busy), it raises `RuntimeError`. But the parent operation (e.g. `create_memory`) has *already succeeded*. The action happened, but the audit log claims failure. This is the worst of both worlds.
+*   `[Line 21]` **(Nit)**: `CREATE type::thing(...)` syntax is correct, but mixing it with non-transactional logic in the calling service is dangerous.
 
-### `khala/infrastructure/persistence/audit_repository.py`
+### 4. `khala/infrastructure/surrealdb/schema.py`
 **Shame Score:** 40/100
 **Findings:**
-* `[Line 30]` **(High)**: Silently swallows audit logging failures. "Fail Open" security flaw.
+*   `[Line N/A]` **(Critical)**: Missing `DEFINE TABLE lock`. Implicit table creation allows the broken distributed lock logic to persist.
+*   `[Line 104]` **(High)**: `content_hash_index` is defined but NOT `UNIQUE`. DB allows duplicates, confirming the race condition in `client.py` is unmitigated.
+*   `[Line 45]` **(Med)**: `content` field is `TYPE string`. No length limit. DoS vector via massive payload.
+*   `[Line 427]` **(Nit)**: RBAC permissions for `owner` check `$auth.user_id`. But the client connects as `root`. These permissions are effectively ghost code.
 
-### `khala/infrastructure/executors/cli_executor.py`
-**Shame Score:** 5/100
+### 5. `khala/application/services/privacy_safety_service.py`
+**Shame Score:** 10/100 (Privacy Violation)
 **Findings:**
-* `[Line 65]` **(Critical)**: Command Injection via `KHALA_AGENTS_PATH` env var.
-* `[Line 73]` **(High)**: Spawns `npx` process for every single task. Performance suicide.
+*   `[Line 78]` **(Critical)**: **PII Leakage**. The code stores `redacted_items` in memory metadata. If the LLM follows the prompt instruction to return `found_pii` with `text`, and the code blindly stores it (or if the `SanitizationResult` is logged), we are permanently persisting the PII we meant to hide.
+*   `[Line 131]` **(Med)**: Manual JSON parsing `content.split("```json")`. Extremely fragile. LLMs often chatter before/after JSON.
+*   `[Line 30]` **(Med)**: Regex for Email/SSN is simple. False positives likely.
 
-### `khala/application/services/verification_gate.py`
-**Shame Score:** 10/100
-**Findings:**
-* `[Line 270]` **(Critical)**: Calls `db_client.update_memory(memory_id=...)` with invalid signature. Code has never run.
-* `[Line 130]` **(High)**: Unbounded `verification_history` list. Memory leak.
-* `[Line 260]` **(High)**: Instantiates new `SurrealDBClient` (new pool) for every update. Connection exhaustion.
-
-### `tests/integration/test_novel_strategies.py`
-**Shame Score:** 0/100 (Fraudulent)
-**Findings:**
-* `[Line 77]` **(Critical)**: Fake integration test. Mocks `AsyncSurreal` class to avoid needing a DB, but instantiates `SurrealDBClient` with invalid args. Proves code is broken, yet "passes" via mocking.
-
-### `scripts/verify_creds.py`
-**Shame Score:** 0/100
-**Findings:**
-* `[Line 5]` **(High)**: Brute force tool included in repo.
-* `[Line 5]` **(Critical)**: Calls `SurrealDBClient` with invalid args. Script is broken.
-
-### `scripts/check_conn.py`
-**Shame Score:** 0/100
-**Findings:**
-* `[Line 8]` **(Critical)**: Hardcoded `root`/`root` credentials.
-
-### `khala/domain/memory/entities.py`
+### 6. `khala/domain/memory/entities.py`
 **Shame Score:** 60/100
 **Findings:**
-* `[Line 102]` **(Med)**: Hardcoded business rules (promotion thresholds) in Entity.
-* `[Line 126]` **(High)**: `__post_init__` validation prevents loading invalid data from DB for repair.
+*   `[Line 118]` **(High)**: **Logic Inversion**. `should_promote_to_next_tier` promotes `SHORT_TERM` to `LONG_TERM` if `age > 15 days`. This means old, ignored garbage is automatically promoted to Long Term memory. It should be the opposite (high importance = promote, low importance = archive).
+*   `[Line 27]` **(Nit)**: `Memory` is a mutable `dataclass`. In a concurrent system, passing mutable entities around is asking for race conditions.
+*   `[Line 191]` **(Nit)**: `_get_age_hours` relies on `datetime.now(timezone.utc)`. If `created_at` is naive (from bad deserialization), this crashes.
 
-### `khala/debug_intent.py`
-**Shame Score:** 0/100
+### 7. `khala/infrastructure/gemini/client.py`
+**Shame Score:** 50/100
 **Findings:**
-* `[Line 4]` **(Med)**: Zombie code with hardcoded absolute path `/home/suportesaude/...`.
+*   `[Line 260]` **(High)**: `_get_cache_key` truncates MD5 to 16 chars. Birthday paradox says collisions will happen with moderate volume.
+*   `[Line 226]` **(Med)**: Token counting is a guess: `len(prompt.split()) * 1.3`. Billing and rate limiting will be inaccurate.
+*   `[Line 44]` **(Nit)**: `_response_cache` uses `cachetools` but `_cache_lock` suggests manual thread safety. `cachetools` is not thread-safe, so the lock is good, but complexity is high.
+
+### 8. `khala/interface/rest/main.py`
+**Shame Score:** 30/100
+**Findings:**
+*   `[Line 38]` **(High)**: Global state `state = AppState()`. Hard to test, singleton anti-pattern.
+*   `[Line 24]` **(High)**: `get_api_key` calls `os.getenv` on EVERY request. Performance tax.
+*   `[Line 59]` **(Critical)**: Calls `state.db_client.close()`. Method does not exist. App crashes on shutdown.
+
+### 9. `khala/interface/cli/main.py`
+**Shame Score:** 40/100
+**Findings:**
+*   `[Line 221]` **(Critical)**: `await client.close()`. Method does not exist. CLI health check crashes.
+*   `[Line 80]` **(Nit)**: `_run_async` uses `asyncio.run`. This is fine for CLI but creates a new event loop every time.
+
+### 10. `khala/infrastructure/background/jobs/job_processor.py`
+**Shame Score:** 65/100
+**Findings:**
+*   `[Line 183]` **(Med)**: `_worker_loop` catches `Exception` but not `CancelledError` (in Py<3.8). In Py3.11+ it's fine.
+*   `[Line 233]` **(Med)**: `_execute_decay_scoring` fetches `LIMIT 5000` memory IDs if no IDs provided. If system has 1M memories, 99.5% are never decayed.
+*   `[Line 110]` **(High)**: `start` initializes `SurrealDBClient()` which might raise `ValueError` (if env missing), crashing the background thread silently or the main app.
 
 ---
 
@@ -106,21 +86,23 @@
 
 | Severity | File:Line | Error Type | Description | The Fix |
 | :--- | :--- | :--- | :--- | :--- |
-| **CRITICAL** | `khala/interface/mcp/server.py:26` | Logic | Server entry point instantiates `SurrealDBClient` with invalid arguments (`url=...`). **Server cannot start.** | Fix `SurrealDBClient` instantiation to use `SurrealConfig`. |
-| **CRITICAL** | `khala/interface/cli/main.py:192` | Logic | CLI `surreal-health` command instantiates client with invalid arguments. **Command crashes.** | Update CLI to use `SurrealConfig`. |
-| **CRITICAL** | `khala/infrastructure/surrealdb/client.py:44` | Security | `self.password` stores raw secret. | Use `SecretStr`. |
-| **CRITICAL** | `khala/domain/graph/service.py:25` | Architecture | GraphService assumes `repository.client` exists. Breaks with decorators/mocks. | Inject `SurrealDBClient` directly or add `get_client()` to interface. |
-| **CRITICAL** | `tests/integration/test_novel_strategies.py:77` | Fraud | Fake integration tests hiding broken code. | Delete mocks. Run against Docker. |
-| **CRITICAL** | `khala/infrastructure/executors/cli_executor.py:65` | Security | Command Injection via `KHALA_AGENTS_PATH`. | Sanitize paths. |
-| **CRITICAL** | `khala/application/services/verification_gate.py:270` | Logic | Calls `update_memory` with invalid signature. | Fix call to match `update_memory(memory)`. |
-| **HIGH** | `khala/infrastructure/gemini/client.py:118` | Performance | Memory leak in `_complexity_cache`. | Use `TTLCache`. |
-| **HIGH** | `khala/application/services/memory_lifecycle.py:275` | Performance | O(N^2) deduplication in Python. | Move vector distance check to DB. |
-| **HIGH** | `khala/infrastructure/persistence/audit_repository.py:30` | Security | Audit failures are swallowed ("Fail Open"). | Raise exception or fallback to safe mode. |
-| **HIGH** | `khala/domain/graph/service.py:250` | Performance | In-memory graph processing (NetworkX) on DB data. | Move graph algos to DB or external engine. |
-| **MED** | `khala/infrastructure/surrealdb/client.py:120` | Logic | Deserialization crashes on invalid enum. | Add fallback/error handling. |
-| **MED** | `khala/infrastructure/surrealdb/client.py:353` | Security | Manual SQL construction in `_build_filter_query`. | Use parameterized queries for everything. |
+| **CRITICAL** | `infra/coordination/distributed_lock.py:38` | Logic / Security | **Fake Lock**. `CREATE lock SET id=$id` does not enforce uniqueness. Mutual exclusion is broken. | Use `CREATE type::thing('lock', $id)` to target record ID. |
+| **CRITICAL** | `infra/surrealdb/client.py:MISSING` | Runtime | **Missing Method**. `close()` is called by API/CLI but not defined. | Implement `close()` to close connection pool. |
+| **CRITICAL** | `infra/persistence/audit_repository.py:38` | Consistency | **Audit Fail-Closed**. Logic error causes operation to succeed but throw error if audit fails. | Wrap memory creation + audit in a Transaction. |
+| **CRITICAL** | `app/services/privacy_safety_service.py:78` | Privacy | **PII Persistence**. Metadata stores redacted items which may contain raw PII from LLM. | Do not store `text` field from PII scan results. |
+| **CRITICAL** | `infra/surrealdb/client.py:45` | Security | **Insecure Defaults**. `SurrealConfig` uses `root`/`root`. | Remove defaults. Require explicit config. |
+| **HIGH** | `domain/memory/entities.py:118` | Logic | **Zombie Promotion**. Logic promotes old Short Term memories to Long Term automatically. | Fix logic: Old + Low Importance = Archive. |
+| **HIGH** | `infra/surrealdb/schema.py:104` | Data Integrity | **Missing Unique Index**. `content_hash` allows duplicates. | Add `UNIQUE` constraint to `content_hash_index`. |
+| **HIGH** | `infra/background/jobs/job_processor.py:233` | Logic | **Partial Processing**. Decay job only processes first 5000 items. | Implement cursor-based pagination (`scan_all`). |
+| **HIGH** | `interface/rest/main.py:24` | Performance | **Env Var Polling**. `get_api_key` checks environment on every request. | Load config once at startup. |
+| **HIGH** | `infra/gemini/client.py:260` | Security | **Weak Hash**. MD5 truncated to 16 chars for cache keys. | Use SHA-256. |
 
 ---
 
-**AUTOPSY CONCLUSION:**
-The codebase exhibits a pattern of "Refactoring Scars" where the `SurrealDBClient` signature was changed, but consumers (`server.py`, `cli/main.py`, `tests`, `verification_gate.py`) were never updated. This proves the absence of a working CI/CD pipeline and the falsity of the "Production Ready" claim. The "Integration Tests" are actively deceiving developers by mocking the very components they are supposed to verify.
+**FINAL VERDICT:**
+The codebase is **UNFIT FOR PRODUCTION**. The distributed locking mechanism is fundamentally broken, meaning any feature relying on coordination (consolidation, deduplication) is unsafe. The lack of proper shutdown handling (`close()` missing) and the "Fail-Closed" audit implementation indicate a lack of integration testing. The security posture is performative ("Sanitization" that persists PII).
+
+**IMMEDIATE ACTION REQUIRED:**
+1. Fix the Distributed Lock query.
+2. Implement Transactions for Audit Logging.
+3. Fix the `close()` method crash.
