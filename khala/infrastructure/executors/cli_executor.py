@@ -1,32 +1,64 @@
+"""CLI Subagent Executor.
+
+This module provides a secure execution environment for external CLI tools.
+It enforces strict path validation, resource limits, and absolute binary resolution
+to prevent RCE and DoS attacks.
+"""
+
 import asyncio
 import json
 import os
 import logging
 import tempfile
 import time
+import shutil
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from ...application.orchestration.executor import SubagentExecutor
 from ...application.orchestration.types import SubagentTask, SubagentResult, SubagentRole, ModelTier
 
 logger = logging.getLogger(__name__)
 
+# Constants for Resource Limits
+MAX_OUTPUT_BYTES = 10 * 1024 * 1024  # 10 MB limit for stdout/stderr
+EXECUTION_TIMEOUT_BUFFER = 5  # Seconds to wait for cleanup
+
 class CLISubagentExecutor(SubagentExecutor):
     """
     Executes subagent tasks using the external 'gemini-mcp-tool' CLI.
+    Enforces strict security boundaries.
     """
     
+    def __init__(self):
+        self._npx_path = self._resolve_npx()
+
+    def _resolve_npx(self) -> str:
+        """Resolve absolute path to npx binary."""
+        npx_path = shutil.which("npx")
+        if not npx_path:
+            raise RuntimeError(
+                "CRITICAL: 'npx' binary not found in system PATH. "
+                "Cannot execute external agents safely."
+            )
+        return npx_path
+
     def _get_agent_file(self, role: SubagentRole) -> Path:
         """Get path to agent configuration file with Path Traversal Protection."""
-        base_env = os.getenv("KHALA_AGENTS_PATH", "./.gemini/agents")
+        base_env = os.getenv("KHALA_AGENTS_PATH")
+
+        if not base_env:
+            # Fallback only if strictly defined in a safe location, else raise
+            # For now, we fail loud as per 'Zero Trust'
+            raise ValueError(
+                "CRITICAL: KHALA_AGENTS_PATH environment variable is not set. "
+                "Implicit relative paths are forbidden."
+            )
+
         base_path = Path(base_env).resolve()
 
-        # Guard: Ensure base path exists and is a directory
         if not base_path.exists() or not base_path.is_dir():
-             # Fallback to current dir if env is bad, or raise error?
-             # Fail loudly.
-             raise ValueError(f"KHALA_AGENTS_PATH is invalid: {base_path}")
+             raise ValueError(f"KHALA_AGENTS_PATH is invalid or not a directory: {base_path}")
 
         agent_files = {
             SubagentRole.ANALYZER: "research-analyst.md",
@@ -60,6 +92,30 @@ class CLISubagentExecutor(SubagentExecutor):
         else:
             return "gemini-2.5-pro"
 
+    async def _read_stream_safe(self, stream: asyncio.StreamReader) -> str:
+        """Read from stream with strict size limits to prevent DoS."""
+        output = []
+        total_bytes = 0
+
+        while True:
+            try:
+                chunk = await stream.read(4096)
+                if not chunk:
+                    break
+
+                total_bytes += len(chunk)
+                if total_bytes > MAX_OUTPUT_BYTES:
+                    raise RuntimeError(
+                        f"DoS Protection: Subprocess output exceeded {MAX_OUTPUT_BYTES} bytes."
+                    )
+
+                output.append(chunk.decode(errors='replace'))
+            except Exception as e:
+                logger.error(f"Stream read error: {e}")
+                break
+
+        return "".join(output)
+
     async def execute_task(self, task: SubagentTask, agent_config: Dict[str, Any]) -> SubagentResult:
         start_time = time.time()
         
@@ -90,9 +146,9 @@ class CLISubagentExecutor(SubagentExecutor):
                 model_name = self._get_model_for_tier(task.model_tier)
                 
                 # Execute Gemini CLI subagent
-                # Note: Relying on 'npx' assumes Node environment.
+                # Security: Use absolute path for npx
                 cmd = [
-                    "npx", "gemini-mcp-tool",
+                    self._npx_path, "gemini-mcp-tool",
                     "--agent", str(agent_file),
                     "--task", str(input_file),
                     "--model", model_name, 
@@ -107,32 +163,44 @@ class CLISubagentExecutor(SubagentExecutor):
                     cwd=str(workspace_path)
                 )
                 
-                # Wait for completion with timeout and capture output
+                # Wait for completion with timeout and capture output securely
+                stdout_str = ""
+                stderr_str = ""
+
                 try:
-                    stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                        process.communicate(),
-                        timeout=task.timeout_seconds
-                    )
-                    stdout = stdout_bytes.decode() if stdout_bytes else ""
-                    stderr = stderr_bytes.decode() if stderr_bytes else ""
+                    # Parallel read of stdout and stderr
+                    stdout_task = asyncio.create_task(self._read_stream_safe(process.stdout))
+                    stderr_task = asyncio.create_task(self._read_stream_safe(process.stderr))
+
+                    await asyncio.wait_for(process.wait(), timeout=task.timeout_seconds)
+
+                    stdout_str = await stdout_task
+                    stderr_str = await stderr_task
 
                     if process.returncode != 0:
-                        logger.error(f"Subagent CLI failed: {stderr}")
+                        logger.error(f"Subagent CLI failed (Exit {process.returncode}): {stderr_str}")
 
                 except asyncio.TimeoutError:
                     try:
                         process.kill()
                     except ProcessLookupError:
                         pass
-                    raise TimeoutError(f"Task {task.task_id} timed out")
+                    raise TimeoutError(f"Task {task.task_id} timed out after {task.timeout_seconds}s")
+                except RuntimeError as e:
+                    # DoS protection triggered
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+                    raise e
                 
                 # Read output
                 output_file = workspace_path / "task_output.json"
+                execution_time = (time.time() - start_time) * 1000
+
                 if output_file.exists():
                     with open(output_file, 'r') as f:
                         output_data = json.load(f)
-                    
-                    execution_time = (time.time() - start_time) * 1000
                     
                     return SubagentResult(
                         task_id=task.task_id,
@@ -153,8 +221,8 @@ class CLISubagentExecutor(SubagentExecutor):
                         output=None,
                         reasoning="No output file generated",
                         confidence_score=0.0,
-                        execution_time_ms=(time.time() - start_time) * 1000,
-                        error=f"Missing output file. Stderr: {stderr}",
+                        execution_time_ms=execution_time,
+                        error=f"Missing output file. Stderr: {stderr_str}",
                         metadata=task.input_data
                     )
         
