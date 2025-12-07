@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from khala.infrastructure.surrealdb.client import SurrealDBClient
+from khala.infrastructure.surrealdb.client import SurrealDBClient, SurrealConfig
 from khala.domain.memory.entities import Memory, Entity, Relationship
 from khala.domain.memory.value_objects import EmbeddingVector, ImportanceScore, MemoryTier
 
@@ -19,24 +19,51 @@ class TestSurrealDBClient:
     @pytest.fixture
     def client(self):
         """Create a test client."""
-        return SurrealDBClient(
+        config = SurrealConfig(
             url="ws://localhost:8000/rpc",
             namespace="test_khala",
             database="test_memories",
             username="test_user",
             password="test_pass"
         )
+        return SurrealDBClient(config)
     
     @pytest.mark.asyncio
     async def test_client_initialization(self, client):
         """Test client initialization parameters."""
-        assert client.url == "ws://localhost:8000/rpc"
-        assert client.namespace == "test_khala"
-        assert client.database == "test_memories"
-        assert client.username == "test_user"
-        assert client.password == "test_pass"
-        assert client.max_connections == 10
+        assert client.config.url == "ws://localhost:8000/rpc"
+        assert client.config.namespace == "test_khala"
+        assert client.config.database == "test_memories"
+        assert client.config.username == "test_user"
+        assert client.config.password.get_secret_value() == "test_pass"
+        assert client.config.token is None
+        assert client.config.max_connections == 10
         assert not client._initialized
+
+    @pytest.mark.asyncio
+    async def test_client_initialization_with_token(self):
+        """Test client initialization with token."""
+        config = SurrealConfig(
+            url="ws://cloud.surrealdb.com/rpc",
+            namespace="cloud_ns",
+            database="cloud_db",
+            token="my_token"
+        )
+        client = SurrealDBClient(config)
+
+        assert client.config.token.get_secret_value() == "my_token"
+        assert client.config.username is None
+        assert client.config.password is None
+
+        # Test that connection creation uses authenticate
+        with patch('khala.infrastructure.surrealdb.client.AsyncSurreal') as mock_surreal:
+            mock_conn = AsyncMock()
+            mock_surreal.return_value = mock_conn
+
+            await client.initialize()
+
+            mock_conn.authenticate.assert_called_once_with("my_token")
+            mock_conn.signin.assert_not_called()
     
     @pytest.mark.asyncio
     async def test_connection_pool_management(self, client):
@@ -125,10 +152,11 @@ class TestSurrealDBClient:
             assert create_call is not None, "Create query not found in calls"
             query, params = create_call
 
-            assert params["user_id"] == memory.user_id
-            assert params["content"] == memory.content
-            assert params["tier"] == memory.tier.value
-            assert params["embedding"] == embedding.values
+            content_data = params["content_data"]
+            assert content_data["user_id"] == memory.user_id
+            assert content_data["content"] == memory.content
+            assert content_data["tier"] == memory.tier.value
+            assert content_data["embedding"] == embedding.values
     
     @pytest.mark.asyncio
     async def test_get_memory_not_found(self, client):
@@ -293,7 +321,7 @@ class TestSurrealDBClient:
                 args = call[0]
                 q = args[0]
                 p = args[1] if len(args) > 1 else {}
-                if "UPDATE" in q and "CONTENT" in q:
+                if "UPDATE" in q and "MERGE" in q:
                     update_call = (q, p)
                     break
             
@@ -301,8 +329,9 @@ class TestSurrealDBClient:
             query, params = update_call
 
             assert params["id"] == memory.id
-            assert params["content"] == "Updated content"
-            assert "updated" in params["tags"]
+            updates = params["updates"]
+            assert updates["content"] == "Updated content"
+            assert "updated" in updates["tags"]
     
     @pytest.mark.asyncio
     async def test_delete_memory(self, client):
