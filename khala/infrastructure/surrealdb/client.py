@@ -42,8 +42,9 @@ class SurrealConfig(BaseModel):
     url: str = Field(..., description="SurrealDB WebSocket URL")
     namespace: str = Field(..., description="Database Namespace")
     database: str = Field(..., description="Database Name")
-    username: str = Field(..., description="Auth Username")
-    password: SecretStr = Field(..., description="Auth Password")
+    username: Optional[str] = Field(None, description="Auth Username")
+    password: Optional[SecretStr] = Field(None, description="Auth Password")
+    token: Optional[SecretStr] = Field(None, description="Auth Token")
     max_connections: int = Field(default=10, ge=1, le=100)
 
     @classmethod
@@ -54,13 +55,16 @@ class SurrealConfig(BaseModel):
         db = os.getenv("SURREAL_DB")
         user = os.getenv("SURREAL_USER")
         password = os.getenv("SURREAL_PASS")
+        token = os.getenv("SURREAL_TOKEN")
 
         missing = []
         if not url: missing.append("SURREAL_URL")
         if not ns: missing.append("SURREAL_NS")
         if not db: missing.append("SURREAL_DB")
-        if not user: missing.append("SURREAL_USER")
-        if not password: missing.append("SURREAL_PASS")
+
+        # Require either (user+pass) or token
+        if not token and (not user or not password):
+            missing.append("SURREAL_USER/PASS or SURREAL_TOKEN")
 
         if missing:
             raise ValueError(f"CRITICAL: Missing required environment variables: {', '.join(missing)}")
@@ -70,7 +74,8 @@ class SurrealConfig(BaseModel):
             namespace=ns,
             database=db,
             username=user,
-            password=SecretStr(password)
+            password=SecretStr(password) if password else None,
+            token=SecretStr(token) if token else None
         )
 
 class SurrealDBClient:
@@ -123,10 +128,17 @@ class SurrealDBClient:
         """Helper to create and authenticate a new connection."""
         connection = AsyncSurreal(self.config.url)
         await connection.connect()
-        await connection.signin({
-            "username": self.config.username,
-            "password": self.config.password.get_secret_value()
-        })
+
+        if self.config.token:
+            await connection.authenticate(self.config.token.get_secret_value())
+        elif self.config.username and self.config.password:
+            await connection.signin({
+                "username": self.config.username,
+                "password": self.config.password.get_secret_value()
+            })
+        else:
+            raise ValueError("Missing credentials: Both token and username/password are missing.")
+
         await connection.use(namespace=self.config.namespace, database=self.config.database)
         return connection
 
