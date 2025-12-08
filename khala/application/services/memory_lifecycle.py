@@ -5,6 +5,7 @@ promotion, decay, consolidation, deduplication, and archival.
 """
 
 import logging
+import asyncio
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
@@ -292,50 +293,60 @@ class MemoryLifecycleService:
         return {"status": "skipped", "reason": reason}
 
     async def consolidate_memories(self, user_id: str, force: bool = False) -> int:
-        """Consolidate memories."""
-        consolidated_count = 0
+        """Consolidate memories with parallel execution."""
         memories = await self.repository.get_by_tier(
             user_id, MemoryTier.SHORT_TERM.value, limit=200
         )
 
-        if force or self.memory_service.should_consolidate(memories):
-            groups = self.consolidation_service.group_memories_for_consolidation(memories)
+        if not (force or self.memory_service.should_consolidate(memories)):
+            return 0
 
-            for group in groups:
-                if len(group) > 1:
-                    try:
-                        contents = [m.content for m in group]
-                        memory_list_str = "\n".join([f'- {c}' for c in contents])
+        groups = self.consolidation_service.group_memories_for_consolidation(memories)
 
-                        response = await self.gemini_client.generate_text(
-                            prompt=PROMPT_CONSOLIDATE.format(
-                                count=len(contents),
-                                memory_list=memory_list_str
-                            ),
-                            task_type="generation",
-                            model_id="gemini-2.5-pro"
+        # Limit concurrency to prevent rate limits
+        semaphore = asyncio.Semaphore(5)
+
+        async def process_group(group: List[Memory]) -> int:
+            if len(group) <= 1:
+                return 0
+
+            async with semaphore:
+                try:
+                    contents = [m.content for m in group]
+                    memory_list_str = "\n".join([f'- {c}' for c in contents])
+
+                    response = await self.gemini_client.generate_text(
+                        prompt=PROMPT_CONSOLIDATE.format(
+                            count=len(contents),
+                            memory_list=memory_list_str
+                        ),
+                        task_type="generation",
+                        model_id="gemini-2.5-pro"
+                    )
+                    new_content = response.get("content", "").strip()
+
+                    if new_content:
+                        new_memory = Memory(
+                            user_id=user_id,
+                            content=new_content,
+                            tier=MemoryTier.LONG_TERM,
+                            importance=ImportanceScore(0.8),
+                            metadata={"consolidated_from": [m.id for m in group]}
                         )
-                        new_content = response.get("content", "").strip()
+                        await self.repository.create(new_memory)
 
-                        if new_content:
-                            new_memory = Memory(
-                                user_id=user_id,
-                                content=new_content,
-                                tier=MemoryTier.LONG_TERM,
-                                importance=ImportanceScore(0.8),
-                                metadata={"consolidated_from": [m.id for m in group]}
-                            )
-                            await self.repository.create(new_memory)
+                        for m in group:
+                            m.archive(force=True)
+                            m.metadata["consolidated_into"] = new_memory.id
+                            await self.repository.update(m)
 
-                            for m in group:
-                                m.archive(force=True)
-                                m.metadata["consolidated_into"] = new_memory.id
-                                await self.repository.update(m)
+                        logger.info(f"Consolidated {len(group)} memories into new memory {new_memory.id}")
+                        return len(group)
+                except Exception:
+                    logger.exception("Failed to consolidate group.")
+                    return 0
+            return 0
 
-                            consolidated_count += len(group)
-                            logger.info(f"Consolidated {len(group)} memories into new memory {new_memory.id}")
-
-                    except Exception:
-                        logger.exception("Failed to consolidate group.")
-
-        return consolidated_count
+        # Run tasks concurrently
+        results = await asyncio.gather(*[process_group(g) for g in groups])
+        return sum(results)
