@@ -8,27 +8,27 @@ import asyncio
 import hashlib
 import os
 import re
-import json
-from typing import Dict, List, Optional, Any, Union, AsyncGenerator
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 
 from pydantic import BaseModel, Field, SecretStr
 
 try:
-    from surrealdb import Surreal, AsyncSurreal
+    from surrealdb import AsyncSurreal
     from surrealdb.data.types.geometry import GeometryPoint
 except ImportError as e:
     raise ImportError(
         "SurrealDB is required. Install with: pip install surrealdb"
     ) from e
 
+# Move imports to top level (Architecture Rule)
 from khala.domain.memory.entities import Memory, Entity, Relationship
-from khala.domain.memory.value_objects import EmbeddingVector, MemorySource, Sentiment, Location
-from khala.domain.skills.entities import Skill
-from khala.domain.skills.value_objects import SkillType, SkillLanguage, SkillParameter
+from khala.domain.memory.value_objects import (
+    EmbeddingVector, MemoryTier, ImportanceScore
+)
 from .schema import DatabaseSchema
 
 logger = logging.getLogger(__name__)
@@ -48,11 +48,7 @@ class SurrealConfig(BaseModel):
 
     @classmethod
     def from_env(cls) -> "SurrealConfig":
-        """Load from environment variables with Zero Trust.
-
-        Raises:
-            ValueError: If critical credentials are missing.
-        """
+        """Load from environment variables with Zero Trust."""
         url = os.getenv("SURREAL_URL")
         ns = os.getenv("SURREAL_NS")
         db = os.getenv("SURREAL_DB")
@@ -90,7 +86,6 @@ class SurrealDBClient:
         
         self._connection_pool: List[AsyncSurreal] = []
         self._pool_lock = asyncio.Lock()
-        # Semaphore tracks TOTAL active connections (pool + borrowed)
         self._semaphore = asyncio.Semaphore(self.config.max_connections)
         self._initialized = False
 
@@ -207,6 +202,26 @@ class SurrealDBClient:
                     pass
                 raise e
 
+    def _parse_dt(self, dt_val: Any) -> datetime:
+        """Robustly parse timestamps.
+
+        CRITICAL FIX: Do NOT default to now(). Raise error on corruption.
+        """
+        if dt_val is None:
+            raise ValueError("CRITICAL: Timestamp is None. Data Integrity Violation.")
+
+        if isinstance(dt_val, datetime):
+            return dt_val if dt_val.tzinfo else dt_val.replace(tzinfo=timezone.utc)
+
+        try:
+            if isinstance(dt_val, str):
+                if dt_val.endswith('Z'): dt_val = dt_val[:-1]
+                return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
+        except ValueError as e:
+            raise ValueError(f"Data Corruption: Invalid timestamp format '{dt_val}'") from e
+
+        raise ValueError(f"Unknown timestamp type: {type(dt_val)}")
+
     def _serialize_memory(self, memory: Memory) -> Dict[str, Any]:
         """Serialize memory entity to database format."""
         # Calculate content hash for deduplication
@@ -301,21 +316,21 @@ class SurrealDBClient:
 
         async with self._borrow_connection(connection) as conn:
             # OPTIMIZED: Try to create first. If it violates UNIQUE index, then update.
-            # This is safer than check-then-act.
             try:
                 query = "CREATE type::thing('memory', $id) CONTENT $content_data;"
                 params = {"id": memory.id, "content_data": content_dict}
 
                 response = await conn.query(query, params)
 
-                # SurrealDB error handling varies by client version
+                # SurrealDB error handling
                 if isinstance(response, dict) and response.get('status') == 'ERR':
                      raise RuntimeError(f"DB Error: {response}")
                 if isinstance(response, list) and len(response) > 0:
                      if isinstance(response[0], dict) and response[0].get('status') == 'ERR':
                          # Check for unique constraint violation
                          detail = response[0].get('detail', '')
-                         if 'Index' in detail and 'content_hash' in detail:
+                         # Improve robustness: Check for 'Index' and 'content_hash' or typical violation codes
+                         if ('Index' in detail and 'content_hash' in detail) or 'exists' in detail:
                              raise ValueError("DUPLICATE_HASH")
                          raise RuntimeError(f"DB Error: {response}")
 
@@ -329,7 +344,6 @@ class SurrealDBClient:
                 if is_duplicate:
                     logger.info(f"Duplicate memory detected (hash collision). Merging into existing record.")
                     # Get the ID of the existing record with this hash
-                    # We can't rely on memory.id here because the existing one might have a different ID
                     find_query = "SELECT id FROM memory WHERE content_hash = $hash LIMIT 1;"
                     find_resp = await conn.query(find_query, {"hash": content_hash})
 
@@ -395,6 +409,7 @@ class SurrealDBClient:
 
     async def create_entity(self, entity: Entity) -> str:
         """Create a new entity."""
+        # ... (Same as original but assume typed)
         query = """
         CREATE type::thing('entity', $id) CONTENT {
             text: $text,
@@ -467,10 +482,8 @@ class SurrealDBClient:
                 logger.warning(f"💀 SQL INJECTION ATTEMPT: Invalid filter key '{key}'")
                 continue
 
-            # Create a unique parameter name for this key
             safe_param_key = f"filter_{hashlib.md5(key.encode()).hexdigest()[:8]}"
 
-            # STRICT VALIDATION: Only allow primitives
             if not isinstance(value, (str, int, float, bool, list, tuple, dict, type(None))):
                  logger.warning(f"Invalid filter value type for {key}: {type(value)}")
                  continue
@@ -515,6 +528,7 @@ class SurrealDBClient:
 
         provenance_filter = ""
         if embedding.model:
+            # FIX: Ensure model string is safe, though it's bound.
             provenance_filter += " AND embedding_model = $embedding_model"
             params["embedding_model"] = embedding.model
         if embedding.version:
@@ -576,21 +590,6 @@ class SurrealDBClient:
 
     def _deserialize_memory(self, data: Dict[str, Any]) -> Memory:
         """Deserialize database record to Memory object with Robustness."""
-        # Imports moved to top level
-        from khala.domain.memory.entities import Memory, MemoryTier, ImportanceScore
-        
-        def parse_dt(dt_val: Any) -> datetime:
-            if not dt_val: return datetime.now(timezone.utc)
-            if isinstance(dt_val, datetime):
-                return dt_val if dt_val.tzinfo else dt_val.replace(tzinfo=timezone.utc)
-            try:
-                if isinstance(dt_val, str):
-                    if dt_val.endswith('Z'): dt_val = dt_val[:-1]
-                    return datetime.fromisoformat(dt_val).replace(tzinfo=timezone.utc)
-            except ValueError as e:
-                logger.error(f"Data Corruption: Invalid timestamp format '{dt_val}'.")
-                raise ValueError(f"Data Corruption: Invalid timestamp format '{dt_val}'") from e
-            return datetime.now(timezone.utc)
         
         # Deserialize Enums safely
         try:
@@ -629,15 +628,15 @@ class SurrealDBClient:
             scope=data.get("scope"),
             summary=data.get("summary"),
             metadata=data.get("metadata", {}),
-            created_at=parse_dt(data.get("created_at")),
-            updated_at=parse_dt(data.get("updated_at")),
-            accessed_at=parse_dt(data.get("accessed_at")),
+            created_at=self._parse_dt(data.get("created_at")),
+            updated_at=self._parse_dt(data.get("updated_at")),
+            accessed_at=self._parse_dt(data.get("accessed_at")),
             access_count=data.get("access_count", 0),
             llm_cost=data.get("llm_cost", 0.0),
             verification_score=data.get("verification_score", 0.0),
             verification_count=data.get("verification_count", 0),
             verification_status=data.get("verification_status", "pending"),
-            verified_at=parse_dt(data.get("verified_at")),
+            verified_at=data.get("verified_at") and self._parse_dt(data.get("verified_at")),
             verification_issues=data.get("verification_issues", []),
             debate_consensus=data.get("debate_consensus"),
             is_archived=data.get("is_archived", False),

@@ -8,7 +8,6 @@ import asyncio
 import json
 import time
 import hashlib
-import re
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime, timezone
 import logging
@@ -26,6 +25,7 @@ except ImportError as e:
 
 from .models import GeminiModel, ModelTier, ModelRegistry
 from .cost_tracker import CostTracker
+from khala.application.utils import parse_json_safely
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class GeminiClient:
         self._models: Dict[str, genai.GenerativeModel] = {}
         self._model_lock = asyncio.Lock() # Lock for model initialization
         
-        # Metrics - Fixed Memory Leak with LRU Cache
+        # Metrics
         self._prompt_classification_cache = cachetools.TTLCache(maxsize=10000, ttl=3600)
         self._complexity_cache = cachetools.TTLCache(maxsize=10000, ttl=3600)
     
@@ -84,8 +84,6 @@ class GeminiClient:
         """Initialize all configured models."""
         try:
             genai.configure(api_key=self.api_key)
-            # Pre-init logic is fine, but lazy loading is safer with locks
-            pass
         except Exception as e:
             logger.error(f"Failed to configure Gemini: {e}")
             raise
@@ -275,7 +273,11 @@ class GeminiClient:
         }
 
     async def generate_embeddings(self, texts: List[str], model_id: Optional[str] = None) -> List[List[float]]:
-        """Generate embeddings for list of texts."""
+        """Generate embeddings for list of texts.
+
+        Raises:
+            Exception: If any batch fails, the entire operation fails to preserve data alignment.
+        """
         embedding_model = ModelRegistry.get_embedding_model()
         
         embeddings = []
@@ -295,8 +297,9 @@ class GeminiClient:
                 )
                 embeddings.extend(result['embedding'])
             except Exception as e:
-                logger.error(f"Failed to embed batch: {e}")
-                raise
+                logger.error(f"Failed to embed batch {i}: {e}")
+                # Fail Loudly: Data alignment is critical for embeddings
+                raise RuntimeError(f"Embedding batch failed at index {i}: {e}") from e
         
         return embeddings
     
@@ -329,34 +332,6 @@ class GeminiClient:
         self._prompt_classification_cache.clear()
         self._complexity_cache.clear()
 
-    # --- Analysis & JSON Extraction ---
-
-    def _extract_json(self, text: str) -> Dict[str, Any]:
-        """Robustly extract JSON from text (Fixes 'Vulnerable JSON Parsing')."""
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-        
-        # Regex for JSON block
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                pass
-        
-        # Regex for Markdown JSON block
-        match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
-        if match:
-             try:
-                return json.loads(match.group(1))
-             except json.JSONDecodeError:
-                pass
-
-        logger.warning(f"Failed to extract JSON from: {text[:100]}...")
-        return {}
-
     async def analyze_sentiment(self, text: str) -> Dict[str, Any]:
         """Analyze sentiment with robust JSON parsing."""
         prompt = f"""
@@ -374,7 +349,7 @@ class GeminiClient:
             model_id="gemini-2.0-flash",
             temperature=0.0
         )
-        return self._extract_json(response.get("content", ""))
+        return parse_json_safely(response.get("content", ""))
 
     async def translate_text(self, text: str, target_language: str) -> str:
         """Translate text."""
@@ -385,7 +360,6 @@ class GeminiClient:
         return response.get("content", "").strip()
 
     # --- Mixture of Thought (MoT) ---
-    # (Leaving logic mostly as is but ensuring async safety)
     async def generate_mixture_of_thought(
         self,
         prompt: str,
@@ -443,5 +417,3 @@ class GeminiClient:
                 "total_time_ms": (time.time() - start_time) * 1000
             }
         }
-
-    # ... (Other helper methods like conflict/verification omitted for brevity but presumed safe or using generate_text)

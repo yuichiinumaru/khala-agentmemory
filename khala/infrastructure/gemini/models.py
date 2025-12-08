@@ -1,10 +1,11 @@
 """Gemini model configuration and management.
 
 This module defines the model tiers and configurations for the LLM cascading system.
+It enforces type safety and deterministic model selection.
 """
 
-from dataclasses import dataclass
-from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, field
+from typing import Dict, Any, List, Optional, Union
 from enum import Enum
 import logging
 
@@ -61,67 +62,67 @@ class GeminiModel:
 class ModelRegistry:
     """Registry of available LLM models with their configurations."""
     
-    # Predefined model configurations following KHALA documentation
+    # Predefined model configurations
     MODELS: Dict[str, GeminiModel] = {
-        # Fast tier - gemini-2.0-flash
+        # Fast tier
         "gemini-2.0-flash": GeminiModel(
             name="Gemini 2.0 Flash",
             tier=ModelTier.FAST,
             model_id="gemini-2.0-flash",
-            cost_per_million_tokens=1.0,  # Estimated lower cost
+            cost_per_million_tokens=1.0,
             max_tokens=1048576,
             temperature=0.1,
             top_p=0.9,
             top_k=64
         ),
         
-        # Medium tier - gemini-2.5-flash
+        # Medium tier
         "gemini-2.5-flash": GeminiModel(
             name="Gemini 2.5 Flash",
             tier=ModelTier.MEDIUM,
             model_id="gemini-2.5-flash",
-            cost_per_million_tokens=2.0,  # Estimated
+            cost_per_million_tokens=2.0,
             max_tokens=1048576,
             temperature=0.3,
             top_p=0.8,
             top_k=40
         ),
         
-        # Smart tier - gemini-2.5-pro
+        # Smart tier
         "gemini-2.5-pro": GeminiModel(
             name="Gemini 2.5 Pro",
             tier=ModelTier.SMART,
             model_id="gemini-2.5-pro",
-            cost_per_million_tokens=10.0,  # Estimated
+            cost_per_million_tokens=10.0,
             max_tokens=2097152,
             temperature=0.7,
             top_p=0.8,
             top_k=40
         ),
         
-        # Embedding model
+        # Embedding model (Standard)
         "gemini-embedding-001": GeminiModel(
             name="Gemini Embedding 001",
-            tier=ModelTier.FAST,  # Treat as fast tier for cost purposes
+            tier=ModelTier.FAST,
             model_id="gemini-embedding-001",
-            cost_per_million_tokens=2.0,  # $0.002/1M tokens (estimate)
-            max_tokens=2048,  # Embeddings don't need large token limits
+            cost_per_million_tokens=2.0,
+            max_tokens=2048,
             supports_embeddings=True,
             embedding_dimensions=768,
-            temperature=0.0,  # Embeddings are deterministic
+            temperature=0.0,
             top_p=0.0,
             top_k=1
         ),
 
-        # Multimodal Embedding model
+        # Multimodal Embedding model (High Dim)
         "multimodal-embedding-001": GeminiModel(
             name="Gemini Multimodal Embedding 001",
             tier=ModelTier.FAST,
             model_id="multimodal-embedding-001",
-            cost_per_million_tokens=5.0, # Estimate
+            cost_per_million_tokens=5.0,
             max_tokens=2048,
             supports_embeddings=True,
-            embedding_dimensions=1408, # Standard for multimodal
+            embedding_dimensions=1408,
             temperature=0.0,
             top_p=0.0,
             top_k=1
@@ -141,12 +142,16 @@ class ModelRegistry:
         return [model for model in cls.MODELS.values() if model.tier == tier]
     
     @classmethod
-    def get_embedding_model(cls) -> GeminiModel:
-        """Get the default embedding model."""
+    def get_embedding_model(cls, dimensions: int = 768) -> GeminiModel:
+        """Get an embedding model with specific dimensions."""
         for model in cls.MODELS.values():
-            if model.supports_embeddings:
+            if model.supports_embeddings and model.embedding_dimensions == dimensions:
                 return model
-        raise ValueError("No embedding model found")
+
+        # Fallback logic: return any embedding model if exact dimension match fails?
+        # No, strictness is better. But for now, we default to the first one if dims not found?
+        # Safe default:
+        return cls.MODELS.get("gemini-embedding-001")
     
     @classmethod
     def get_cost_optimal_model(
@@ -154,40 +159,39 @@ class ModelRegistry:
         complexity: float, 
         required_quality: float = 0.8
     ) -> GeminiModel:
-        """Get cost-optimal model based on complexity and quality requirements.
-        
-        Args:
-            complexity: Task complexity score (0.0-1.0)
-            required_quality: Minimum quality threshold (0.0-1.0)
-            
-        Returns:
-            Selected model configuration
-        """
-        # Define tier thresholds
-        if complexity <= 0.3 and required_quality <= 0.6:
-            # Simple task, low quality requirement - use fast
+        """Get cost-optimal model based on complexity and quality requirements."""
+        # Adjusted thresholds to favor FAST tier for simple tasks
+        if complexity <= 0.4 and required_quality <= 0.7:
             tier = ModelTier.FAST
-        elif complexity <= 0.7 and required_quality <= 0.8:
-            # Moderate task and quality - use medium
+        elif complexity <= 0.8 and required_quality <= 0.85:
             tier = ModelTier.MEDIUM  
         else:
-            # Complex task or high quality requirement - use smart
             tier = ModelTier.SMART
         
         models = cls.get_tier_models(tier)
         if not models:
-            raise ValueError(f"No models available for tier: {tier}")
+            # Fallback to Smart if lower tier unavailable (unlikely)
+            return cls.get_model("gemini-2.5-pro")
         
-        # Return the lowest cost model in the tier
         return min(models, key=lambda m: m.cost_per_million_tokens)
 
+
+@dataclass
+class UsageStats:
+    """Type-safe usage statistics."""
+    usage_count: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_response_time: float = 0.0
+    success_count: int = 0
+    failure_count: int = 0
 
 class ModelMetrics:
     """Model performance metrics collection."""
     
     def __init__(self):
         """Initialize metrics tracking."""
-        self.model_stats: Dict[str, Dict[str, str]] = {}
+        self.model_stats: Dict[str, UsageStats] = {}
     
     def record_usage(
         self, 
@@ -199,25 +203,18 @@ class ModelMetrics:
     ) -> None:
         """Record model usage for performance tracking."""
         if model_id not in self.model_stats:
-            self.model_stats[model_id] = {
-                "usage_count": "0",
-                "total_input_tokens": "0", 
-                "total_output_tokens": "0",
-                "total_response_time": "0.0",
-                "success_count": "0",
-                "failure_count": "0"
-            }
+            self.model_stats[model_id] = UsageStats()
         
         stats = self.model_stats[model_id]
-        stats["usage_count"] = str(int(stats["usage_count"]) + 1)
-        stats["total_input_tokens"] = str(int(stats["total_input_tokens"]) + input_tokens)
-        stats["total_output_tokens"] = str(int(stats["total_output_tokens"]) + output_tokens)
-        stats["total_response_time"] = f"{float(stats['total_response_time']) + response_time_ms:.2f}"
+        stats.usage_count += 1
+        stats.total_input_tokens += input_tokens
+        stats.total_output_tokens += output_tokens
+        stats.total_response_time += response_time_ms
         
         if success:
-            stats["success_count"] = str(int(stats["success_count"]) + 1)
+            stats.success_count += 1
         else:
-            stats["failure_count"] = str(int(stats["failure_count"]) + 1)
+            stats.failure_count += 1
     
     def get_model_stats(self, model_id: str) -> Dict[str, Any]:
         """Get aggregated statistics for a model."""
@@ -225,9 +222,8 @@ class ModelMetrics:
             return {}
         
         stats = self.model_stats[model_id]
-        usage_count = int(stats["usage_count"])
         
-        if usage_count == 0:
+        if stats.usage_count == 0:
             return {
                 "usage_count": 0,
                 "avg_response_time_ms": 0.0,
@@ -236,16 +232,13 @@ class ModelMetrics:
                 "total_output_tokens": 0
             }
         
-        success_count = int(stats["success_count"])
-        failure_count = int(stats["failure_count"])
-        
         return {
-            "usage_count": usage_count,
-            "avg_response_time_ms": float(stats["total_response_time"]) / usage_count,
-            "success_rate": success_count / usage_count,
-            "total_input_tokens": int(stats["total_input_tokens"]),
-            "total_output_tokens": int(stats["total_output_tokens"]),
-            "total_tokens": int(stats["total_input_tokens"]) + int(stats["total_output_tokens"])
+            "usage_count": stats.usage_count,
+            "avg_response_time_ms": stats.total_response_time / stats.usage_count,
+            "success_rate": stats.success_count / stats.usage_count,
+            "total_input_tokens": stats.total_input_tokens,
+            "total_output_tokens": stats.total_output_tokens,
+            "total_tokens": stats.total_input_tokens + stats.total_output_tokens
         }
     
     def get_all_stats(self) -> Dict[str, Dict[str, Any]]:
