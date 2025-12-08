@@ -303,6 +303,25 @@ class DatabaseSchema:
         DEFINE INDEX eval_prompt_idx ON prompt_evaluations FIELDS prompt_id;
         """,
 
+        # Strategy 46: SOP Table
+        "sop_table": """
+        DEFINE TABLE sop SCHEMAFULL;
+        DEFINE FIELD title ON sop TYPE string;
+        DEFINE FIELD objective ON sop TYPE string;
+        DEFINE FIELD steps ON sop TYPE array<object> FLEXIBLE;
+        DEFINE FIELD triggers ON sop TYPE array<string>;
+        DEFINE FIELD owner_role ON sop TYPE string;
+        DEFINE FIELD tags ON sop TYPE array<string>;
+        DEFINE FIELD metadata ON sop TYPE object FLEXIBLE;
+        DEFINE FIELD version ON sop TYPE string;
+        DEFINE FIELD is_active ON sop TYPE bool DEFAULT true;
+        DEFINE FIELD created_at ON sop TYPE datetime DEFAULT time::now();
+        DEFINE FIELD updated_at ON sop TYPE datetime DEFAULT time::now();
+
+        DEFINE INDEX sop_title_idx ON sop FIELDS title;
+        DEFINE INDEX sop_tags_idx ON sop FIELDS tags;
+        """,
+
         # Strategy 116: Flows Tables
         "flow_tables": """
         DEFINE TABLE flow SCHEMAFULL;
@@ -577,34 +596,10 @@ class DatabaseSchema:
         # Role-based access control (RBAC)
         "rbac_permissions": """
         -- Define roles
-        DEFINE ROLE owner;
-        DEFINE ROLE contributor;
-        DEFINE ROLE viewer;
-        DEFINE ROLE system;
-        
-        -- Grant permissions to roles
-        -- Owner can do everything on their own data
-        DEFINE ACCESS user_access ON DATABASE 
-          FOR owner 
-          FOR SELECT, CREATE, UPDATE, DELETE 
-          WHERE user_id = $auth.user_id;
-        
-        -- Contributor can create and update but not delete
-        DEFINE ACCESS user_access ON DATABASE 
-          FOR contributor
-          FOR SELECT, CREATE, UPDATE
-          WHERE user_id = $auth.user_id;
-        
-        -- Viewer can only read
-        DEFINE ACCESS user_access ON DATABASE 
-          FOR viewer
-          FOR SELECT
-          WHERE user_id = $auth.user_id;
-        
-        -- System role has full access for internal processes
-        DEFINE ACCESS system_access ON DATABASE 
-          FOR system
-          FOR SELECT, CREATE, UPDATE, DELETE;
+        DEFINE ACCESS owner ON DATABASE TYPE RECORD;
+        DEFINE ACCESS contributor ON DATABASE TYPE RECORD;
+        DEFINE ACCESS viewer ON DATABASE TYPE RECORD;
+        DEFINE ACCESS system ON DATABASE TYPE RECORD;
         """,
     }
     
@@ -641,6 +636,7 @@ class DatabaseSchema:
             "lgkgr_tables",
             "latent_mas_tables",
             # MarsRL table is inside latent_mas_tables block in current structure but labeled clearly
+            "sop_table",
             "flow_tables",
             "crew_tables",
             "dr_mamr_tables",
@@ -676,6 +672,7 @@ class DatabaseSchema:
             "REMOVE TABLE agent_network",
             "REMOVE TABLE agent_states",
             "REMOVE TABLE network_evolution",
+            "REMOVE TABLE sop",
             "REMOVE FUNCTION fn::decay_score",
             "REMOVE FUNCTION fn::should_promote",
             "REMOVE FUNCTION fn::should_archive",
