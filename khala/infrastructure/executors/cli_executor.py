@@ -112,7 +112,7 @@ class CLISubagentExecutor(SubagentExecutor):
                 output.append(chunk.decode(errors='replace'))
             except Exception as e:
                 logger.error(f"Stream read error: {e}")
-                break
+                raise e
 
         return "".join(output)
 

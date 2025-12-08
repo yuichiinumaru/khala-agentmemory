@@ -46,10 +46,12 @@ You must maintain this structure. Any deviation is Heresy.
 
 ## 3. Workflow (The Ritual)
 
+0.  **Immersion**: Always read **every single file** inside `docs/` folder (including subfolders) to remember what the project is about, in the beginning of a session.
 1.  **Consult the Oracle**: Read `docs/02-tasks.md`. Pick the top priority task.
 2.  **Plan**: Use `set_plan` to outline your move.
 3.  **Execute**: Modify code.
 4.  **Verify**: Run tests.
+    -   **Agent OS Verification**: Always execute Agent OS practical tests in the end of a session as an additional test layer (never skip this final step if changes in the code were implemented). The Agent OS is designed to see how agents behave in practice when using Khala memory. It is necessary not only to run, but also to evaluate test results.
 5.  **Record**: Update `docs/04-changelog.md`. Mark task complete in `docs/02-tasks.md`.
 6.  **Submit**: Commit with semantic message.
 
