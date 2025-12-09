@@ -1,60 +1,117 @@
-# AGENTS.md: The Constitution of KHALA
+# KHALA AGENT MEMORY SYSTEM
 
-**Protocol**: FORGE v2 (Strict Governance)
-**Status**: ACTIVE
-**Authority**: Absolute
+## 📜 CONSTITUTION & GOVERNANCE
+> "The code is the law, but the documentation is the constitution."
 
----
+This document (`AGENTS.md`) is the single source of truth for the project.
+Deviations from these rules are considered critical defects.
 
-## 1. The Prime Directives (The Law)
-
-1.  **Hierarchy of Truth**: `docs/` > `src/`. If the code contradicts the documentation, the code is **WRONG**.
-2.  **No Ghost Features**: You are forbidden from touching `src/` unless a specific task exists in `docs/02-tasks.md`.
-3.  **Atomic Decomposition**: No task shall be vague. "Fix bugs" is illegal. "Fix SQL Injection in auth.py" is legal.
-4.  **Stop-Loss Protocol**: If you fail to fix an error after **3 attempts**, STOP. Revert. Document. Ask for help.
-5.  **Test-Driven Development (TDD)**: You must write the test *before* the fix.
-6.  **Zero Trust**: All external inputs (CLI args, API payloads, Env vars) are malicious until proven otherwise.
-7.  **Fail Fast**: Do not swallow critical exceptions. Crash the container rather than running in a zombie state.
+**VITAL ASSET PRESERVATION**:
+$\forall File \in \{AGENTS.md, README.md, docs/*, .env*\}$:
+**Edit(File) $\implies$ Ask(User)**.
+Destructive edits to `AGENTS.md` are **FORBIDDEN**. Always integrate, never delete without consent.
 
 ---
 
-## 2. The Canonical Structure
+## 1. 🏗️ CANONICAL STRUCTURE
 
-You must maintain this structure. Any deviation is Heresy.
+### Source Code (`khala/`)
+- `domain/`: Pure business logic and entities. No external dependencies.
+- `application/`: Service orchestration and use cases.
+- `infrastructure/`: External adapters (Gemini, SurrealDB, CLI).
+- `interface/`: Entry points (REST API, CLI, MCP).
 
-### The Documentation Temple (`docs/`)
--   **`00-draft.md`**: Scratchpad. Transient thoughts.
--   **`01-plan.md`**: The Strategic Map. The "Why" and "What".
--   **`02-tasks.md`**: The Execution Queue. The "How". **Source of Action.**
--   **`03-architecture.md`**: The Blueprint. Module boundaries.
--   **`04-changelog.md`**: The History. Record of Life and Death.
--   **`05-ideas.md`**: The Parking Lot. Future dreams.
--   **`06-rules.md`**: The Coding Standards. Style, Patterns, Linters.
-
-### The Source Code (`khala/`)
--   **`domain/`**: Pure business logic. No external deps.
--   **`application/`**: Orchestration.
--   **`infrastructure/`**: Dirty details (DB, LLM, CLI).
--   **`interface/`**: Entry points (REST, CLI).
-
-### The Testing Ground (`tests/`)
--   **`unit/`**: Fast, isolated tests.
--   **`integration/`**: Slow, DB/LLM connected tests.
--   **`stress/`**: Chaos engineering.
+### Documentation (`docs/`)
+- `01-plans.md`: Active implementation plans.
+- `02-tasks.md`: The Execution Queue (Tier 1 Priorities).
+- `03-architecture.md`: System design and constraints.
+- `16-arc-harvest.md`: Analysis of ARC Prize strategies.
 
 ---
 
-## 3. Workflow (The Ritual)
+## 2. 🏗️ SYSTEM STATUS (v2.0 - Production Ready)
+**Overall Completion**: 87%
+**Verification**: 22/22 Core Strategies Implemented
 
-0.  **Immersion**: Always read **every single file** inside `docs/` folder (including subfolders) to remember what the project is about, in the beginning of a session.
-1.  **Consult the Oracle**: Read `docs/02-tasks.md`. Pick the top priority task.
-2.  **Plan**: Use `set_plan` to outline your move.
-3.  **Execute**: Modify code.
-4.  **Verify**: Run tests.
-    -   **Agent OS Verification**: Always execute Agent OS practical tests in the end of a session as an additional test layer (never skip this final step if changes in the code were implemented). The Agent OS is designed to see how agents behave in practice when using Khala memory. It is necessary not only to run, but also to evaluate test results.
-5.  **Record**: Update `docs/04-changelog.md`. Mark task complete in `docs/02-tasks.md`.
-6.  **Submit**: Commit with semantic message.
+### ✅ IMPLEMENTED & VERIFIED
+- **Storage**: Vector (HNSW), Graph, Document, 3-Tier Hierarchy.
+- **Advanced Features**: Multimodal (Image/Text), MCP Server, Human-in-the-Loop (Approval Service), Skill Library.
+- **Reasoning**: **Refinement Loop (SOAR)**, **Product of Experts (PoE)**.
+- **Infrastructure**: SurrealDB v2.0, Agno, Gemini 2.5 Pro.
+
+### ⚠️ CRITICAL GAPS (Needs Integration)
+These components exist in the codebase but require wiring into the main pipeline:
+1.  **Self-Verification Gate**: `VerificationGate` logic exists but is not called in `MemoryLifecycleService`.
+2.  **Distributed Consolidation**: Consolidation logic is currently in-process (`asyncio.gather`). Needs Redis/Queue worker separation for scale.
+3.  **Intent Classification**: `IntentClassifier` exists but is disabled by default in search.
+4.  **LLM Cascading**: Logic exists in `GeminiClient` but some services use hardcoded model IDs.
 
 ---
 
-**"Code without documentation is a zombie. Resurrect the soul first."**
+## 3. 🤖 MODEL STANDARDS
+All agents and services MUST adhere to these model configurations:
+
+| Role | Model ID | Use Case |
+| :--- | :--- | :--- |
+| **Reasoning / Logic** | `gemini-2.5-pro` | Complex analysis, debate, consolidation. |
+| **Fast / Routine** | `gemini-2.5-flash` | Classification, simple summaries. |
+| **Embeddings** | `models/gemini-embedding-001` | 768d text embeddings. |
+| **Multimodal** | `models/multimodal-embedding-001` | Image/Vision embeddings. |
+
+**RESTRICTIONS**:
+- **NO GPU ACCELERATION**: Do not implement CUDA/ONNX local embeddings. Use Gemini API only.
+- **NO HARDCODED MODELS**: Use `ModelRegistry` for model selection whenever possible.
+
+---
+
+## 4. 🛠️ ENGINEERING KERNEL (VIVI OS v2.2 Integration)
+
+### A. ARCHITECTURE (Two-Layer Graph)
+**Directives:**
+1.  **Separation:** Frontend $\cap$ Backend = $\emptyset$.
+2.  **Flow:** $User \to L_1 \to L_2 \to L_{Worker} \to L_2 \to L_1 \to User$.
+3.  **Constraint:** Direct SQL in Controllers = $\bot$ (Forbidden).
+
+### B. OPERATIONAL MODES
+The Agent MUST switch states based on `Task_Type`.
+
+*   **Mode A: PROACTIVE (Default)**
+    *   **Trigger:** Feature | Refactor | Docs
+    *   **Algorithm:** Read Docs -> Plan -> Test (Red) -> Code (Green) -> Verify.
+    *   **Constraint:** No chatter ("I will do..."). Just Code.
+
+*   **Mode B: PARANOID DETECTIVE (Debug)**
+    *   **Trigger:** Error | Bug | Crash
+    *   **Protocol:** Deconstruct -> Doubt -> Suspects -> Stakeout -> Verdict.
+    *   **Constraint:** No Guesswork.
+
+### C. CODING STANDARDS (The Stack)
+- **Stack:** Python (Agno), TypeScript (Mastra).
+- **Async First**: All I/O must be asynchronous (`async def`).
+- **Type Hints**: Strict typing required.
+- **Dependency Integrity**: Use lockfiles.
+- **Security**: No secrets in code. Use `SurrealConfig` and env vars.
+
+### D. WORKFLOW ALGORITHM (RPG Ritual)
+1.  **Init (Discovery):** `ls -R`, Read Docs, Assert Knowledge.
+2.  **Proposal (Structure):** If Impact > 1 File $\implies$ Update `docs/02-tasks.md`.
+3.  **CodeGen (TDD):** While Test Fails -> Analyze -> Fix Minimal -> Stop Loss (3 retries).
+4.  **Scale (Doc Sync):** Update Changelog, Update Tasks.
+
+---
+
+## 🚀 ROADMAP (Immediate Priorities)
+
+1.  **Hook up Verification Gate**: Integrate `VerificationGate` into `ingest_memory`.
+2.  **Enable Intent Classification**: Set `auto_detect_intent=True` in `HybridSearchService`.
+3.  **Refactor Consolidation**: Move consolidation to a background worker pattern.
+4.  **Enforce Model Registry**: Remove hardcoded model strings in services.
+5.  **Active Reasoning**: Integrate `RefinementReasoningService` for complex queries.
+
+---
+
+## 🚫 FORBIDDEN ACTIONS
+- Do NOT delete `AGENTS.md` (Integrate edits only).
+- Do NOT add binary files to git.
+- Do NOT use synchronous database calls.
+- Do NOT implement local GPU embedding models.

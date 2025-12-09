@@ -104,7 +104,7 @@ class ModelRegistry:
         "gemini-embedding-001": GeminiModel(
             name="Gemini Embedding 001",
             tier=ModelTier.FAST,
-            model_id="gemini-embedding-001",
+            model_id="models/gemini-embedding-001",
             cost_per_million_tokens=2.0,
             max_tokens=2048,
             supports_embeddings=True,
@@ -118,7 +118,7 @@ class ModelRegistry:
         "multimodal-embedding-001": GeminiModel(
             name="Gemini Multimodal Embedding 001",
             tier=ModelTier.FAST,
-            model_id="multimodal-embedding-001",
+            model_id="models/multimodal-embedding-001",
             cost_per_million_tokens=5.0,
             max_tokens=2048,
             supports_embeddings=True,
@@ -148,9 +148,7 @@ class ModelRegistry:
             if model.supports_embeddings and model.embedding_dimensions == dimensions:
                 return model
 
-        # Fallback logic: return any embedding model if exact dimension match fails?
-        # No, strictness is better. But for now, we default to the first one if dims not found?
-        # Safe default:
+        # Fallback to standard
         return cls.MODELS.get("gemini-embedding-001")
     
     @classmethod
