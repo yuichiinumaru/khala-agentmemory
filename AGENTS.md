@@ -6,9 +6,30 @@
 This document (`AGENTS.md`) is the single source of truth for the project.
 Deviations from these rules are considered critical defects.
 
+**VITAL ASSET PRESERVATION**:
+$\forall File \in \{AGENTS.md, README.md, docs/*, .env*\}$:
+**Edit(File) $\implies$ Ask(User)**.
+Destructive edits to `AGENTS.md` are **FORBIDDEN**. Always integrate, never delete without consent.
+
 ---
 
-## 🏗️ SYSTEM STATUS (v2.0 - Production Ready)
+## 1. 🏗️ CANONICAL STRUCTURE
+
+### Source Code (`khala/`)
+- `domain/`: Pure business logic and entities. No external dependencies.
+- `application/`: Service orchestration and use cases.
+- `infrastructure/`: External adapters (Gemini, SurrealDB, CLI).
+- `interface/`: Entry points (REST API, CLI, MCP).
+
+### Documentation (`docs/`)
+- `01-plans.md`: Active implementation plans.
+- `02-tasks.md`: The Execution Queue (Tier 1 Priorities).
+- `03-architecture.md`: System design and constraints.
+- `16-arc-harvest.md`: Analysis of ARC Prize strategies.
+
+---
+
+## 2. 🏗️ SYSTEM STATUS (v2.0 - Production Ready)
 **Overall Completion**: 87%
 **Verification**: 22/22 Core Strategies Implemented
 
@@ -27,7 +48,7 @@ These components exist in the codebase but require wiring into the main pipeline
 
 ---
 
-## 🤖 MODEL STANDARDS
+## 3. 🤖 MODEL STANDARDS
 All agents and services MUST adhere to these model configurations:
 
 | Role | Model ID | Use Case |
@@ -43,23 +64,39 @@ All agents and services MUST adhere to these model configurations:
 
 ---
 
-## 🛠️ PRIME DIRECTIVES
+## 4. 🛠️ ENGINEERING KERNEL (VIVI OS v2.2 Integration)
 
-### 1. FILE STRUCTURE
-- `khala/` is the root package.
-- `tests/` contains `unit`, `integration`, and `stress`.
-- `docs/` contains all documentation.
-- `scripts/` contains utility scripts.
+### A. ARCHITECTURE (Two-Layer Graph)
+**Directives:**
+1.  **Separation:** Frontend $\cap$ Backend = $\emptyset$.
+2.  **Flow:** $User \to L_1 \to L_2 \to L_{Worker} \to L_2 \to L_1 \to User$.
+3.  **Constraint:** Direct SQL in Controllers = $\bot$ (Forbidden).
 
-### 2. CODING STANDARDS
+### B. OPERATIONAL MODES
+The Agent MUST switch states based on `Task_Type`.
+
+*   **Mode A: PROACTIVE (Default)**
+    *   **Trigger:** Feature | Refactor | Docs
+    *   **Algorithm:** Read Docs -> Plan -> Test (Red) -> Code (Green) -> Verify.
+    *   **Constraint:** No chatter ("I will do..."). Just Code.
+
+*   **Mode B: PARANOID DETECTIVE (Debug)**
+    *   **Trigger:** Error | Bug | Crash
+    *   **Protocol:** Deconstruct -> Doubt -> Suspects -> Stakeout -> Verdict.
+    *   **Constraint:** No Guesswork.
+
+### C. CODING STANDARDS (The Stack)
+- **Stack:** Python (Agno), TypeScript (Mastra).
 - **Async First**: All I/O must be asynchronous (`async def`).
 - **Type Hints**: Strict typing required.
-- **Error Handling**: Fail loudly on critical errors (e.g., startup), handle gracefully in loops.
+- **Dependency Integrity**: Use lockfiles.
 - **Security**: No secrets in code. Use `SurrealConfig` and env vars.
 
-### 3. DOCUMENTATION
-- Update `docs/` when changing architecture.
-- Keep `AGENTS.md` updated with high-level status.
+### D. WORKFLOW ALGORITHM (RPG Ritual)
+1.  **Init (Discovery):** `ls -R`, Read Docs, Assert Knowledge.
+2.  **Proposal (Structure):** If Impact > 1 File $\implies$ Update `docs/02-tasks.md`.
+3.  **CodeGen (TDD):** While Test Fails -> Analyze -> Fix Minimal -> Stop Loss (3 retries).
+4.  **Scale (Doc Sync):** Update Changelog, Update Tasks.
 
 ---
 
@@ -74,7 +111,7 @@ All agents and services MUST adhere to these model configurations:
 ---
 
 ## 🚫 FORBIDDEN ACTIONS
-- Do NOT delete `AGENTS.md`.
+- Do NOT delete `AGENTS.md` (Integrate edits only).
 - Do NOT add binary files to git.
 - Do NOT use synchronous database calls.
 - Do NOT implement local GPU embedding models.
