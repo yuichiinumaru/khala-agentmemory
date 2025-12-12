@@ -170,6 +170,13 @@ class MemorySource:
     location: Optional[str] = None  # Specific location (e.g., line number, URL)
     timestamp: Optional[datetime] = None  # When the source was created/accessed
     confidence: float = 1.0  # Confidence in this source (0.0-1.0)
+
+    # Standard Source Types
+    USER_INPUT: Final[str] = "user_input"
+    DOCUMENT: Final[str] = "document"
+    WEB: Final[str] = "web"
+    SYSTEM: Final[str] = "system"
+    INFERENCE: Final[str] = "inference"
     
     def __post_init__(self) -> None:
         """Validate memory source."""
