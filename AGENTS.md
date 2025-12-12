@@ -61,6 +61,7 @@ All agents and services MUST adhere to these model configurations:
 **RESTRICTIONS**:
 - **NO GPU ACCELERATION**: Do not implement CUDA/ONNX local embeddings. Use Gemini API only.
 - **NO HARDCODED MODELS**: Use `ModelRegistry` for model selection whenever possible.
+- **NO DEPRECATED LIBS**: Never, under ABSOLUTE ANY circunstance, use the **deprecated** lib `google-generativeai` - instead, use ALWAYS `google-genai`.
 
 ---
 

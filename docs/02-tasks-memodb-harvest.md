@@ -19,11 +19,11 @@
 
 ## Phase 3: Planning Upgrade (Iterative Planner)
 
-- [ ] **3. Implement `KhalaPlanner`** (Medium Impact / Medium Effort)
-    - [ ] Create `tests/unit/application/services/test_khala_planner.py` testing the loop logic and step parsing.
-    - [ ] Create `khala/application/services/planning_utils.py` with `parse_step` logic (regex/json parsing adapted from `nano-manus`).
-    - [ ] Refactor `PlanningService` to support iterative execution (Loop: Plan -> Execute -> Refine).
-    - [ ] Define `Worker` interface and implement `AgnoToolWorker` adapter.
+- [x] **3. Implement `KhalaPlanner`** (Medium Impact / Medium Effort)
+    - [x] Create `tests/unit/application/services/test_khala_planner.py` testing the loop logic and step parsing.
+    - [x] Create `khala/application/services/planning_utils.py` with `parse_step` logic (regex/json parsing adapted from `nano-manus`).
+    - [x] Refactor `PlanningService` to support iterative execution (Loop: Plan -> Execute -> Refine).
+    - [x] Define `Worker` interface and implement `AgnoToolWorker` adapter.
 
 ## Phase 4: Developer Experience (SDK)
 
