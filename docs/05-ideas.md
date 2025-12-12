@@ -70,3 +70,7 @@ We will not replace Agno/SurrealDB but enhance the *policies* governing them.
 2.  **Pipeline Update**: Calculate `surprise_score` during ingestion.
 3.  **Job Upgrade**: Implement `retention_weight` decay in background jobs.
 4.  **Graph Logic**: Implement `derives_into` relationships for summarization.
+Strategy 171: Adaptive Graph Evolution (AutoGraph)
+Strategy 172: Adaptive Query Routing (Router)
+Strategy 173: Self-Challenging Memory Retrieval
+Strategy 174: Feedback-Driven Search Tuning

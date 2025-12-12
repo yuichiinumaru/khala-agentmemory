@@ -1,6 +1,6 @@
 # KHALA v2.0 - ROADMAP & GAP ANALYSIS
 
-**Last Updated**: December 2025
+**Last Updated**: May 2025
 **Status**: Production Ready (85%) - Phase 3.2 "Surgical Intervention"
 
 ---
@@ -27,6 +27,27 @@
 - **Status**: `GeminiClient` supports cascading.
 - **Gap**: Many services (e.g., `MultimodalService`) hardcode strings like "gemini-2.0-flash".
 - **Action**: Refactor all services to use `ModelRegistry` constants.
+
+---
+
+## 🧬 MODULE 14: ADAPTATION & EVOLUTION (New Harvest)
+*Strategies harvested from "Awesome Adaptation of Agentic AI".*
+
+### 1. Self-Challenging Memory Retrieval (Strategy 173)
+- **Concept**: Verify retrieved memories against query intent before returning.
+- **Action**: Implement `SelfChallengingService`.
+
+### 2. Feedback-Driven Search Tuning (Strategy 174)
+- **Concept**: Dynamically tune `alpha` and `top_k` based on agent feedback.
+- **Action**: Implement `AdaptiveSearchTuner`.
+
+### 3. Adaptive Query Routing (Strategy 172)
+- **Concept**: Route queries to appropriate engines (Vector vs Graph vs Web) based on complexity.
+- **Action**: Implement `QueryRouter` (Agent-based).
+
+### 4. Adaptive Graph Evolution (Strategy 171)
+- **Concept**: Repair graph structure based on retrieval failures.
+- **Action**: Extend `IndexRepairService` with `GraphArchitect` logic.
 
 ---
 
