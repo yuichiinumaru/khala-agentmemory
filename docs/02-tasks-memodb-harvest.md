@@ -10,12 +10,12 @@
 
 ## Phase 2: Reasoning Engine (Cognitive Flow)
 
-- [ ] **2. Implement `CognitiveCycleEngine`** (High Impact / High Effort)
-    - [ ] Create `tests/unit/application/orchestration/test_cognitive_engine.py` verifying DAG execution and event triggering.
-    - [ ] Create `khala/application/orchestration/cognitive_engine.py`.
-    - [ ] Port `EventEngineCls` logic from `drive-flow`, renaming to `CognitiveEngine`.
-    - [ ] Implement `SurrealDBEventBroker` to persist critical events to the database (using `SurrealDBClient`).
-    - [ ] Integrate with `AuditRepository` for trace logging.
+- [x] **2. Implement `CognitiveCycleEngine`** (High Impact / High Effort)
+    - [x] Create `tests/unit/application/orchestration/test_cognitive_engine.py` verifying DAG execution and event triggering.
+    - [x] Create `khala/application/orchestration/cognitive_engine.py`.
+    - [x] Port `EventEngineCls` logic from `drive-flow`, renaming to `CognitiveEngine`.
+    - [x] Implement `SurrealDBEventBroker` to persist critical events to the database (using `SurrealDBClient`).
+    - [x] Integrate with `AuditRepository` for trace logging.
 
 ## Phase 3: Planning Upgrade (Iterative Planner)
 
