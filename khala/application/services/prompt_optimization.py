@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import random
 
 from khala.domain.prompt.entities import PromptCandidate, PromptEvaluation
+from khala.domain.prompt.utils import System, User, Assistant, PromptString
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 from khala.infrastructure.gemini.client import GeminiClient
 
@@ -127,25 +128,41 @@ class PromptOptimizationService:
     ) -> tuple[str, List[str]]:
         """Use LLM to generate a mutated prompt from two parents."""
 
-        prompt = f"""
-        You are an expert Prompt Engineer optimizing prompts for an AI agent.
+        # Construct prompt using PromptString
+        sys_msg = System("You are an expert Prompt Engineer optimizing prompts for an AI agent.")
 
-        Parent Prompt 1 (Score: {parent1.fitness_score}):
-        "{parent1.prompt_text}"
+        user_content = PromptString("""
+        Parent Prompt 1 (Score: {score1}):
+        "{prompt1}"
 
-        Parent Prompt 2 (Score: {parent2.fitness_score}):
-        "{parent2.prompt_text}"
+        Parent Prompt 2 (Score: {score2}):
+        "{prompt2}"
 
         Task: Create a new, improved prompt that combines the strengths of both parents and introduces a variation (mutation) to potentially improve performance.
         The new prompt should be clear, concise, and directive.
 
         Output ONLY the new prompt text.
-        """
+        """).format(
+            score1=parent1.fitness_score,
+            prompt1=parent1.prompt_text,
+            score2=parent2.fitness_score,
+            prompt2=parent2.prompt_text
+        )
+
+        full_prompt = (sys_msg / User(user_content)).messages()
 
         try:
             # We use FAST model for this internal optimization loop
+            # Note: generate_content usually takes string, need to check if it accepts messages or we convert back to string
+            # GeminiClient.generate_content signature: (prompt: str | list[str], ...)
+            # We will use string representation for now as the client expects it.
+            # In future, GeminiClient should support message lists directly or we use generate_text which might.
+
+            # For now, converting back to string format compatible with current client
+            prompt_str = f"{sys_msg}\n\n{user_content}"
+
             response = await self.gemini_client.generate_content(
-                prompt,
+                prompt_str,
                 model_tier="FAST"
             )
             new_prompt = response.text.strip()

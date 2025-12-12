@@ -2,11 +2,11 @@
 
 ## Phase 1: Foundation (Prompting & Utils)
 
-- [ ] **1. Implement `PromptString` Utility** (High Impact / Low Effort)
-    - [ ] Create `tests/unit/domain/prompt/test_prompt_string.py` covering concatenation, role handling, and formatting.
-    - [ ] Create `khala/domain/prompt/utils.py` and implement `PromptString`, `PromptChain` classes (ported from `prompt-string`).
-    - [ ] Add `System`, `User`, `Assistant` helper shortcuts.
-    - [ ] Refactor `PromptOptimizationService` (`khala/application/services/prompt_optimization.py`) to use `PromptString`.
+- [x] **1. Implement `PromptString` Utility** (High Impact / Low Effort)
+    - [x] Create `tests/unit/domain/prompt/test_prompt_string.py` covering concatenation, role handling, and formatting.
+    - [x] Create `khala/domain/prompt/utils.py` and implement `PromptString`, `PromptChain` classes (ported from `prompt-string`).
+    - [x] Add `System`, `User`, `Assistant` helper shortcuts.
+    - [x] Refactor `PromptOptimizationService` (`khala/application/services/prompt_optimization.py`) to use `PromptString`.
 
 ## Phase 2: Reasoning Engine (Cognitive Flow)
 
