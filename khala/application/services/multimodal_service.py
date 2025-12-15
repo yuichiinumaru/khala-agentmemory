@@ -9,6 +9,7 @@ from khala.domain.memory.value_objects import EmbeddingVector
 from khala.domain.memory.repository import MemoryRepository
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.surrealdb.client import SurrealDBClient
+from khala.infrastructure.gemini.models import GEMINI_MULTIMODAL_EMBEDDING, GEMINI_PRO_2_5
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ class MultimodalService:
                 "mime_type": mime_type,
                 "size_bytes": len(image_data),
                 "entities_detected": entities,
-                "analysis_model": analysis.get("model", "gemini-2.5-pro"),
+                "analysis_model": analysis.get("model", GEMINI_PRO_2_5),
                 **(metadata or {})
             }
 
@@ -82,7 +83,7 @@ class MultimodalService:
                 importance=ImportanceScore(0.8), # Images are usually important
                 metadata=image_metadata,
                 tags=["image", "multimodal"] + [e['name'] for e in entities if 'name' in e],
-                embedding_visual=EmbeddingVector(values=visual_embedding, model="multimodal-embedding-001") if visual_embedding else None
+                embedding_visual=EmbeddingVector(values=visual_embedding, model=GEMINI_MULTIMODAL_EMBEDDING) if visual_embedding else None
             )
 
             # 3. Save Memory
@@ -123,7 +124,7 @@ class MultimodalService:
             # Using asyncio.to_thread for blocking SDK call
             result = await asyncio.to_thread(
                 genai.embed_content,
-                model="models/multimodal-embedding-001",
+                model=GEMINI_MULTIMODAL_EMBEDDING,
                 content=query_text,
                 task_type="retrieval_query",
                 request_options={"timeout": 30}
@@ -238,7 +239,7 @@ class MultimodalService:
             # for 'models/multimodal-embedding-001' or similar
             result = await asyncio.to_thread(
                 genai.embed_content,
-                model="models/multimodal-embedding-001",
+                model=GEMINI_MULTIMODAL_EMBEDDING,
                 content=blob,
                 task_type="retrieval_document"
             )
