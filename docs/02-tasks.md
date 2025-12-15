@@ -10,22 +10,22 @@
 *Objective: Ensure the system is secure, reliable, and uses the correct infrastructure.*
 
 ### 1.1. Self-Verification Gate
-- [ ] **Task**: Enforce quality control on memory ingestion.
-    - [ ] **Subtask**: Integrate `VerificationGate.verify_memory()` into `MemoryLifecycleService.ingest_memory`.
-    - [ ] **Subtask**: Define rejection logic (e.g., if Score < 0.7, route to `trash_can` table).
-    - [ ] **Subtask**: Add unit tests for rejection scenarios.
+- [x] **Task**: Enforce quality control on memory ingestion.
+    - [x] **Subtask**: Integrate `VerificationGate.verify_memory()` into `MemoryLifecycleService.ingest_memory`.
+    - [x] **Subtask**: Define rejection logic (e.g., if Score < 0.7, route to `trash_can` table).
+    - [x] **Subtask**: Add unit tests for rejection scenarios.
 
 ### 1.2. Intent Classification (Gemini)
-- [ ] **Task**: Enable smart routing for search.
-    - [ ] **Subtask**: Refactor `HybridSearchService` to default `auto_detect_intent=True`.
-    - [ ] **Subtask**: Enhance `IntentClassifier` to support `Fact` vs `Concept` vs `Meta` intents.
-    - [ ] **Subtask**: Update routing logic: `Fact` -> BM25, `Concept` -> Vector.
+- [x] **Task**: Enable smart routing for search.
+    - [x] **Subtask**: Refactor `HybridSearchService` to default `auto_detect_intent=True`.
+    - [x] **Subtask**: Enhance `IntentClassifier` to support `Fact` vs `Concept` vs `Meta` intents.
+    - [x] **Subtask**: Update routing logic: `Fact` -> BM25, `Concept` -> Vector.
 
 ### 1.3. Model Registry (Codebase)
-- [ ] **Task**: Eliminate hardcoded model strings.
-    - [ ] **Subtask**: Create `khala/infrastructure/gemini/models.py` (Registry).
-    - [ ] **Subtask**: Define constants: `GEMINI_PRO`, `GEMINI_FLASH`, `EMBEDDING_V1`.
-    - [ ] **Subtask**: Grep and replace all string literals in `khala/` with registry constants.
+- [x] **Task**: Eliminate hardcoded model strings.
+    - [x] **Subtask**: Create `khala/infrastructure/gemini/models.py` (Registry).
+    - [x] **Subtask**: Define constants: `GEMINI_PRO`, `GEMINI_FLASH`, `EMBEDDING_V1`.
+    - [x] **Subtask**: Grep and replace all string literals in `khala/` with registry constants.
 
 ### 1.4. Distributed Consolidation (Surreal/Async)
 - [ ] **Task**: Move consolidation out of the request loop.
@@ -39,24 +39,24 @@
 *Objective: Upgrade the Cognitive Engine and Planner.*
 
 ### 2.1. PromptString Implementation
-- [ ] **Task**: Object-Oriented Prompting.
-    - [ ] **Subtask**: Port `PromptString` class to `khala/domain/prompt/`.
-    - [ ] **Subtask**: Implement `User`, `System`, `Assistant` wrappers.
-    - [ ] **Subtask**: Refactor `PromptOptimizationService` to use the new class.
+- [x] **Task**: Object-Oriented Prompting.
+    - [x] **Subtask**: Port `PromptString` class to `khala/domain/prompt/`.
+    - [x] **Subtask**: Implement `User`, `System`, `Assistant` wrappers.
+    - [x] **Subtask**: Refactor `PromptOptimizationService` to use the new class.
 
 ### 2.2. Cognitive Cycle Engine
-- [ ] **Task**: Event-Driven Reasoning DAG.
-    - [ ] **Subtask**: Create `khala/application/orchestration/cognitive_engine.py`.
-    - [ ] **Subtask**: Implement `CognitiveEngine` class (Adapter of `drive-flow`).
-    - [ ] **Subtask**: Implement `SurrealDBEventBroker` for persistence.
-    - [ ] **Subtask**: Create DAG for "Standard RAG" (Search -> Reason -> Answer).
+- [x] **Task**: Event-Driven Reasoning DAG.
+    - [x] **Subtask**: Create `khala/application/orchestration/cognitive_engine.py`.
+    - [x] **Subtask**: Implement `CognitiveEngine` class (Adapter of `drive-flow`).
+    - [x] **Subtask**: Implement `SurrealDBEventBroker` for persistence.
+    - [x] **Subtask**: Create DAG for "Standard RAG" (Search -> Reason -> Answer).
 
 ### 2.3. Khala Planner (Iterative)
-- [ ] **Task**: Loop-based planning.
-    - [ ] **Subtask**: Create `khala/application/services/khala_planner.py`.
-    - [ ] **Subtask**: Implement `parse_step` logic (Regex for Step/Thought/Action).
-    - [ ] **Subtask**: Implement `while not done:` loop with max steps.
-    - [ ] **Subtask**: Integrate `AgnoToolWorker` adapter.
+- [x] **Task**: Loop-based planning.
+    - [x] **Subtask**: Create `khala/application/services/khala_planner.py`.
+    - [x] **Subtask**: Implement `parse_step` logic (Regex for Step/Thought/Action).
+    - [x] **Subtask**: Implement `while not done:` loop with max steps.
+    - [x] **Subtask**: Integrate `AgnoToolWorker` adapter.
 
 ---
 
@@ -64,14 +64,14 @@
 *Objective: Make the system "Think" and "Adapt".*
 
 ### 3.1. Self-Challenging Retrieval (Strategy 173)
-- [ ] **Task**: Verify memories before use.
-    - [ ] **Subtask**: Create `SelfChallengingService`.
-    - [ ] **Subtask**: Implement `challenge_memory(query, memory) -> bool` using Gemini.
+- [x] **Task**: Verify memories before use.
+    - [x] **Subtask**: Create `SelfChallengingService`.
+    - [x] **Subtask**: Implement `challenge_memory(query, memory) -> bool` using Gemini.
     - [ ] **Subtask**: Integrate into `HybridSearchService`.
 
 ### 3.2. Adaptive Query Router (Strategy 172)
-- [ ] **Task**: Route based on complexity.
-    - [ ] **Subtask**: Implement `QueryRouter` agent (Gemini Flash).
+- [x] **Task**: Route based on complexity.
+    - [x] **Subtask**: Implement `QueryRouter` agent (Gemini Flash).
     - [ ] **Subtask**: Define routing table (Fact/Concept/Reasoning).
     - [ ] **Subtask**: Integrate into `CognitiveEngine`.
 
