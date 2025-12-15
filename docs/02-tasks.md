@@ -51,6 +51,27 @@
 
 ---
 
+## 📚 MODULE 15: WISDOM HARVEST (Dec 2025)
+*Strategies harvested from 385+ arXiv papers (GhostEI, O-Mem, ReflexGrad).*
+
+### 1. Visual Injection Defense (GhostEI)
+- **Concept**: Sanitize visual inputs to prevent "Environmental Injection".
+- **Action**: Implement `VisualSanitizer` in `MultimodalService`.
+
+### 2. Attention Monitor (Security)
+- **Concept**: Detect suspicious attention patterns in LLM response generation.
+- **Action**: Add monitoring hooks to `GeminiClient`.
+
+### 3. Entropy-Based Consolidation (O-Mem)
+- **Concept**: Trigger consolidation based on information entropy, not just time.
+- **Action**: Update `MemoryLifecycleService.check_consolidation_triggers()`.
+
+### 4. Self-Correction Loop (ReflexGrad)
+- **Concept**: Agents must critique their own plans before execution.
+- **Action**: Add `CriticService` to the planning loop.
+
+---
+
 ## ✅ TIER 2: VALIDATED FEATURES (Implemented)
 *These features were flagged as missing in external audits but ARE implemented.*
 
