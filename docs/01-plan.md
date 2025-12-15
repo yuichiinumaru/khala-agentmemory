@@ -36,7 +36,13 @@ Systematic elimination of fragility. Fix critical security holes, data corruptio
 -   [ ] **Data Integrity Fixes**: SurrealDB Client.
 -   [ ] **Reliability Fixes**: Gemini Client, Lifecycle Service.
 
-### Phase 3.3: Advanced Features (Deferred)
+### Phase 3.3: Wisdom Ingestion (The Harvest)
+-   [ ] **Security Hardening**: Implement "Attention-based" defenses against injection (GhostEI).
+-   [ ] **Memory Architecture**: Adopt "Entropy-Based" consolidation (O-Mem).
+-   [ ] **Agent Evolution**: Enable "Self-Correction" loops (ReflexGrad).
+-   See `docs/18-wisdom-ingestion.md` for details.
+
+### Phase 3.4: Advanced Features (Deferred)
 -   Module 15 (Version Control).
 -   Optimization Strategies.
 
