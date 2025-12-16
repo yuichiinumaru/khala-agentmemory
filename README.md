@@ -21,8 +21,8 @@ You must construct additional Pylons before initialization.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/khala.git
-cd khala
+git clone https://github.com/yuichiinumaru/khala-agentmemory.git
+cd khala-agentmemory
 
 # Install dependencies (Editable mode)
 pip install -e .
