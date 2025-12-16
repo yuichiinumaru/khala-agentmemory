@@ -1,16 +1,21 @@
 import React from 'react';
 import { GlassCard } from '../ui/GlassCard';
-import { GraphData } from '../../types';
 import { Cpu } from 'lucide-react';
+import { GraphVizAPI } from '../../hooks/useGraphApplication';
 
 interface NodeInspectorProps {
   selectedNode: string;
-  graphData: GraphData;
+  graphApi: GraphVizAPI | null;
   onAskOracle: () => void;
 }
 
-export const NodeInspector: React.FC<NodeInspectorProps> = ({ selectedNode, graphData, onAskOracle }) => {
-  const node = graphData.nodes.find(n => n.id === selectedNode);
+export const NodeInspector: React.FC<NodeInspectorProps> = ({ selectedNode, graphApi, onAskOracle }) => {
+  const rawGraph = graphApi?.getRawGraph();
+  // rawGraph is a graphology instance, attributes accessed via getNodeAttributes
+  const node = rawGraph && rawGraph.hasNode(selectedNode)
+    ? { id: selectedNode, ...rawGraph.getNodeAttributes(selectedNode) }
+    : null;
+
   if (!node) return null;
 
   return (

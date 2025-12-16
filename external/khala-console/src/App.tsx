@@ -7,11 +7,12 @@ import { Header } from './components/layout/Header';
 import { HudControls } from './components/layout/HudControls';
 import { NodeInspector } from './components/layout/NodeInspector';
 import { Stats } from './components/layout/Stats';
+import { SurrealProvider } from './hooks/useSurreal';
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const {
-    graphData,
+    stats,
     currentLayout,
     searchQuery,
     selectedNode,
@@ -57,21 +58,20 @@ const App: React.FC = () => {
       {/* GraphCanvas is now always rendered to ensure the ref is available for the hook */}
       <GraphCanvas ref={containerRef} />
 
-      {(!isReady || !graphData) ? (
+      {!isReady ? (
         <div className="absolute inset-0 z-20 bg-obsidian w-screen h-screen flex items-center justify-center text-neon-blue font-mono animate-pulse">
-          CONNECTING_TO_MAINFRAME...
+          CONNECTING_TO_KHALA...
         </div>
       ) : (
         <>
           <Header searchQuery={searchQuery} onSearchChange={setSearchQuery} />
-          <Stats graphData={graphData} />
+          <Stats stats={stats} />
           <HudControls
             currentLayout={currentLayout}
             onLayoutChange={setCurrentLayout}
             graphApi={api}
           />
           <GraphOracle
-            graphData={graphData}
             isOpen={isOracleOpen}
             onToggle={() => setIsOracleOpen(!isOracleOpen)}
             graphApi={api}
@@ -88,13 +88,21 @@ const App: React.FC = () => {
           {selectedNode && !isOracleOpen && !contextMenu && (
             <NodeInspector
               selectedNode={selectedNode}
-              graphData={graphData}
+              graphApi={api}
               onAskOracle={() => setIsOracleOpen(true)}
             />
           )}
         </>
       )}
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <SurrealProvider url="http://localhost:8000/rpc" ns="khala" db="memory">
+      <AppContent />
+    </SurrealProvider>
   );
 };
 
