@@ -10,6 +10,7 @@ from khala.domain.memory.repository import MemoryRepository
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.surrealdb.client import SurrealDBClient
 from khala.infrastructure.gemini.models import GEMINI_MULTIMODAL_EMBEDDING, GEMINI_PRO_2_5
+from khala.domain.interfaces.blob_storage import BlobStorage
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +21,13 @@ class MultimodalService:
         self,
         memory_repository: MemoryRepository,
         gemini_client: GeminiClient,
-        db_client: Optional[SurrealDBClient] = None
+        db_client: Optional[SurrealDBClient] = None,
+        blob_storage: Optional[BlobStorage] = None
     ):
         self.repository = memory_repository
         self.gemini_client = gemini_client
         self.db_client = db_client or SurrealDBClient()
+        self.blob_storage = blob_storage
 
     async def ingest_image(
         self,
@@ -51,6 +54,34 @@ class MultimodalService:
             The ID of the created memory.
         """
         try:
+            # 0. Upload to Blob Storage (if configured)
+            storage_uri = None
+            storage_provider = None
+            
+            if self.blob_storage:
+                try:
+                    # Determine naming convention
+                    # Convention: {tier}/{user_id}/{date}/{filename}
+                    # tier: 'chat' for user uploads, 'knowledge' for system/admin uploads
+                    
+                    is_system = user_id in ["system", "admin", "librarian"]
+                    tier_folder = "knowledge" if is_system else "chat"
+                    date_folder = datetime.now().strftime("%Y-%m-%d")
+                    
+                    # Original filename or generated one
+                    base_filename = metadata.get("filename", f"img_{int(datetime.now().timestamp())}.{mime_type.split('/')[-1]}")
+                    
+                    # Clean filename logic could go here
+                    
+                    full_path = f"{tier_folder}/{user_id}/{date_folder}/{base_filename}"
+                    
+                    storage_uri = await self.blob_storage.upload(image_data, full_path, content_type=mime_type)
+                    storage_provider = "minio" 
+                    logger.info(f"Uploaded image to blob storage: {storage_uri}")
+                except Exception as e:
+                    logger.error(f"Failed to upload to blob storage: {e}")
+                    # We continue even if upload fails, but omitting URI
+
             # 1. Analyze and Embed in parallel
             analysis_task = self._analyze_image(image_data, mime_type, context)
             embedding_task = self._generate_visual_embedding(image_data, mime_type)
@@ -73,6 +104,8 @@ class MultimodalService:
                 "size_bytes": len(image_data),
                 "entities_detected": entities,
                 "analysis_model": analysis.get("model", GEMINI_PRO_2_5),
+                "uri": storage_uri,
+                "storage_provider": storage_provider,
                 **(metadata or {})
             }
 

@@ -202,16 +202,20 @@ class SurrealDBClient:
     @asynccontextmanager
     async def transaction(self):
         """Execute a block within a database transaction (Strategy 65)."""
+        # TRANSACTION DISABLED DUE TO DRIVER INSTABILITY
+        # Verified: 'BEGIN TRANSACTION' causes valid results to be interpreted as errors by SDK
+        # Verified: 'CANCEL TRANSACTION' causes internal DB panic
+        # Falling back to auto-commit mode for stability.
         async with self.get_connection() as conn:
             try:
-                await conn.query("BEGIN TRANSACTION;")
+                # await conn.query("BEGIN TRANSACTION;")
                 yield conn
-                await conn.query("COMMIT TRANSACTION;")
+                # await conn.query("COMMIT TRANSACTION;")
             except Exception as e:
-                try:
-                    await conn.query("CANCEL TRANSACTION;")
-                except Exception:
-                    pass
+                # try:
+                #     await conn.query("CANCEL TRANSACTION;")
+                # except Exception:
+                #     pass
                 raise e
 
     def _parse_dt(self, dt_val: Any) -> datetime:

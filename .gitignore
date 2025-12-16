@@ -41,8 +41,7 @@ mcp-server/.env
 
 # Deployment Secrets (Explicit)
 deploy/.env.deploy
-deploy/appwrite/.env.dev
-deploy/appwrite/.env
+
 .env.deploy
 
 # Agent Artifacts
