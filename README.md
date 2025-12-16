@@ -1,6 +1,7 @@
 # KHALA: Knowledge Hierarchical Adaptive Long-term Agent
-The Shared Network Consciousness for Agents
-"From order, comes justice. From memory, comes strength."
+The Shared Consciousness Network for Agents
+
+*"From order, comes justice. From memory, comes strength."*
 
 **Version**: 2.1.0
 **Documentation**: [docs/](docs/)
