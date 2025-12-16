@@ -9,10 +9,12 @@ import { MemoryInspector, MemoryNode } from './components/MemoryInspector';
 import { TimelineScrubber } from './components/TimelineScrubber';
 import { Stats } from './components/layout/Stats';
 import { SurrealProvider } from './hooks/useSurreal';
+import { useDreamMode } from './hooks/useDreamMode';
 
 const AppContent: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [timelineTime, setTimelineTime] = React.useState(Date.now());
+  const isDreaming = useDreamMode(300000); // 5 minutes
   const {
     stats,
     currentLayout,
@@ -66,6 +68,14 @@ const AppContent: React.FC = () => {
         </div>
       ) : (
         <>
+          {isDreaming && (
+            <div className="absolute inset-0 z-50 pointer-events-none bg-black/80 flex items-center justify-center animate-pulse">
+                <div className="text-center">
+                    <h1 className="text-6xl font-mono text-neon-purple tracking-[0.5em] blur-sm opacity-80">DREAMING</h1>
+                    <p className="text-white/30 font-mono mt-4">System is consolidating memories...</p>
+                </div>
+            </div>
+          )}
           <Header searchQuery={searchQuery} onSearchChange={setSearchQuery} />
           <Stats stats={stats} />
           <HudControls

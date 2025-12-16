@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GlassCard } from './ui/GlassCard';
 import { ChatMessage } from '../types';
-import { queryGraphOracle } from '../services/geminiService';
+import { AnalystService } from '../services/AnalystService';
 import { summarizeViewport } from '../core/algorithms';
 import { Send, Bot, Loader2, Minimize2 } from 'lucide-react';
 import { GraphVizAPI } from '../hooks/useGraphApplication';
@@ -26,49 +26,8 @@ export const GraphOracle: React.FC<GraphOracleProps> = ({ isOpen, onToggle, grap
     }
   }, [messages]);
 
-  const executeAiCommands = (response: string) => {
-    if (!graphApi) return response;
-
-    const jsonRegex = /```json\s*(\{[\s\S]*?\})\s*```/;
-    const match = response.match(jsonRegex);
-
-    if (match && match[1]) {
-      try {
-        const command = JSON.parse(match[1]);
-        console.log("ORACLE COMMAND:", command);
-
-        switch (command.action) {
-          case 'FOCUS_NODE':
-            if (command.target) graphApi.focusNode(command.target);
-            break;
-          case 'FILTER_CLUSTER':
-            if (command.target) graphApi.filterCluster(command.target);
-            break;
-          case 'RESET_VIEW':
-            graphApi.resetView();
-            break;
-        }
-
-        return response.replace(jsonRegex, '').trim();
-      } catch (e) {
-        console.error("Failed to parse AI command", e);
-      }
-    }
-    return response;
-  };
-
   const handleSend = async () => {
     if (!input.trim() || isLoading || !graphApi) return;
-
-    const rawGraph = graphApi.getRawGraph();
-    if (!rawGraph) return;
-
-    // Derive graphData for AI context (expensive, but necessary for now)
-    // Ideally we pass a summary or handle this in backend
-    const derivedGraphData: any = {
-       nodes: rawGraph.nodes().map(n => ({ id: n, ...rawGraph.getNodeAttributes(n) })),
-       edges: rawGraph.edges().map(e => ({ id: e, ...rawGraph.getEdgeAttributes(e) }))
-    };
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
@@ -81,29 +40,53 @@ export const GraphOracle: React.FC<GraphOracleProps> = ({ isOpen, onToggle, grap
     setInput('');
     setIsLoading(true);
 
-    let viewportContext = "";
+    let viewportContext: any = {};
     if (graphApi && graphApi.getViewportState) {
       const { visibleNodes } = graphApi.getViewportState();
-      viewportContext = summarizeViewport(rawGraph, visibleNodes);
+      const rawGraph = graphApi.getRawGraph();
+      if (rawGraph) {
+          viewportContext = {
+              summary: summarizeViewport(rawGraph, visibleNodes),
+              visibleNodeIds: visibleNodes
+          };
+      }
     }
 
-    const rawResponse = await queryGraphOracle(
-      userMsg.content, 
-      derivedGraphData,
-      messages.map(m => ({ role: m.role, content: m.content })),
-      viewportContext
-    );
+    try {
+        const response = await AnalystService.explainGraph(
+          userMsg.content,
+          viewportContext
+        );
 
-    const cleanResponse = executeAiCommands(rawResponse);
+        // Execute Actions
+        if (response.suggested_actions && Array.isArray(response.suggested_actions)) {
+            response.suggested_actions.forEach((cmd: any) => {
+                console.log("Executing Action:", cmd);
+                if (cmd.action === 'FOCUS_NODE' && cmd.target) graphApi.focusNode(cmd.target);
+                if (cmd.action === 'FILTER_CLUSTER' && cmd.target) graphApi.filterCluster(cmd.target);
+                if (cmd.action === 'RESET_VIEW') graphApi.resetView();
+            });
+        }
 
-    const botMsg: ChatMessage = {
-      id: (Date.now() + 1).toString(),
-      role: 'model',
-      content: cleanResponse,
-      timestamp: Date.now()
-    };
+        const botMsg: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          content: response.explanation || "No explanation provided.",
+          timestamp: Date.now()
+        };
 
-    setMessages(prev => [...prev, botMsg]);
+        setMessages(prev => [...prev, botMsg]);
+    } catch (e) {
+        console.error(e);
+        const botMsg: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            role: 'model',
+            content: "Error: Unable to reach Analyst Agent. Is the backend running?",
+            timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, botMsg]);
+    }
+
     setIsLoading(false);
   };
 
