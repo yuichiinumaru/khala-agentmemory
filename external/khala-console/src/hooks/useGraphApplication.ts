@@ -1,10 +1,11 @@
-import { useEffect, useRef, MutableRefObject, useState, useCallback } from 'react';
+import { useEffect, useRef, MutableRefObject, useState } from 'react';
 import Graph from 'graphology';
 import { Sigma } from 'sigma';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import circular from 'graphology-layout/circular';
-import { GraphData, LayoutType } from '../types';
-import { db } from '../services/mockDatabase';
+import { LayoutType } from '../types';
+import { useSurreal } from './useSurreal';
+import { GraphService } from '../services/GraphService';
 
 export interface GraphVizAPI {
   focusNode: (nodeId: string) => void;
@@ -18,43 +19,29 @@ export interface GraphVizAPI {
 export const useGraphApplication = (
   containerRef: MutableRefObject<HTMLElement | null>
 ) => {
-  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const { client, status } = useSurreal();
   const [currentLayout, setCurrentLayout] = useState<LayoutType>(LayoutType.FORCE_ATLAS);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
   const [isOracleOpen, setIsOracleOpen] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [stats, setStats] = useState({ nodes: 0, edges: 0 });
 
   const sigmaRef = useRef<Sigma | null>(null);
   const graphRef = useRef<Graph | null>(null);
   const apiRef = useRef<GraphVizAPI | null>(null);
 
   useEffect(() => {
-    const loadData = async () => {
-      const data = await db.getAllData();
-      setGraphData(data);
-    };
-    loadData();
-  }, []);
+    if (!containerRef.current || status !== 'connected') return;
 
-  useEffect(() => {
-    if (!containerRef.current || !graphData) return;
-
+    // Cleanup previous instance
     if (sigmaRef.current) sigmaRef.current.kill();
 
     const graph = new Graph();
     graphRef.current = graph;
 
-    graphData.nodes.forEach(node => {
-      graph.addNode(node.id, { ...node, x: Math.random() * 1000, y: Math.random() * 1000 });
-    });
-    graphData.edges.forEach(edge => {
-      graph.addEdgeWithKey(edge.id, edge.source, edge.target, { ...edge });
-    });
-
-    forceAtlas2.assign(graph, { iterations: 50 });
-
+    // Initialize Sigma with empty graph (or loading state)
     const sigma = new Sigma(graph, containerRef.current, {
       renderEdgeLabels: false,
       allowInvalidContainer: true,
@@ -77,6 +64,8 @@ export const useGraphApplication = (
     });
 
     sigmaRef.current = sigma;
+
+    // Expose API
     apiRef.current = {
         focusNode: (nodeId: string) => {
             if (!graph.hasNode(nodeId)) return;
@@ -85,7 +74,8 @@ export const useGraphApplication = (
         },
         filterCluster: (clusterId: string) => {
             sigma.setSetting("nodeReducer", (node, data) => {
-                if (data.cluster === clusterId) return { ...data, highlighted: true };
+                // Assuming cluster is mapped to something or we use tier
+                if (data.tier === clusterId) return { ...data, highlighted: true };
                 return { ...data, hidden: true };
             });
             sigma.setSetting("edgeReducer", (edge, data) => ({ ...data, hidden: true }));
@@ -114,20 +104,41 @@ export const useGraphApplication = (
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `supernova-graph-${Date.now()}.json`;
+            a.download = `khala-graph-${Date.now()}.json`;
             a.click();
             URL.revokeObjectURL(url);
         }
     };
 
-    setIsReady(true);
+    // Load Data
+    let unsubscribe: () => void;
+
+    const init = async () => {
+        await GraphService.initializeGraph(client, graph);
+        setStats({ nodes: graph.order, edges: graph.size });
+
+        // Start layout after initial load
+        if (currentLayout === LayoutType.FORCE_ATLAS) {
+            forceAtlas2.assign(graph, { iterations: 50 });
+        }
+        setIsReady(true);
+
+        const unsub = await GraphService.subscribeToUpdates(client, graph, () => {
+             setStats({ nodes: graph.order, edges: graph.size });
+        });
+        unsubscribe = unsub;
+    };
+
+    init();
 
     return () => {
-      sigma.kill();
+      if (unsubscribe) unsubscribe();
+      if (sigmaRef.current) sigmaRef.current.kill();
       setIsReady(false);
     };
-  }, [graphData, containerRef]);
+  }, [containerRef, status, client]); // Re-run if connected status changes
 
+  // Layout updates
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph || !isReady) return;
@@ -151,11 +162,13 @@ export const useGraphApplication = (
         });
         break;
       case LayoutType.FORCE_ATLAS:
+        // ForceAtlas2 is usually iterative/continuous. assign runs it N times.
         forceAtlas2.assign(graph, { iterations: 50 });
         break;
     }
   }, [currentLayout, isReady]);
 
+  // Search updates
   useEffect(() => {
     const sigma = sigmaRef.current;
     const graph = graphRef.current;
@@ -167,7 +180,8 @@ export const useGraphApplication = (
     } else {
       const lowerQuery = searchQuery.toLowerCase();
       sigma.setSetting("nodeReducer", (node, data) => {
-        const matches = (data.label || "").toLowerCase().includes(lowerQuery);
+        const matches = (data.label || "").toLowerCase().includes(lowerQuery) ||
+                        (data.content || "").toLowerCase().includes(lowerQuery);
         return matches
           ? { ...data, highlighted: true, color: "#00f3ff", zIndex: 10 }
           : { ...data, color: "rgba(255,255,255,0.05)", label: "" };
@@ -180,7 +194,7 @@ export const useGraphApplication = (
   }, [searchQuery, isReady]);
 
   return {
-    graphData,
+    stats,
     currentLayout,
     searchQuery,
     selectedNode,
@@ -188,7 +202,6 @@ export const useGraphApplication = (
     isOracleOpen,
     isReady,
     api: apiRef.current,
-    setGraphData,
     setCurrentLayout,
     setSearchQuery,
     setSelectedNode,

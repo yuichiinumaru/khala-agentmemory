@@ -5,13 +5,16 @@ import { GraphOracle } from './components/GraphOracle';
 import { ContextMenu } from './components/ui/ContextMenu';
 import { Header } from './components/layout/Header';
 import { HudControls } from './components/layout/HudControls';
-import { NodeInspector } from './components/layout/NodeInspector';
+import { MemoryInspector, MemoryNode } from './components/MemoryInspector';
+import { TimelineScrubber } from './components/TimelineScrubber';
 import { Stats } from './components/layout/Stats';
+import { SurrealProvider } from './hooks/useSurreal';
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [timelineTime, setTimelineTime] = React.useState(Date.now());
   const {
-    graphData,
+    stats,
     currentLayout,
     searchQuery,
     selectedNode,
@@ -57,21 +60,20 @@ const App: React.FC = () => {
       {/* GraphCanvas is now always rendered to ensure the ref is available for the hook */}
       <GraphCanvas ref={containerRef} />
 
-      {(!isReady || !graphData) ? (
+      {!isReady ? (
         <div className="absolute inset-0 z-20 bg-obsidian w-screen h-screen flex items-center justify-center text-neon-blue font-mono animate-pulse">
-          CONNECTING_TO_MAINFRAME...
+          CONNECTING_TO_KHALA...
         </div>
       ) : (
         <>
           <Header searchQuery={searchQuery} onSearchChange={setSearchQuery} />
-          <Stats graphData={graphData} />
+          <Stats stats={stats} />
           <HudControls
             currentLayout={currentLayout}
             onLayoutChange={setCurrentLayout}
             graphApi={api}
           />
           <GraphOracle
-            graphData={graphData}
             isOpen={isOracleOpen}
             onToggle={() => setIsOracleOpen(!isOracleOpen)}
             graphApi={api}
@@ -85,16 +87,36 @@ const App: React.FC = () => {
               onAction={handleContextAction}
             />
           )}
+          <div className="absolute bottom-0 left-0 right-0 z-10 p-4">
+             <TimelineScrubber
+                startTime={Date.now() - 3600000}
+                endTime={Date.now()}
+                currentTime={timelineTime}
+                events={[]}
+                onChange={setTimelineTime}
+             />
+          </div>
+
           {selectedNode && !isOracleOpen && !contextMenu && (
-            <NodeInspector
-              selectedNode={selectedNode}
-              graphData={graphData}
-              onAskOracle={() => setIsOracleOpen(true)}
+            <MemoryInspector
+              node={
+                  api?.getRawGraph()?.hasNode(selectedNode)
+                  ? { id: selectedNode, ...api.getRawGraph()?.getNodeAttributes(selectedNode) } as MemoryNode
+                  : null
+              }
             />
           )}
         </>
       )}
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <SurrealProvider url="http://localhost:8000/rpc" ns="khala" db="memory">
+      <AppContent />
+    </SurrealProvider>
   );
 };
 

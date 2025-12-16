@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GlassCard } from './ui/GlassCard';
-import { ChatMessage, GraphData } from '../types';
+import { ChatMessage } from '../types';
 import { queryGraphOracle } from '../services/geminiService';
 import { summarizeViewport } from '../core/algorithms';
 import { Send, Bot, Loader2, Minimize2 } from 'lucide-react';
@@ -10,10 +10,9 @@ interface GraphOracleProps {
   isOpen: boolean;
   onToggle: () => void;
   graphApi: GraphVizAPI | null;
-  graphData: GraphData | null; // Can be null during initial load
 }
 
-export const GraphOracle: React.FC<GraphOracleProps> = ({ isOpen, onToggle, graphApi, graphData }) => {
+export const GraphOracle: React.FC<GraphOracleProps> = ({ isOpen, onToggle, graphApi }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: '0', role: 'model', content: 'Supernova Oracle Online. Systems Nominal. Analyzing network topology...', timestamp: Date.now() }
   ]);
@@ -59,7 +58,17 @@ export const GraphOracle: React.FC<GraphOracleProps> = ({ isOpen, onToggle, grap
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading || !graphData) return;
+    if (!input.trim() || isLoading || !graphApi) return;
+
+    const rawGraph = graphApi.getRawGraph();
+    if (!rawGraph) return;
+
+    // Derive graphData for AI context (expensive, but necessary for now)
+    // Ideally we pass a summary or handle this in backend
+    const derivedGraphData: any = {
+       nodes: rawGraph.nodes().map(n => ({ id: n, ...rawGraph.getNodeAttributes(n) })),
+       edges: rawGraph.edges().map(e => ({ id: e, ...rawGraph.getEdgeAttributes(e) }))
+    };
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
@@ -73,17 +82,14 @@ export const GraphOracle: React.FC<GraphOracleProps> = ({ isOpen, onToggle, grap
     setIsLoading(true);
 
     let viewportContext = "";
-    if (graphApi && graphApi.getViewportState && graphApi.getRawGraph) {
+    if (graphApi && graphApi.getViewportState) {
       const { visibleNodes } = graphApi.getViewportState();
-      const rawGraph = graphApi.getRawGraph();
-      if (rawGraph) {
-        viewportContext = summarizeViewport(rawGraph, visibleNodes);
-      }
+      viewportContext = summarizeViewport(rawGraph, visibleNodes);
     }
 
     const rawResponse = await queryGraphOracle(
       userMsg.content, 
-      graphData, 
+      derivedGraphData,
       messages.map(m => ({ role: m.role, content: m.content })),
       viewportContext
     );
