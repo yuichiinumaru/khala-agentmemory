@@ -23,6 +23,11 @@ from khala.application.services.privacy_safety_service import PrivacySafetyServi
 from khala.infrastructure.coordination.distributed_lock import SurrealDBLock
 from khala.infrastructure.gemini.client import GeminiClient
 from khala.infrastructure.gemini.models import ModelRegistry
+# Avoid circular import by using TYPE_CHECKING or local import if necessary
+# But for runtime, we need to import if we default it.
+# from khala.application.verification.verification_gate import VerificationGate
+from khala.infrastructure.persistence.job_repository import JobRepository
+from khala.domain.jobs.entities import Job
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +58,9 @@ class MemoryLifecycleService:
         consolidation_service: Optional[ConsolidationService] = None,
         conflict_resolution_service: Optional[ConflictResolutionService] = None,
         privacy_safety_service: Optional[PrivacySafetyService] = None,
-        significance_scorer: Optional[SignificanceScorer] = None
+        significance_scorer: Optional[SignificanceScorer] = None,
+        verification_gate: Optional[Any] = None, # Type as Any to avoid circular import issues
+        job_repository: Optional[JobRepository] = None
     ):
         self.repository = repository
         if not gemini_client:
@@ -68,8 +75,42 @@ class MemoryLifecycleService:
         self.privacy_safety_service = privacy_safety_service or PrivacySafetyService(self.gemini_client)
         self.significance_scorer = significance_scorer or SignificanceScorer(self.gemini_client)
 
-    async def ingest_memory(self, memory: Memory, check_privacy: bool = True) -> str:
-        """Ingest a new memory, performing auto-summarization and privacy checks."""
+        # Initialize Verification Gate
+        if verification_gate:
+            self.verification_gate = verification_gate
+        else:
+            from khala.application.verification.verification_gate import VerificationGate
+            self.verification_gate = VerificationGate(repository, gemini_client)
+
+        # Job Repository for Distributed Consolidation (Task 1.4)
+        if job_repository:
+            self.job_repository = job_repository
+        else:
+            # Best effort initialization if client available via repo
+            if hasattr(self.repository, 'client'):
+                self.job_repository = JobRepository(self.repository.client)
+            else:
+                self.job_repository = None
+
+    async def ingest_memory(self, memory: Memory, check_privacy: bool = True, check_quality: bool = True) -> str:
+        """Ingest a new memory, performing verification, auto-summarization and privacy checks."""
+
+        # Strategy 1.1: Self-Verification Gate
+        if check_quality and self.verification_gate:
+            try:
+                verification_result = await self.verification_gate.verify_memory(memory)
+                if not memory.metadata:
+                    memory.metadata = {}
+
+                memory.metadata["verification_status"] = verification_result.final_status
+                memory.metadata["verification_score"] = verification_result.final_score
+                if verification_result.errors:
+                    memory.metadata["verification_errors"] = verification_result.errors
+
+                if verification_result.final_status == "failed":
+                    logger.warning(f"Memory {memory.id} failed verification. Proceeding with flag.")
+            except Exception as e:
+                logger.error(f"Verification gate failed unexpectedly: {e}")
 
         # Strategy 132: Privacy-Preserving Sanitization
         if check_privacy and self.privacy_safety_service:
@@ -287,6 +328,18 @@ class MemoryLifecycleService:
 
         if should_run:
             logger.info(f"Consolidation triggered for user {user_id}. Reason: {reason}")
+
+            # Task 1.4: Distributed Consolidation
+            if self.job_repository:
+                try:
+                    job = Job(type="consolidation", payload={"user_id": user_id, "force": True, "reason": reason})
+                    job_id = await self.job_repository.create(job)
+                    logger.info(f"Consolidation job {job_id} queued.")
+                    return {"status": "queued", "job_id": job_id, "reason": reason}
+                except Exception as e:
+                    logger.error(f"Failed to queue consolidation job: {e}")
+                    # Fallback to inline
+
             consolidated = await self.consolidate_memories(user_id, force=True)
             return {"status": "executed", "consolidated_count": consolidated, "reason": reason}
 

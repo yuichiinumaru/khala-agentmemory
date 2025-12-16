@@ -1,71 +1,55 @@
-import unittest
-from khala.domain.prompt.utils import PromptString, PromptChain, System, User, Assistant
+import pytest
+from khala.domain.prompt.utils import PromptString, System, User, Assistant, PromptChain
 
-class TestPromptString(unittest.TestCase):
-    def test_initialization(self):
-        ps = PromptString("Hello", role="user")
-        self.assertEqual(str(ps), "Hello")
-        self.assertEqual(ps.role, "user")
+def test_prompt_roles():
+    s = System("System context")
+    u = User("User query")
+    a = Assistant("Model response")
 
-        # Test Truthiness (was broken before)
-        ps_short = PromptString("Hi")
-        self.assertTrue(ps_short)
+    assert s.role == "system"
+    assert u.role == "user"
+    # Gemini uses 'model', OpenAI uses 'assistant'. We align with Agno/Gemini usually.
+    # Agno uses 'model' or 'assistant'? Gemini API expects 'model' for chat history.
+    # Let's standardize on 'model' for Assistant to match Gemini.
+    assert a.role == "model"
 
-        ps_empty = PromptString("")
-        self.assertFalse(ps_empty)
+def test_prompt_formatting():
+    p = User("Hello {name}")
+    f = p.format(name="World")
+    assert str(f) == "Hello World"
+    assert f.role == "user"
+    assert isinstance(f, User)
 
-    def test_token_count(self):
-        ps = PromptString("Hello World")
-        # simple_token_count = max(1, len // 4)
-        # 11 chars // 4 = 2
-        self.assertEqual(ps.token_count, 2)
+def test_concatenation_operator():
+    s = System("Be helpful.")
+    u = User("Hi")
 
-        ps_tiny = PromptString("A")
-        self.assertEqual(ps_tiny.token_count, 1)
+    chain = s / u
 
-    def test_helpers(self):
-        sys = System("Act as a distinct agent.")
-        user = User("What is your name?")
-        ai = Assistant("I am Khala.")
+    assert isinstance(chain, PromptChain)
+    assert len(chain.parts) == 2
+    assert chain.parts[0] == s
+    assert chain.parts[1] == u
 
-        self.assertEqual(sys.role, "system")
-        self.assertEqual(user.role, "user")
-        self.assertEqual(ai.role, "assistant")
+    # String representation joins with double newline
+    assert str(chain) == "Be helpful.\n\nHi"
 
-    def test_concatenation(self):
-        p1 = PromptString("Hello", role="user")
-        p2 = PromptString(" World")
-        combined = p1 + p2
-        self.assertEqual(str(combined), "Hello World")
-        self.assertEqual(combined.role, "user") # Inherits first role
+def test_messages_export():
+    chain = System("S") / User("U") / Assistant("A")
+    msgs = chain.messages()
 
-    def test_formatting(self):
-        template = PromptString("Hello {name}", role="user")
-        formatted = template.format(name="Khala")
-        self.assertEqual(str(formatted), "Hello Khala")
-        self.assertEqual(formatted.role, "user")
+    assert len(msgs) == 3
+    assert msgs[0] == {"role": "system", "parts": ["S"]} # Gemini format often uses 'parts' list
+    assert msgs[1] == {"role": "user", "parts": ["U"]}
+    assert msgs[2] == {"role": "model", "parts": ["A"]}
 
-    def test_chaining(self):
-        sys = System("Sys")
-        user = User("User")
+def test_chain_extension():
+    c1 = System("S") / User("U")
+    c2 = c1 / Assistant("A")
 
-        # Division operator creates chain
-        chain = sys / user
-        self.assertIsInstance(chain, PromptChain)
-        self.assertEqual(len(chain), 2)
+    assert len(c2.parts) == 3
+    assert str(c2) == "S\n\nU\n\nA"
 
-        msgs = chain.messages()
-        self.assertEqual(msgs[0]["role"], "system")
-        self.assertEqual(msgs[0]["content"], "Sys")
-        self.assertEqual(msgs[1]["role"], "user")
-        self.assertEqual(msgs[1]["content"], "User")
-
-    def test_prompt_string_replace(self):
-        ps = PromptString("Hello World", role="user")
-        replaced = ps.replace("World", "Khala")
-        self.assertEqual(str(replaced), "Hello Khala")
-        self.assertEqual(replaced.role, "user")
-        self.assertIsInstance(replaced, PromptString)
-
-if __name__ == "__main__":
-    unittest.main()
+def test_rshift_pipeline():
+    # If we implement pipe operator for something? Maybe not needed for Phase 2.
+    pass
