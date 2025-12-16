@@ -1,6 +1,6 @@
 """Cognitive Cycle Engine.
 
-Harvested from `drive-flow` and adapted for Khala.
+Harvested from `drive-flow` and adapted for Khala v2.1.
 Implements an event-driven DAG engine for agent reasoning loops, persisted via SurrealDB.
 """
 

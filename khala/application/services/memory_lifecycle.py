@@ -26,6 +26,8 @@ from khala.infrastructure.gemini.models import ModelRegistry
 # Avoid circular import by using TYPE_CHECKING or local import if necessary
 # But for runtime, we need to import if we default it.
 # from khala.application.verification.verification_gate import VerificationGate
+from khala.infrastructure.persistence.job_repository import JobRepository
+from khala.domain.jobs.entities import Job
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,8 @@ class MemoryLifecycleService:
         conflict_resolution_service: Optional[ConflictResolutionService] = None,
         privacy_safety_service: Optional[PrivacySafetyService] = None,
         significance_scorer: Optional[SignificanceScorer] = None,
-        verification_gate: Optional[Any] = None # Type as Any to avoid circular import issues
+        verification_gate: Optional[Any] = None, # Type as Any to avoid circular import issues
+        job_repository: Optional[JobRepository] = None
     ):
         self.repository = repository
         if not gemini_client:
@@ -78,6 +81,16 @@ class MemoryLifecycleService:
         else:
             from khala.application.verification.verification_gate import VerificationGate
             self.verification_gate = VerificationGate(repository, gemini_client)
+
+        # Job Repository for Distributed Consolidation (Task 1.4)
+        if job_repository:
+            self.job_repository = job_repository
+        else:
+            # Best effort initialization if client available via repo
+            if hasattr(self.repository, 'client'):
+                self.job_repository = JobRepository(self.repository.client)
+            else:
+                self.job_repository = None
 
     async def ingest_memory(self, memory: Memory, check_privacy: bool = True, check_quality: bool = True) -> str:
         """Ingest a new memory, performing verification, auto-summarization and privacy checks."""
@@ -315,6 +328,18 @@ class MemoryLifecycleService:
 
         if should_run:
             logger.info(f"Consolidation triggered for user {user_id}. Reason: {reason}")
+
+            # Task 1.4: Distributed Consolidation
+            if self.job_repository:
+                try:
+                    job = Job(type="consolidation", payload={"user_id": user_id, "force": True, "reason": reason})
+                    job_id = await self.job_repository.create(job)
+                    logger.info(f"Consolidation job {job_id} queued.")
+                    return {"status": "queued", "job_id": job_id, "reason": reason}
+                except Exception as e:
+                    logger.error(f"Failed to queue consolidation job: {e}")
+                    # Fallback to inline
+
             consolidated = await self.consolidate_memories(user_id, force=True)
             return {"status": "executed", "consolidated_count": consolidated, "reason": reason}
 

@@ -144,6 +144,26 @@ class IndexRepairService:
 
         return report
 
+    async def detect_orphans(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Detect orphaned nodes (Strategy 171: Adaptive Graph Evolution)."""
+        # Note: Using array::len for checking edge existence if supported, or subquery.
+        # SurrealDB supports checking edges. Assuming 'links' is the edge name.
+        query = """
+        SELECT id, content FROM memory
+        WHERE array::len(->links) = 0
+        AND array::len(<-links) = 0
+        LIMIT $limit;
+        """
+        try:
+            async with self.db_client.get_connection() as conn:
+                response = await conn.query(query, {"limit": limit})
+                if isinstance(response, list) and response and isinstance(response[0], dict) and 'result' in response[0]:
+                    return response[0]['result']
+                return []
+        except Exception as e:
+            logger.error(f"Failed to detect orphans: {e}")
+            return []
+
     async def _repair_missing_embeddings(self, records: List[Dict[str, Any]], report: Dict[str, Any]) -> None:
         """Repair a batch of records by generating embeddings."""
         try:

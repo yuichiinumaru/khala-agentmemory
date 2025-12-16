@@ -28,10 +28,10 @@
     - [x] **Subtask**: Grep and replace all string literals in `khala/` with registry constants.
 
 ### 1.4. Distributed Consolidation (Surreal/Async)
-- [ ] **Task**: Move consolidation out of the request loop.
-    - [ ] **Subtask**: Implement `JobRepository` in SurrealDB (Table `jobs`).
-    - [ ] **Subtask**: Create `ConsolidationWorker` (Agno Agent) that polls `jobs`.
-    - [ ] **Subtask**: Update `MemoryLifecycleService` to enqueue jobs instead of `await`.
+- [x] **Task**: Move consolidation out of the request loop.
+    - [x] **Subtask**: Implement `JobRepository` in SurrealDB (Table `jobs`).
+    - [x] **Subtask**: Create `ConsolidationWorker` (Agno Agent) that polls `jobs`.
+    - [x] **Subtask**: Update `MemoryLifecycleService` to enqueue jobs instead of `await`.
 
 ---
 
@@ -67,36 +67,36 @@
 - [x] **Task**: Verify memories before use.
     - [x] **Subtask**: Create `SelfChallengingService`.
     - [x] **Subtask**: Implement `challenge_memory(query, memory) -> bool` using Gemini.
-    - [ ] **Subtask**: Integrate into `HybridSearchService`.
+    - [x] **Subtask**: Integrate into `HybridSearchService`.
 
 ### 3.2. Adaptive Query Router (Strategy 172)
 - [x] **Task**: Route based on complexity.
     - [x] **Subtask**: Implement `QueryRouter` agent (Gemini Flash).
-    - [ ] **Subtask**: Define routing table (Fact/Concept/Reasoning).
-    - [ ] **Subtask**: Integrate into `CognitiveEngine`.
+    - [x] **Subtask**: Define routing table (Fact/Concept/Reasoning).
+    - [x] **Subtask**: Integrate into `CognitiveEngine`.
 
 ### 3.3. Adaptive Graph Evolution (Strategy 171)
-- [ ] **Task**: Heal the graph structure.
-    - [ ] **Subtask**: Implement `IndexRepairService.detect_orphans()`.
-    - [ ] **Subtask**: Create `GraphArchitect` agent to link unconnected nodes.
+- [x] **Task**: Heal the graph structure.
+    - [x] **Subtask**: Implement `IndexRepairService.detect_orphans()`.
+    - [x] **Subtask**: Create `GraphArchitect` agent to link unconnected nodes.
 
 ### 3.4. Feedback-Driven Search Tuning (Strategy 174)
-- [ ] **Task**: Optimize parameters.
-    - [ ] **Subtask**: Implement `AdaptiveSearchTuner`.
-    - [ ] **Subtask**: Log search success/failure.
-    - [ ] **Subtask**: Adjust `alpha` and `top_k` based on feedback.
+- [x] **Task**: Optimize parameters.
+    - [x] **Subtask**: Implement `AdaptiveSearchTuner`.
+    - [x] **Subtask**: Log search success/failure.
+    - [x] **Subtask**: Adjust `alpha` and `top_k` based on feedback.
 
 ### 3.5. Refinement Reasoning Loop (Strategy 178 / SOAR)
-- [ ] **Task**: Generate-Verify-Refine.
-    - [ ] **Subtask**: Create `RefinementReasoningService`.
-    - [ ] **Subtask**: Implement `attempt_solve -> verify -> refine` loop.
-    - [ ] **Subtask**: Use `VerificationGate` as feedback signal.
+- [x] **Task**: Generate-Verify-Refine.
+    - [x] **Subtask**: Create `RefinementReasoningService`.
+    - [x] **Subtask**: Implement `attempt_solve -> verify -> refine` loop.
+    - [x] **Subtask**: Use `VerificationGate` as feedback signal.
 
 ### 3.6. Product of Experts (Strategy PoE)
-- [ ] **Task**: Consensus-based verification.
-    - [ ] **Subtask**: Create `PoEVerifier`.
-    - [ ] **Subtask**: Generate 3 perspectives (e.g., Logical, Factual, Contextual).
-    - [ ] **Subtask**: Compute Geometric Mean of scores.
+- [x] **Task**: Consensus-based verification.
+    - [x] **Subtask**: Create `PoEVerifier`.
+    - [x] **Subtask**: Generate 3 perspectives (e.g., Logical, Factual, Contextual).
+    - [x] **Subtask**: Compute Geometric Mean of scores.
 
 ---
 
@@ -104,19 +104,19 @@
 *Objective: Security and Advanced Memory.*
 
 ### 4.1. Visual Injection Defense (Strategy 175)
-- [ ] **Task**: Sanitize multimodal inputs.
-    - [ ] **Subtask**: Create `VisualSanitizer` in `MultimodalService`.
-    - [ ] **Subtask**: Check for text overlays or adversarial patterns.
+- [x] **Task**: Sanitize multimodal inputs.
+    - [x] **Subtask**: Create `VisualSanitizer` in `MultimodalService`.
+    - [x] **Subtask**: Check for text overlays or adversarial patterns.
 
 ### 4.2. Attention Monitor (Strategy 176)
-- [ ] **Task**: Detect suspicious model focus.
-    - [ ] **Subtask**: Hook into Gemini API response metadata.
-    - [ ] **Subtask**: Flag responses where attention distribution is highly skewed (if accessible) or use proxy metric (repetitive token output).
+- [x] **Task**: Detect suspicious model focus.
+    - [x] **Subtask**: Hook into Gemini API response metadata.
+    - [x] **Subtask**: Flag responses where attention distribution is highly skewed (if accessible) or use proxy metric (repetitive token output).
 
 ### 4.3. Entropy-Based Consolidation (Strategy 177)
-- [ ] **Task**: Smart consolidation triggers.
-    - [ ] **Subtask**: Implement `calculate_entropy(text)` (Python or WASM).
-    - [ ] **Subtask**: Trigger consolidation when `entropy > threshold`.
+- [x] **Task**: Smart consolidation triggers.
+    - [x] **Subtask**: Implement `calculate_entropy(text)` (Python or WASM).
+    - [x] **Subtask**: Trigger consolidation when `entropy > threshold`.
 
 ---
 
@@ -124,9 +124,9 @@
 *Objective: Leverage the database engine.*
 
 ### 5.1. Surrealist Admin Setup
-- [ ] **Task**: Enable Admin UI.
-    - [ ] **Subtask**: Create `docs/sops/sop-04-surrealist-setup.md`.
-    - [ ] **Subtask**: Export `khala_admin.surql` queries.
+- [x] **Task**: Enable Admin UI.
+    - [x] **Subtask**: Create `docs/sops/sop-04-surrealist-setup.md`.
+    - [x] **Subtask**: Export `khala_admin.surql` queries.
 
 ### 5.2. Surrealism WASM (Strategy 181)
 - [ ] **Task**: Offload logic to DB.
@@ -140,13 +140,13 @@
 *Objective: Long-term memory evolution.*
 
 ### 6.1. Surprise Scoring (Strategy 179)
-- [ ] **Task**: Store "Surprise".
-    - [ ] **Subtask**: Add `surprise_score` to Memory schema.
-    - [ ] **Subtask**: Calculate surprise (Distance from Centroid) on ingestion.
+- [x] **Task**: Store "Surprise".
+    - [x] **Subtask**: Add `surprise_score` to Memory schema.
+    - [x] **Subtask**: Calculate surprise (Distance from Centroid) on ingestion.
 
 ### 6.2. Retention Gates (Strategy 180)
-- [ ] **Task**: Dynamic forgetting.
-    - [ ] **Subtask**: Implement `retention_weight` decay.
-    - [ ] **Subtask**: Create pruning job based on weight.
+- [x] **Task**: Dynamic forgetting.
+    - [x] **Subtask**: Implement `retention_weight` decay.
+    - [x] **Subtask**: Create pruning job based on weight.
 
 ---
