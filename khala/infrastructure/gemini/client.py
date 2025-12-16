@@ -23,7 +23,14 @@ except ImportError as e:
         "Google Generative AI is required. Install with: pip install google-generativeai"
     ) from e
 
-from .models import GeminiModel, ModelTier, ModelRegistry
+from .models import (
+    GeminiModel,
+    ModelTier,
+    ModelRegistry,
+    GEMINI_FAST,
+    GEMINI_REASONING,
+    GEMINI_PRO_2_5
+)
 from .cost_tracker import CostTracker
 from khala.application.utils import parse_json_safely
 
@@ -133,7 +140,7 @@ class GeminiClient:
             return ModelRegistry.get_cost_optimal_model(complexity_score, quality_requirements)
         except Exception as e:
             logger.warning(f"Error selecting optimal model, using default: {e}")
-            return ModelRegistry.get_model("gemini-2.5-pro")
+            return ModelRegistry.get_model(GEMINI_REASONING)
 
     async def _get_or_create_model(self, model_id: str, config: Dict[str, Any]) -> genai.GenerativeModel:
         """Thread-safe model initialization."""
@@ -346,7 +353,7 @@ class GeminiClient:
         response = await self.generate_text(
             prompt=prompt,
             task_type="classification",
-            model_id="gemini-2.0-flash",
+            model_id=GEMINI_FAST,
             temperature=0.0
         )
         return parse_json_safely(response.get("content", ""))
@@ -355,7 +362,7 @@ class GeminiClient:
         """Translate text."""
         prompt = f"Translate the following text to {target_language}:\n\n{text}"
         response = await self.generate_text(
-            prompt=prompt, task_type="generation", model_id="gemini-2.0-flash"
+            prompt=prompt, task_type="generation", model_id=GEMINI_FAST
         )
         return response.get("content", "").strip()
 
@@ -404,7 +411,7 @@ class GeminiClient:
         
         final_response = await self.generate_text(
             prompt=synthesis_prompt,
-            model_id="gemini-2.5-pro",
+            model_id=GEMINI_REASONING,
             temperature=0.2,
             use_cascading=False
         )

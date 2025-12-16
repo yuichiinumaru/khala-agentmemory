@@ -11,6 +11,19 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# --- Model Constants ---
+GEMINI_FLASH_2_0 = "gemini-2.0-flash"
+GEMINI_FLASH_2_5 = "gemini-2.5-flash"
+GEMINI_PRO_2_5 = "gemini-2.5-pro"
+GEMINI_EMBEDDING_001 = "models/gemini-embedding-001"
+GEMINI_MULTIMODAL_EMBEDDING = "models/multimodal-embedding-001"
+
+# Aliases for easier usage
+GEMINI_FAST = GEMINI_FLASH_2_0
+GEMINI_BALANCED = GEMINI_FLASH_2_5
+GEMINI_REASONING = GEMINI_PRO_2_5
+GEMINI_EMBEDDING = GEMINI_EMBEDDING_001
+
 
 class ModelTier(Enum):
     """LLM model tiers for cascading optimization."""
@@ -65,10 +78,10 @@ class ModelRegistry:
     # Predefined model configurations
     MODELS: Dict[str, GeminiModel] = {
         # Fast tier
-        "gemini-2.0-flash": GeminiModel(
+        GEMINI_FLASH_2_0: GeminiModel(
             name="Gemini 2.0 Flash",
             tier=ModelTier.FAST,
-            model_id="gemini-2.0-flash",
+            model_id=GEMINI_FLASH_2_0,
             cost_per_million_tokens=1.0,
             max_tokens=1048576,
             temperature=0.1,
@@ -77,10 +90,10 @@ class ModelRegistry:
         ),
         
         # Medium tier
-        "gemini-2.5-flash": GeminiModel(
+        GEMINI_FLASH_2_5: GeminiModel(
             name="Gemini 2.5 Flash",
             tier=ModelTier.MEDIUM,
-            model_id="gemini-2.5-flash",
+            model_id=GEMINI_FLASH_2_5,
             cost_per_million_tokens=2.0,
             max_tokens=1048576,
             temperature=0.3,
@@ -89,10 +102,10 @@ class ModelRegistry:
         ),
         
         # Smart tier
-        "gemini-2.5-pro": GeminiModel(
+        GEMINI_PRO_2_5: GeminiModel(
             name="Gemini 2.5 Pro",
             tier=ModelTier.SMART,
-            model_id="gemini-2.5-pro",
+            model_id=GEMINI_PRO_2_5,
             cost_per_million_tokens=10.0,
             max_tokens=2097152,
             temperature=0.7,
@@ -101,10 +114,10 @@ class ModelRegistry:
         ),
         
         # Embedding model (Standard)
-        "gemini-embedding-001": GeminiModel(
+        GEMINI_EMBEDDING_001: GeminiModel(
             name="Gemini Embedding 001",
             tier=ModelTier.FAST,
-            model_id="models/gemini-embedding-001",
+            model_id=GEMINI_EMBEDDING_001,
             cost_per_million_tokens=2.0,
             max_tokens=2048,
             supports_embeddings=True,
@@ -115,10 +128,10 @@ class ModelRegistry:
         ),
 
         # Multimodal Embedding model (High Dim)
-        "multimodal-embedding-001": GeminiModel(
+        GEMINI_MULTIMODAL_EMBEDDING: GeminiModel(
             name="Gemini Multimodal Embedding 001",
             tier=ModelTier.FAST,
-            model_id="models/multimodal-embedding-001",
+            model_id=GEMINI_MULTIMODAL_EMBEDDING,
             cost_per_million_tokens=5.0,
             max_tokens=2048,
             supports_embeddings=True,
@@ -169,7 +182,7 @@ class ModelRegistry:
         models = cls.get_tier_models(tier)
         if not models:
             # Fallback to Smart if lower tier unavailable (unlikely)
-            return cls.get_model("gemini-2.5-pro")
+            return cls.get_model(GEMINI_PRO_2_5)
         
         return min(models, key=lambda m: m.cost_per_million_tokens)
 
