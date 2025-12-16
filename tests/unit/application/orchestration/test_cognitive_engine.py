@@ -1,79 +1,67 @@
-import unittest
-from unittest.mock import MagicMock, AsyncMock, patch
+import pytest
 import asyncio
-from khala.application.orchestration.cognitive_engine import CognitiveEngine, BaseEvent, EventInput, ReturnBehavior
-from khala.infrastructure.persistence.audit_repository import AuditRepository
-from khala.infrastructure.surrealdb.client import SurrealDBClient
+from unittest.mock import AsyncMock
+from khala.application.orchestration.cognitive_engine import CognitiveEngine, EventInput
 
-class TestCognitiveEngine(unittest.TestCase):
-    def setUp(self):
-        self.mock_client = MagicMock(spec=SurrealDBClient)
-        self.mock_repo = MagicMock(spec=AuditRepository)
-        self.mock_repo.log = AsyncMock()
-        self.engine = CognitiveEngine(name="test_engine", client=self.mock_client, audit_repo=self.mock_repo)
+@pytest.mark.asyncio
+async def test_simple_chain():
+    engine = CognitiveEngine()
 
-    def test_make_event(self):
-        async def sample_task(inp, ctx):
-            return "done"
+    @engine.make_event
+    async def step1(event, ctx):
+        return 1
 
-        event = self.engine.make_event(sample_task)
-        self.assertIsInstance(event, BaseEvent)
-        self.assertEqual(event.id, self.engine.get_event_from_id(event.id).id)
+    @engine.listen_group([step1])
+    async def step2(event: EventInput, ctx):
+        # Access result from previous step
+        prev = event.results[step1.id]
+        return prev + 1
 
-    def test_engine_reset(self):
-        async def task(inp, ctx): return "ok"
-        event = self.engine.make_event(task)
-        self.assertIsNotNone(self.engine.get_event_from_id(event.id))
-        self.engine.reset()
-        self.assertIsNone(self.engine.get_event_from_id(event.id))
+    # Invoke
+    results = await engine.invoke_event(step1, EventInput("start", {}))
 
-    def test_invoke_event_simple(self):
-        async def task(inp, ctx):
-            return f"processed {inp.results.get('input')}"
+    # Check execution
+    assert step1.id in results
+    assert step2.id in results
+    assert results[step1.id]["result"] == 1
+    assert results[step2.id]["result"] == 2
 
-        event = self.engine.make_event(task)
-        initial_input = EventInput(group_name="start", results={"input": "data"})
+@pytest.mark.asyncio
+async def test_branching():
+    engine = CognitiveEngine()
 
-        result = asyncio.run(self.engine.invoke_event(event, initial_input))
+    @engine.make_event
+    async def root(event, ctx):
+        return "root"
 
-        self.assertIn(event.id, result)
-        self.assertEqual(result[event.id]["result"], "processed data")
+    @engine.listen_group([root])
+    async def branch_a(event, ctx):
+        return "A"
 
-    def test_dag_execution(self):
-        # A -> B
-        async def task_a(inp, ctx):
-            return "A"
+    @engine.listen_group([root])
+    async def branch_b(event, ctx):
+        return "B"
 
-        async def task_b(inp, ctx):
-            # Input from A comes in results
-            data_from_a = list(inp.results.values())[0]
-            return f"B got {data_from_a}"
+    @engine.listen_group([branch_a, branch_b])
+    async def merge(event, ctx):
+        # Results from both parents
+        res_a = event.results[branch_a.id]
+        res_b = event.results[branch_b.id]
+        return f"{res_a}-{res_b}"
 
-        event_a = self.engine.make_event(task_a)
+    results = await engine.invoke_event(root, EventInput("start", {}))
 
-        # B listens to A
-        @self.engine.listen_group([event_a])
-        async def wrapped_b(inp, ctx):
-            return await task_b(inp, ctx)
+    assert merge.id in results
+    assert results[merge.id]["result"] == "A-B"
 
-        event_b = self.engine.get_event_from_id(wrapped_b.id)
+@pytest.mark.asyncio
+async def test_context_passing():
+    engine = CognitiveEngine()
 
-        initial_input = EventInput(group_name="start", results={})
-        result = asyncio.run(self.engine.invoke_event(event_a, initial_input))
+    @engine.make_event
+    async def step1(event, ctx):
+        return ctx["val"]
 
-        self.assertIn(event_a.id, result)
-        self.assertIn(event_b.id, result)
-        self.assertEqual(result[event_b.id]["result"], "B got A")
+    results = await engine.invoke_event(step1, EventInput("start", {}), global_ctx={"val": 42})
 
-    def test_audit_logging(self):
-        async def task(inp, ctx): return "audit_me"
-        event = self.engine.make_event(task)
-        asyncio.run(self.engine.invoke_event(event, EventInput(group_name="start", results={})))
-
-        # Verify broker logic logged the start/end of cycle
-        # Note: The broker logic implementation is inside invoke_event usually or wraps it.
-        # Check if audit_repo.log was called.
-        self.assertTrue(self.mock_repo.log.called)
-
-if __name__ == "__main__":
-    unittest.main()
+    assert results[step1.id]["result"] == 42

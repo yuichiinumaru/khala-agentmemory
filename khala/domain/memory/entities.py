@@ -87,6 +87,11 @@ class Memory:
     events: List[Dict[str, Any]] = field(default_factory=list)
     location: Optional[Location] = field(default=None)
 
+    # Phase 6: Advanced Research (Titans/MIRAS)
+    surprise_score: float = 0.0
+    surprise_momentum: float = 0.0
+    retention_weight: float = 1.0
+
     @property
     def importance_score(self) -> ImportanceScore:
         """Alias for importance to support legacy code."""
