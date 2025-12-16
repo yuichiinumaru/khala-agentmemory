@@ -60,3 +60,6 @@ __pycache__/
 __pycache__/
 *.pyc
 *.egg-info
+
+# Research PDFs
+docs/arxiv/*.pdf
