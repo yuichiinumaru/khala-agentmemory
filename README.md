@@ -1,3 +1,6 @@
+
+<img width="3168" height="1344" alt="Gemini_Generated_Image_c57p4mc57p4mc57p" src="https://github.com/user-attachments/assets/aedf6afc-8200-497f-9ae0-68815f5bc18a" />
+
 # KHALA: Knowledge Hierarchical Adaptive Long-term Agent
 The Shared Consciousness Network for Agents
 
