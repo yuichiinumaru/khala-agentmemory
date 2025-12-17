@@ -5,12 +5,16 @@ import { GraphOracle } from './components/GraphOracle';
 import { ContextMenu } from './components/ui/ContextMenu';
 import { Header } from './components/layout/Header';
 import { HudControls } from './components/layout/HudControls';
-import { NodeInspector } from './components/layout/NodeInspector';
+import { MemoryInspector, MemoryNode } from './components/MemoryInspector';
+import { TimelineScrubber } from './components/TimelineScrubber';
 import { Stats } from './components/layout/Stats';
 import { SurrealProvider } from './hooks/useSurreal';
+import { useDreamMode } from './hooks/useDreamMode';
 
 const AppContent: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [timelineTime, setTimelineTime] = React.useState(Date.now());
+  const isDreaming = useDreamMode(300000); // 5 minutes
   const {
     stats,
     currentLayout,
@@ -64,6 +68,14 @@ const AppContent: React.FC = () => {
         </div>
       ) : (
         <>
+          {isDreaming && (
+            <div className="absolute inset-0 z-50 pointer-events-none bg-black/80 flex items-center justify-center animate-pulse">
+                <div className="text-center">
+                    <h1 className="text-6xl font-mono text-neon-purple tracking-[0.5em] blur-sm opacity-80">DREAMING</h1>
+                    <p className="text-white/30 font-mono mt-4">System is consolidating memories...</p>
+                </div>
+            </div>
+          )}
           <Header searchQuery={searchQuery} onSearchChange={setSearchQuery} />
           <Stats stats={stats} />
           <HudControls
@@ -85,11 +97,23 @@ const AppContent: React.FC = () => {
               onAction={handleContextAction}
             />
           )}
+          <div className="absolute bottom-0 left-0 right-0 z-10 p-4">
+             <TimelineScrubber
+                startTime={Date.now() - 3600000}
+                endTime={Date.now()}
+                currentTime={timelineTime}
+                events={[]}
+                onChange={setTimelineTime}
+             />
+          </div>
+
           {selectedNode && !isOracleOpen && !contextMenu && (
-            <NodeInspector
-              selectedNode={selectedNode}
-              graphApi={api}
-              onAskOracle={() => setIsOracleOpen(true)}
+            <MemoryInspector
+              node={
+                  api?.getRawGraph()?.hasNode(selectedNode)
+                  ? { id: selectedNode, ...api.getRawGraph()?.getNodeAttributes(selectedNode) } as MemoryNode
+                  : null
+              }
             />
           )}
         </>
