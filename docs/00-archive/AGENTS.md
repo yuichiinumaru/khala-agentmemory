@@ -7,16 +7,9 @@ This document (`AGENTS.md`) is the single source of truth for the project.
 Deviations from these rules are considered critical defects.
 
 **VITAL ASSET PRESERVATION**:
-1. **NEVER DELETE documentation info**. Always integrate new info. Only correct if data is objectively WRONG.
-2. **SEPARATE CONCERNS**:
-   - `01-plan.md` = **Why & How** (Strategy, design, reasoning).
-   - `02-tasks.md` = **What & When** (Granular implementation steps).
-3. **GRANULARITY**: Write tasks as detailed as possible. Use subtasks and sub-subtasks.
-4. **NO DETAIL LEFT BEHIND**: Every technical detail counts. Use multi-step edits if necessary.
-5. **HIERARCHICAL SCALING**: If a document exceeds 800 lines, create a subdirectory (e.g., `docs/01-plans/`) and move details there, keeping a synthetic version in the main file.
-6. **ARCHIVE FIRST**: Never delete files. Move them to `docs/_archive/` before refactoring.
-7. **EXTRACTION PROTOCOL**: Archive first, then extract information to new files.
-8. **EDIT(VITAL_FILE) $\implies$ ASK(USER)** (Vital files: `AGENTS.md`, `README.md`, `.env*`).
+$\forall File \in \{AGENTS.md, README.md, docs/*, .env*\}$:
+**Edit(File) $\implies$ Ask(User)**.
+Destructive edits to `AGENTS.md` are **FORBIDDEN**. Always integrate, never delete without consent.
 
 ---
 

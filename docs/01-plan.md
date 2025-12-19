@@ -1,61 +1,33 @@
-# 01-PLAN.md: KHALA v2.1 Project Plan
+# KHALA STRATEGIC PLAN (01-plan.md)
 
-**Project**: KHALA (Knowledge Hierarchical Adaptive Long-term Agent)
-**Version**: 2.1 (Resurrection)
-**Framework**: Agno + SurrealDB
-**Date**: December 2025
-**Status**: STRUCTURAL RESURRECTION
+## Vision
+Khala provides a high-fidelity, cognitive memory kernel for VIVI OS agents, enabling shared consciousness through hierarchical, multi-modal storage and reasoning.
 
----
+## Strategic Domains
+Detailed technical plans are organized by domain to maintain granularity without context overflow.
 
-## 1. Executive Summary
+### 1. [UI/UX & Visualization](file:///home/suportesaude/YUICHI/00-VIVI/packages/khala-agentmemory/docs/01-plans/ui-ux.md)
+- **Goal**: Real-time visualization of memory graphs and agent entropy.
+- **Key Component**: Khala Console (React/Vite).
 
-### Project Vision
-Resurrect and harden the KHALA memory system into a production-grade, secure, and reliable foundation. The Autopsy (Dec 2025) revealed critical structural and security failures. We are now in the "Resurrection Era".
+### 2. [Memory Architecture (MemoDB)](file:///home/suportesaude/YUICHI/00-VIVI/packages/khala-agentmemory/docs/01-plans/memodb.md)
+- **Goal**: 3-Tier hierarchy (Tier 1: Hot/Cache, Tier 2: Warm/SurrealDB, Tier 3: Cold/Archived).
+- **Process**: Automated promotion and consolidation.
 
-### Core Objective
-Systematic elimination of fragility. Fix critical security holes, data corruption bugs, and architectural deviations.
+### 3. [Infrastructure Layer (SurrealDB)](file:///home/suportesaude/YUICHI/00-VIVI/packages/khala-agentmemory/docs/01-plans/surrealdb.md)
+- **Goal**: Maximize SurrealDB v2.0 capabilities (HNSW indices, live queries).
+- **Integration**: Surrealist setup and schema optimization.
 
-### Key Deliverables
-1.  **Governance Enforcement**: `AGENTS.md` is the law. `docs/` is the truth.
-2.  **Security Hardening**: Eliminate RCE and DoS vectors.
-3.  **Data Integrity**: Ensure timestamps and versions are immutable and correct.
-4.  **Performance Optimization**: Remove O(N) loops and blocking I/O.
+### 4. [Technical Debt & Optimization](file:///home/suportesaude/YUICHI/00-VIVI/packages/khala-agentmemory/docs/01-plans/technical-debt.md)
+- **Goal**: Resolve implementation gaps (e.g., entity extraction placeholder) and fragmentation.
+- **Audit Findings**: High entropy detected in legacy docs; Forge refactor is the mitigation.
 
----
-
-## 2. Project Scope
-
-### Phase 3.1: Structural Resurrection (Current)
--   [x] Governance Audit & File Cleanup.
--   [x] Documentation Alignment (`01`, `02`, `03`).
--   [x] Task Purification.
-
-### Phase 3.2: Surgical Intervention (Next)
--   [ ] **Critical Security Fixes**: CLI Executor, API Auth.
--   [ ] **Data Integrity Fixes**: SurrealDB Client.
--   [ ] **Reliability Fixes**: Gemini Client, Lifecycle Service.
-
-### Phase 3.3: Wisdom Ingestion (The Harvest)
--   [ ] **Security Hardening**: Implement "Attention-based" defenses against injection (GhostEI).
--   [ ] **Memory Architecture**: Adopt "Entropy-Based" consolidation (O-Mem).
--   [ ] **Agent Evolution**: Enable "Self-Correction" loops (ReflexGrad).
--   See `docs/18-wisdom-ingestion.md` for details.
-
-### Phase 3.4: Advanced Features (Deferred)
--   Module 15 (Version Control).
--   Optimization Strategies.
+### 5. [Research & Future Integration](file:///home/suportesaude/YUICHI/00-VIVI/packages/khala-agentmemory/docs/01-plans/arc-prize.md)
+- **Goal**: Incorporate ARC Prize strategies and novel cognitive protocols (MoT, PoE).
 
 ---
 
-## 3. Implementation Strategy
-
-1.  **Stop the Bleeding**: No new features until Critical tasks in `02-tasks.md` are closed.
-2.  **Verify Every Stitch**: Use TDD where possible. Verify fixes with `read_file` or reproduction scripts.
-3.  **Fail Fast**: Crash on error. Do not swallow exceptions.
-4.  **Zero Trust**: Trust no input, trust no path.
-
----
-
-## 4. Progress Tracking
-See `docs/02-tasks.md` for the active execution queue.
+## Technical Constraints
+- **Model Hierarchy**: `gemini-2.5-pro` for reasoning, `gemini-2.5-flash` for routine tasks.
+- **Database**: SurrealDB v2.0+ is mandatory.
+- **Protocol**: All operations must be asynchronous and TDD-backed.

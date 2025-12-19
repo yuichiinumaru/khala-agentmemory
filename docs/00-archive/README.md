@@ -7,7 +7,7 @@ The Shared Consciousness Network for Agents
 *"From order, comes justice. From memory, comes strength."*
 
 **Version**: 2.1.0
-**Documentation**: [docs/](docs/) | **User Guide**: [guide/](guide/)
+**Documentation**: [docs/](docs/)
 
 Khala is an advanced, memory-centric AI agent architecture that leverages **SurrealDB** and **Agno** native integration, pushing it to the maximum. Or, in Protoss: It is not merely a framework; it is the ultimate unification of machine intelligence. Built upon the crystalline matrix of SurrealDB and the command structures of Agno, it establishes a permanent, psychic link between agents. Through a synthesis of 170 distinct cognitive protocols, it creates a system that does not simply compute — it remembers, adapts, and ascends.
 
@@ -41,12 +41,11 @@ python scripts/check_conn.py
 python scripts/run_all_tests.py
 ```
 
-## 📋 Strategy Implementation Checklist (170 Protocols)
+## 📋 Strategy Implementation Checklist
 
-<details>
-<summary><b>1. Core Strategies (Foundation)</b></summary>
-<br>
+Based on the latest audit (2025-12-04).
 
+### 1. Core Strategies (Foundation)
 - [x] 01. Vector Storage (HNSW)
 - [x] 02. Graph Relationships
 - [x] 03. Document Model
@@ -70,12 +69,7 @@ python scripts/run_all_tests.py
 - [x] 21. Decay Scoring
 - [x] 22. Agent-to-Agent Communication
 
-</details>
-
-<details>
-<summary><b>2. Advanced Strategies (Intelligence)</b></summary>
-<br>
-
+### 2. Advanced Strategies (Intelligence)
 - [x] 23. LLM Cascading
 - [x] 24. Consistency Signals
 - [x] 25. Mixture of Thought (MoT)
@@ -112,12 +106,7 @@ python scripts/run_all_tests.py
 - [x] 56. Graph Visualization
 - [x] 57. LLM Cost Dashboard
 
-</details>
-
-<details>
-<summary><b>3. SurrealDB Optimization</b></summary>
-<br>
-
+### 3. SurrealDB Optimization
 - [x] 58. Hierarchical Nested Documents
 - [x] 59. Polymorphic Memory Documents
 - [x] 60. Document Versioning
@@ -173,12 +162,7 @@ python scripts/run_all_tests.py
 - [x] 110. Graph Evolution Metrics
 - [x] 111. Geospatial Optimization (111-115)
 
-</details>
-
-<details>
-<summary><b>4. Novel & Experimental</b></summary>
-<br>
-
+### 4. Novel & Experimental
 - [x] 116. Flows vs Crews Pattern
 - [x] 117. Hierarchical Agent Delegation
 - [x] 118. Episodic Data Model
@@ -224,12 +208,7 @@ python scripts/run_all_tests.py
 - [x] 158. Merge Conflict Resolution
 - [x] 159. Self-Healing Index
 
-</details>
-
-<details>
-<summary><b>5. Advanced Research Integration</b></summary>
-<br>
-
+### 5. Advanced Research Integration
 - [x] 160. Automated Prompt Optimization (PromptWizard)
 - [x] 161. Homogeneous Reasoning Modules (ARM)
 - [x] 162. Knowledge Graph Reasoning (LGKGR)
@@ -241,6 +220,3 @@ python scripts/run_all_tests.py
 - [x] 168. Meta-Reasoning (Dr. MAMR)
 - [x] 169. Reasoning Trace Storage
 - [x] 170. Prompt Genealogy Tracking
-
-</details>
-

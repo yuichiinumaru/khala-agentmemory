@@ -1,85 +1,82 @@
-# 03-ARCHITECTURE.md: The Blueprint
+# KHALA ARCHITECTURE (03-architecture.md)
 
-**Project**: KHALA v2.1
-**Protocol**: DDD (Domain-Driven Design)
-**Enforcement**: Strict
-
----
-
-## 1. Module Boundaries (The Law)
-
-Code must reside in its designated layer. Cross-layer pollution is forbidden.
-
-### 🟢 Domain Layer (`khala/domain/`)
-*   **Purpose**: Pure business logic, entities, value objects.
-*   **Rules**: NO external dependencies. Pure Python.
-*   **Modules**:
-    *   `memory`: Core entity (`Memory`), Value Objects (`EmbeddingVector`).
-    *   `sop`: Standard Operating Procedures.
-    *   `planning`: Planning entities.
-
-### 🔵 Application Layer (`khala/application/`)
-*   **Purpose**: Orchestration, Use Cases, Services.
-*   **Rules**: Orchestrates Domain objects. Uses Interfaces (Ports).
-*   **Services**:
-    *   `MemoryLifecycleService`: Manages promotion, decay, consolidation.
-    *   `PlanningService`: Decomposes goals.
-    *   `SOPService`: Manages SOP execution (Note: Distinct from Domain Service).
-
-### 🟤 Infrastructure Layer (`khala/infrastructure/`)
-*   **Purpose**: Adapters, Clients, Persistence.
-*   **Rules**: Implements Domain Interfaces. Dirty Details.
-*   **Components**:
-    *   `SurrealDBClient`: Database interaction. **MUST** handle connection pooling and serialization.
-    *   `GeminiClient`: LLM interaction. **MUST** handle retries and cost tracking.
-    *   `CLISubagentExecutor`: External tool execution. **MUST** be sandboxed.
-    *   `JobProcessor`: Background task execution (Redis/Memory).
-
-### 🟣 Interface Layer (`khala/interface/`)
-*   **Purpose**: Entry points.
-*   **Rules**: NO business logic.
-*   **Endpoints**:
-    *   `REST`: FastAPI (`khala/interface/rest/main.py`).
-    *   `CLI`: Click (`khala/interface/cli/main.py`).
+> **SYSTEM ROLE: LEAD ARCHITECT**
+> This file defines the **Structural Laws** of the codebase. It dictates folder structures, dependency rules, and abstraction boundaries.
 
 ---
 
-## 2. Illegal Artifacts (The Ban List)
+## 1. Domain-Driven Design (DDD) Layers
 
-The following patterns are explicitly **BANNED**:
-1.  **God Objects**: Any class > 500 lines.
-2.  **Zombie Code**: Commented-out blocks > 5 lines.
-3.  **Hardcoded Secrets**: Passwords in code.
-4.  **Leakage**: Infrastructure imports in Domain layer.
-5.  **Implicit Shell Execution**: `subprocess.run` without strict path validation.
+Khala follows a strict 4-layer architecture to ensure decoupling and testability.
+
+### A. Pure Domain (`khala/domain/`)
+- **Definition**: Core business entities and logic.
+- **Rules**: 
+    - **NO** external dependencies (except standard libraries or Pydantic).
+    - Contains `entities.py`, `value_objects.py`, and domain `services.py`.
+    - Defines **Repository Interfaces** (Protocols/ABCs) but not their implementations.
+
+### B. Application Layer (`khala/application/`)
+- **Definition**: Orchestrates domain objects to perform specific use cases.
+- **Rules**:
+    - Calls Domain Services and Repositories.
+    - Contains `coordination/` (Orchestrators), `services/` (Cognitive services), and `verification/` (Logic gates).
+
+### C. Infrastructure Layer (`khala/infrastructure/`)
+- **Definition**: Technical implementation of repository interfaces (SurrealDB, MinIO).
+- **Rules**:
+    - Depends on external libraries (SurrealDB-Python, Gemini).
+    - MUST implement an interface defined in the Domain layer.
+    - **Forbidden**: Domain or Application layers importing directly from `infrastructure/surrealdb/client.py`.
+
+### D. Interface Layer (`khala/interface/`)
+- **Definition**: Entry points into the system (CLI, REST, Agno, MCP).
 
 ---
 
-## 3. Data Flow
+## 2. Abstraction & Abundance Rules (AHA & WET)
 
-```mermaid
-graph TD
-    CLI[Interface: CLI] --> App[Application Services]
-    API[Interface: REST] --> App
+**"Duplication is far cheaper than the wrong abstraction."**
 
-    subgraph Application
-        Plan[PlanningService]
-        Life[MemoryLifecycleService]
-        Search[HybridSearchService]
-    end
+### A. The Rule of WET (Write Everything Twice)
+1. **First time**: Write code specific to the use case.
+2. **Second time**: Copy and paste the code. Tailor it to the new specific context.
+3. **Third time**: Only NOW consider extracting it into a shared abstraction, *if and only if* the implementation logic is identical (not just the structure).
 
-    subgraph Domain
-        Mem[Memory Entity]
-        SOP[SOP Entity]
-    end
+### B. The Anti-Pattern: "God Objects"
+- **Forbidden**: Do not create generic "Manager" or "Handler" classes (e.g., `MemoryManager`).
+- **Correct**: Name things by exactly what they do (e.g., `DecayScoringService`, `DeduplicationWorker`).
 
-    subgraph Infrastructure
-        Surreal[SurrealDB Client]
-        Gemini[Gemini Client]
-        Exec[CLI Executor]
-    end
+---
 
-    App --> Domain
-    App --> Infrastructure
-    Infrastructure --> Domain
-```
+## 3. Colocation & "Pluginplayability"
+
+We optimize for **deletability** and **readability**.
+
+### A. The Isolation Test
+Ask yourself: *"If I delete the folder `khala/application/services/FEATURE_X`, will the application crash in unrelated areas?"*
+- If YES: You have failed. Refactor dependencies using Interfaces.
+
+### B. Colocation Rule
+- Keep related files (schemas, logic, unit tests) as close as possible.
+- **Module Structure Example**:
+    ```text
+    khala/domain/memory/
+    ├── entities.py
+    ├── repository.py
+    ├── services.py
+    └── value_objects.py
+    ```
+
+---
+
+## 4. Cross-Domain Communication
+- **Rule**: Domain A should not directly import deep files from Domain B.
+- **Mechanism**: Use **Public Interfaces/Contracts**. Domain A uses an ABC defined in Domain B.
+
+---
+
+## 5. System Visualization Domain
+The **Khala Console** (`external/khala-console`) is the visualization port of the system.
+- It interacts with the core via the REST or MCP interfaces.
+- **Architecture**: React/Vite/Tailwind following a Component-Driven Development (CDD) pattern.
