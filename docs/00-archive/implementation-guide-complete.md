@@ -123,7 +123,7 @@ surrealdb:
     api_key: "${GOOGLE_API_KEY}"
   
   llm:
-    model: "gemini-2.5-pro"
+    model: "gemini-3-pro-preview"
     temperature: 0.7
     max_tokens: 4000
     api_key: "${GOOGLE_API_KEY}"
@@ -158,7 +158,7 @@ gemini:
 ### Task 1.2: Gemini Integration
 - [ ] Get Google API key
 - [ ] Test embedding model (gemini-embedding-001)
-- [ ] Test LLM (gemini-2.5-pro)
+- [ ] Test LLM (gemini-3-pro-preview)
 - [ ] Create wrapper classes
 
 ### Task 1.3: Agno Setup
@@ -309,7 +309,7 @@ class ResearchAgent(Agent):
         # Agent
         super().__init__(
             name="research_agent",
-            model="gemini-2.5-pro",
+            model="gemini-3-pro-preview",
             knowledge=knowledge,
             system_prompt="""You are a research assistant with 
                 perfect memory. Always store key findings and 
@@ -356,7 +356,7 @@ class DevelopmentAssistant(Agent):
         
         super().__init__(
             name="dev_assistant",
-            model="gemini-2.5-pro",
+            model="gemini-3-pro-preview",
             system_prompt="You are an expert code assistant"
         )
     
@@ -399,7 +399,7 @@ class ConversationAgent(Agent):
         
         super().__init__(
             name="conversation_agent",
-            model="gemini-2.5-pro"
+            model="gemini-3-pro-preview"
         )
     
     async def chat(self, message: str) -> str:
@@ -685,7 +685,7 @@ class AgentOrchestrator:
 - [ ] Get Google API key from console.cloud.google.com
 - [ ] Enable Gemini API and Embedding API
 - [ ] Test embedding-001 model with sample text
-- [ ] Test gemini-2.5-pro model with sample prompt
+- [ ] Test gemini-3-pro-preview model with sample prompt
 - [ ] Create .env file with API keys
 - [ ] Set up google-generativeai Python library
 

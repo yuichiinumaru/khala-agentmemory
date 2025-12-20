@@ -243,7 +243,7 @@
       },
       "model": {
         "type": "string",
-        "default": "gemini-2.5-pro",
+        "default": "gemini-3-pro-preview",
         "description": "Target model for token counting"
       }
     },

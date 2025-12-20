@@ -83,7 +83,7 @@ class TestCostTracker:
     
     def test_cost_record_creation(self, tracker):
         """Test creating a valid cost record."""
-        model = ModelRegistry.get_model("gemini-2.5-pro")
+        model = ModelRegistry.get_model("gemini-3-pro-preview")
         
         record = tracker.record_call(
             model=model,
@@ -97,7 +97,7 @@ class TestCostTracker:
         assert record.total_tokens == 800
         assert record.success is True
         assert record.cost_usd > Decimal("0")
-        assert record.model_id == "gemini-2.5-pro"
+        assert record.model_id == "gemini-3-pro-preview"
         assert record.model_tier == ModelTier.SMART
     
     def test_cost_record_validation(self, tracker):
@@ -132,7 +132,7 @@ class TestCostTracker:
     
     def test_daily_summarization(self, tracker):
         """Test daily cost summarization."""
-        model = ModelRegistry.get_model("gemini-2.5-pro")
+        model = ModelRegistry.get_model("gemini-3-pro-preview")
         model_fast = ModelRegistry.get_model("gemini-2.0-flash")
         
         # Add different calls
@@ -154,7 +154,7 @@ class TestCostTracker:
     
     def test_budget_status(self, tracker):
         """Test budget status calculation."""
-        model = ModelRegistry.get_model("gemini-2.5-pro")
+        model = ModelRegistry.get_model("gemini-3-pro-preview")
         
         # Add calls that exceed budget
         # Cost of call: (1000/1M) * $100 = $0.10
@@ -173,7 +173,7 @@ class TestCostTracker:
     
     def test_optimization_report(self, tracker):
         """Test optimization report generation."""
-        model_smart = ModelRegistry.get_model("gemini-2.5-pro")
+        model_smart = ModelRegistry.get_model("gemini-3-pro-preview")
         model_fast = ModelRegistry.get_model("gemini-2.0-flash")
         
         # Add expensive smart tier usage
@@ -351,11 +351,11 @@ class TestGeminiClient:
         """Test generation with specific model override."""
         response = await client.generate_text(
             "Test prompt",
-            model_id="gemini-2.5-pro",
+            model_id="gemini-3-pro-preview",
             use_cascading=False
         )
         
-        assert response["model_id"] == "gemini-2.5-pro"
+        assert response["model_id"] == "gemini-3-pro-preview"
         assert response["model_tier"] == ModelTier.SMART.value
     
     @pytest.mark.asyncio

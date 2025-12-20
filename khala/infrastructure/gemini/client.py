@@ -128,7 +128,7 @@ class GeminiClient:
     async def select_model(self, prompt: str, task_type: str = "generation") -> GeminiModel:
         """Select the optimal model."""
         if not self.enable_cascading:
-            return ModelRegistry.get_model("gemini-2.5-pro")
+            return ModelRegistry.get_model("gemini-3-pro-preview")
         
         quality_requirements = {
             "embedding": 0.5, "classification": 0.7,

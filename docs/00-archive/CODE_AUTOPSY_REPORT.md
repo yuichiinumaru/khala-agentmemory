@@ -65,7 +65,7 @@
 *   `[Line 183]` **(Performance - Scalability)**: `limit=1000` with no pagination.
     *   **Pathology:** As soon as a user has 1001 memories, the oldest ones become unreachable ghosts.
     *   **The Fix:** Implement cursor-based pagination.
-*   `[Line 307]` **(High - Cost)**: Calling `gemini-2.5-pro` inside a loop.
+*   `[Line 307]` **(High - Cost)**: Calling `gemini-3-pro-preview` inside a loop.
     *   **Pathology:** `consolidate_memories` iterates over groups and calls the LLM sequentially. This is slow and expensive.
     *   **The Fix:** Batch the calls or use `asyncio.gather` (with concurrency limits).
 *   `[Line 139]` **(Logic - Distributed Systems)**: Optional Locking.

@@ -48,7 +48,7 @@ class TranslationService:
             response = await self.gemini_client.generate_text(
                 prompt,
                 temperature=0.0,
-                model_id="gemini-2.5-flash", # Use Flash for speed
+                model_id="gemini-3-flash-preview", # Use Flash for speed
                 task_type="classification"
             )
 

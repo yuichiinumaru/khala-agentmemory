@@ -55,7 +55,7 @@ RULES:
 4. Do not mention "JSON" or "Tools" in the text response. Just do it.
     `;
 
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-3-flash-preview';
     const response = await ai.models.generateContent({
       model,
       contents: query,

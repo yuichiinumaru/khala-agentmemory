@@ -1,7 +1,7 @@
 """
 Gemini Subagent System for KHALA.
 
-Implements parallel task delegation using gemini-2.5-pro subagents
+Implements parallel task delegation using gemini-3-pro-preview subagents
 for concurrent memory processing, verification, and analysis.
 """
 
@@ -55,7 +55,7 @@ class GeminiSubagentSystem:
         configs = {}
         
         base_config = {
-            "model": "gemini-2.5-pro",
+            "model": "gemini-3-pro-preview",
             "temperature": 0.7,
             "timeout": 60,
             "tools": ["gemini-cli"]

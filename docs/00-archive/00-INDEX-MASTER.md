@@ -767,7 +767,7 @@ Purpose : Security architecture and best practices Audience : Security engineers
 
 - LLM Medium : gpt-4o-mini
 
-- LLM Smart : gemini-2.5-pro
+- LLM Smart : gemini-3-pro-preview
 
 - Cache : Redis 7+
 

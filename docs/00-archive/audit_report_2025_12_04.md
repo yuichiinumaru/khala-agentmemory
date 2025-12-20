@@ -64,7 +64,7 @@ This report documents a rigorous audit of the `khala` codebase against the proje
 
 ### 10. Hardcoded Models in Service
 *   **File:** `MultimodalService.ingest_image`
-*   **Issue:** Uses hardcoded `"models/multimodal-embedding-001"` and `"gemini-2.5-pro"` (in analysis fallback).
+*   **Issue:** Uses hardcoded `"models/multimodal-embedding-001"` and `"gemini-3-pro-preview"` (in analysis fallback).
 *   **Recommendation:** Use `ModelRegistry` for all model references.
 
 ## Strategy Verification Summary

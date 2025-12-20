@@ -157,7 +157,7 @@ class EntityExtractionService:
         
         try:
             genai.configure(api_key=api_key)
-            self.gemini_client = genai.GenerativeModel("gemini-2.5-pro")
+            self.gemini_client = genai.GenerativeModel("gemini-3-pro-preview")
             logger.info("Gemini client initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini client: {e}")
@@ -371,7 +371,7 @@ Return only the JSON object, no explanation.
                             end_pos=original_text.find(entity_data["text"]) + len(entity_data["text"]),
                             metadata={
                                 "snippet": entity_data.get("snippet", ""),
-                                "extraction_model": "gemini-2.5-pro"
+                                "extraction_model": "gemini-3-pro-preview"
                             },
                             extraction_method="gemini_llm"
                         )

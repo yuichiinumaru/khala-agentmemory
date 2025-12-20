@@ -896,7 +896,7 @@ Tasks are organized by module with the following format:
 - 3 model tiers:
   - Fast: gemini-1.5-flash ($0.0075/1M tokens)
   - Medium: gpt-4o-mini ($0.015/1M tokens)
-  - Smart: gemini-2.5-pro ($0.1/1M tokens)
+  - Smart: gemini-3-pro-preview ($0.1/1M tokens)
 - Task complexity classifier
 - **Deliverable**: LLM cascading working
 - **Expected Impact**: -60% cost on simple tasks

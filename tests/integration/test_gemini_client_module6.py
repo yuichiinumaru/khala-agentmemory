@@ -17,7 +17,7 @@ async def test_generate_mixture_of_thought():
             if prompt.startswith("Perspective"):
                 return {"content": f"Perspective content for {prompt}", "model_id": "gemini-2.0-flash"}
             else:
-                return {"content": "Synthesized content", "model_id": "gemini-2.5-pro"}
+                return {"content": "Synthesized content", "model_id": "gemini-3-pro-preview"}
 
         client.generate_text = AsyncMock(side_effect=mock_generate_text)
 

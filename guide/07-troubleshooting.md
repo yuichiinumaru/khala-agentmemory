@@ -23,7 +23,7 @@ Common issues and how to fix them.
 **Symptom**: `429 Too Many Requests`.
 **Fix**:
 1. Implement backoff (Khala has internal retries, but a hard limit exists).
-2. Switch to `gemini-2.5-flash` for high-volume tasks (extraction).
+2. Switch to `gemini-3-flash-preview` for high-volume tasks (extraction).
 3. Request a quota increase from Google.
 
 ## 🐛 "IAM Error" / Permissions

@@ -53,8 +53,8 @@ All agents and services MUST adhere to these model configurations:
 
 | Role | Model ID | Use Case |
 | :--- | :--- | :--- |
-| **Reasoning / Logic** | `gemini-2.5-pro` | Complex analysis, debate, consolidation. |
-| **Fast / Routine** | `gemini-2.5-flash` | Classification, simple summaries. |
+| **Reasoning / Logic** | `gemini-3-pro-preview` | Complex analysis, debate, consolidation. |
+| **Fast / Routine** | `gemini-3-flash-preview` | Classification, simple summaries. |
 | **Embeddings** | `models/gemini-embedding-001` | 768d text embeddings. |
 | **Multimodal** | `models/multimodal-embedding-001` | Image/Vision embeddings. |
 

@@ -8,8 +8,8 @@ Khala uses a `MODEL_ID` string map.
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `GEMINI_REASONING_MODEL` | `gemini-2.5-pro` | Used for complex logic, dreams, and debates. |
-| `GEMINI_FAST_MODEL` | `gemini-2.5-flash` | Used for classification and extraction. |
+| `GEMINI_REASONING_MODEL` | `gemini-3-pro-preview` | Used for complex logic, dreams, and debates. |
+| `GEMINI_FAST_MODEL` | `gemini-3-flash-preview` | Used for classification and extraction. |
 | `GEMINI_EMBEDDING_MODEL` | `models/gemini-embedding-001` | The vectorizer. **DO NOT CHANGE ONCE DATA EXISTS.** |
 
 ## 🧠 Database (SurrealDB)

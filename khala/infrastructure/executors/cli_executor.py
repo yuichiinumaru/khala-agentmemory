@@ -86,11 +86,11 @@ class CLISubagentExecutor(SubagentExecutor):
     def _get_model_for_tier(self, tier: ModelTier) -> str:
         """Resolve model name from tier."""
         if tier == ModelTier.FAST:
-            return "gemini-2.5-flash"
+            return "gemini-3-flash-preview"
         elif tier == ModelTier.REASONING:
-            return "gemini-2.5-pro" 
+            return "gemini-3-pro-preview"
         else:
-            return "gemini-2.5-pro"
+            return "gemini-3-pro-preview"
 
     async def _read_stream_safe(self, stream: asyncio.StreamReader) -> str:
         """Read from stream with strict size limits to prevent DoS."""

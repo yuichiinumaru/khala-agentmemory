@@ -85,7 +85,7 @@ class KHALAAgent:
 class ResearchAgent(KHALAAgent):
     def __init__(self):
         super().__init__(
-            model_config={"model": "gemini-2.5-pro", "temperature": 0.7},
+            model_config={"model": "gemini-3-pro-preview", "temperature": 0.7},
             memory_config={"cache_strategy": "research_focused"},
             verification_config={"consensus_required": True}
         )
@@ -103,7 +103,7 @@ class KnowledgeBotAgent(KHALAAgent):
 class TechnicalAgent(KHALAAgent):
     def __init__(self, domain: str):
         super().__init__(
-            model_config={"model": "gemini-2.5-pro", "temperature": 0.1},
+            model_config={"model": "gemini-3-pro-preview", "temperature": 0.1},
             memory_config={"cache_strategy": "technical_focused"},
             verification_config={"consensus_required": True}
         )
@@ -190,7 +190,7 @@ khala/interface/agno/
 agent_config = {
     "model": {
         "provider": "google",
-        "model_id": "gemini-2.5-pro",
+        "model_id": "gemini-3-pro-preview",
         "temperature": 0.7,
         "max_tokens": 4096
     },

@@ -374,7 +374,7 @@ class MemoryLifecycleService:
                             memory_list=memory_list_str
                         ),
                         task_type="generation",
-                        model_id="gemini-2.5-pro"
+                        model_id="gemini-3-pro-preview"
                     )
                     new_content = response.get("content", "").strip()
 

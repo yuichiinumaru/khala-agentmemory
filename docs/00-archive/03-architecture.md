@@ -138,7 +138,7 @@ Results returned to Agent → User
 **LLM: Google Gemini**
 - API: https://ai.google.dev
 - Models:
-  - `gemini-2.5-pro`: Complex reasoning ($0.1/1M tokens)
+  - `gemini-3-pro-preview`: Complex reasoning ($0.1/1M tokens)
   - `gemini-1.5-flash`: Fast extraction ($0.0075/1M tokens)
   - `gemini-embedding-001`: Embeddings (768 dimensions)
 - Integration: Google Generative AI Python SDK
@@ -582,7 +582,7 @@ Agno Agent
   ↓
 LLM Cascade Router (M06)
   ├─ Complexity: high
-  └─ Use gemini-2.5-pro
+  └─ Use gemini-3-pro-preview
   ↓
 Self-Verification Gate (M07)
   ├─ Check: Factual

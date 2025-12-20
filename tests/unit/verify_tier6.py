@@ -77,7 +77,7 @@ async def verify_tier6_features():
         
         # Mock model
         model = GeminiModel(
-            model_id="gemini-2.5-flash",
+            model_id="gemini-3-flash-preview",
             name="Gemini 2.5 Flash",
             tier=ModelTier.FAST,
             cost_per_million_tokens=Decimal("0.10"),
@@ -102,7 +102,7 @@ async def verify_tier6_features():
         new_tracker = CostTracker()
         assert len(new_tracker.cost_records) > 0
         last_record = new_tracker.cost_records[-1]
-        assert last_record.model_id == "gemini-2.5-flash"
+        assert last_record.model_id == "gemini-3-flash-preview"
         print("✅ Costs loaded successfully from file")
         
     except Exception as e:

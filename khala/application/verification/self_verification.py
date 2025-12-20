@@ -79,7 +79,7 @@ class FactualAccuracyCheck(VerificationCheck):
             response = await self.client.generate_text(
                 prompt, 
                 use_caching=True,
-                model_id="gemini-2.5-pro"
+                model_id="gemini-3-pro-preview"
             )
             
             score = float(response['content'].strip())
