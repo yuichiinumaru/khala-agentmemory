@@ -28,8 +28,7 @@ from .models import (
     ModelTier,
     ModelRegistry,
     GEMINI_FAST,
-    GEMINI_REASONING,
-    GEMINI_PRO_2_5
+    GEMINI_REASONING
 )
 from .cost_tracker import CostTracker
 from khala.application.utils import parse_json_safely
@@ -128,7 +127,7 @@ class GeminiClient:
     async def select_model(self, prompt: str, task_type: str = "generation") -> GeminiModel:
         """Select the optimal model."""
         if not self.enable_cascading:
-            return ModelRegistry.get_model("gemini-3-pro-preview")
+            return ModelRegistry.get_model(GEMINI_REASONING)
         
         quality_requirements = {
             "embedding": 0.5, "classification": 0.7,
