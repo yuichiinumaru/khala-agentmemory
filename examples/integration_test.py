@@ -205,7 +205,7 @@ class IntegrationTester:
                 name="Test Agent",
                 description="Comprehensive KHALA agent testing integration",
                 config=AgentConfig(
-                    model={"model_id": "gemini-2.5-pro", "temperature": 0.7},
+                    model={"model_id": "gemini-3-pro-preview", "temperature": 0.7},
                     memory=MemoryConfig(
                         cache_levels=["l1", "l2", "l3"],
                         auto_verification=False,

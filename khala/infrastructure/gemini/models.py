@@ -12,25 +12,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 # --- Model Constants ---
-GEMINI_FLASH_2_0 = "gemini-2.0-flash"
-GEMINI_FLASH_2_5 = "gemini-2.5-flash"
-GEMINI_PRO_2_5 = "gemini-2.5-pro"
+GEMINI_FLASH_3_PREVIEW = "gemini-3-flash-preview"
+GEMINI_PRO_3_PREVIEW = "gemini-3-pro-preview"
 GEMINI_EMBEDDING_001 = "models/gemini-embedding-001"
 GEMINI_MULTIMODAL_EMBEDDING = "models/multimodal-embedding-001"
 
+# Legacy constants (mapped to new models)
+GEMINI_FLASH_2_0 = "gemini-2.0-flash"
+GEMINI_FLASH_2_5 = "gemini-2.5-flash"
+GEMINI_PRO_2_5 = "gemini-2.5-pro"
+
 # Aliases for easier usage
-GEMINI_FAST = GEMINI_FLASH_2_0
-GEMINI_BALANCED = GEMINI_FLASH_2_5
-GEMINI_REASONING = GEMINI_PRO_2_5
+GEMINI_FAST = GEMINI_FLASH_3_PREVIEW
+GEMINI_BALANCED = GEMINI_FLASH_3_PREVIEW
+GEMINI_REASONING = GEMINI_PRO_3_PREVIEW
 GEMINI_EMBEDDING = GEMINI_EMBEDDING_001
 
 
 class ModelTier(Enum):
     """LLM model tiers for cascading optimization."""
     
-    FAST = "fast"        # gemini-2.0-flash
-    MEDIUM = "medium"    # gemini-2.5-flash
-    SMART = "smart"     # gemini-2.5-pro
+    FAST = "fast"        # gemini-3-flash-preview
+    MEDIUM = "medium"    # gemini-3-flash-preview
+    SMART = "smart"      # gemini-3-pro-preview
 
 
 @dataclass
@@ -47,6 +51,7 @@ class GeminiModel:
     top_k: int = 40
     supports_embeddings: bool = False
     embedding_dimensions: Optional[int] = None
+    thinking_mode: bool = False # Indicates if model supports/requires thinking configuration (thinking=high)
     
     def __post_init__(self) -> None:
         """Validate model configuration."""
@@ -77,43 +82,32 @@ class ModelRegistry:
     
     # Predefined model configurations
     MODELS: Dict[str, GeminiModel] = {
-        # Fast tier
-        GEMINI_FLASH_2_0: GeminiModel(
-            name="Gemini 2.0 Flash",
+        # Fast / Routine (Gemini 3 Flash Preview)
+        GEMINI_FLASH_3_PREVIEW: GeminiModel(
+            name="Gemini 3.0 Flash Preview",
             tier=ModelTier.FAST,
-            model_id=GEMINI_FLASH_2_0,
-            cost_per_million_tokens=1.0,
+            model_id=GEMINI_FLASH_3_PREVIEW,
+            cost_per_million_tokens=1.0, # Placeholder cost
             max_tokens=1048576,
-            temperature=0.1,
+            temperature=0.3,
             top_p=0.9,
             top_k=64
         ),
         
-        # Medium tier
-        GEMINI_FLASH_2_5: GeminiModel(
-            name="Gemini 2.5 Flash",
-            tier=ModelTier.MEDIUM,
-            model_id=GEMINI_FLASH_2_5,
-            cost_per_million_tokens=2.0,
-            max_tokens=1048576,
-            temperature=0.3,
-            top_p=0.8,
-            top_k=40
-        ),
-        
-        # Smart tier
-        GEMINI_PRO_2_5: GeminiModel(
-            name="Gemini 2.5 Pro",
+        # Reasoning / Logic (Gemini 3 Pro Preview)
+        GEMINI_PRO_3_PREVIEW: GeminiModel(
+            name="Gemini 3.0 Pro Preview",
             tier=ModelTier.SMART,
-            model_id=GEMINI_PRO_2_5,
-            cost_per_million_tokens=10.0,
+            model_id=GEMINI_PRO_3_PREVIEW,
+            cost_per_million_tokens=10.0, # Placeholder cost
             max_tokens=2097152,
             temperature=0.7,
             top_p=0.8,
-            top_k=40
+            top_k=40,
+            thinking_mode=True # thinking=high
         ),
         
-        # Embedding model (Standard)
+        # Embedding model (Standard 768d for compatibility)
         GEMINI_EMBEDDING_001: GeminiModel(
             name="Gemini Embedding 001",
             tier=ModelTier.FAST,
@@ -144,14 +138,26 @@ class ModelRegistry:
     
     @classmethod
     def get_model(cls, model_id: str) -> GeminiModel:
-        """Get model configuration by model ID."""
+        """Get model configuration by model ID, with legacy interception."""
+        # Intercept legacy models and map to new standards
+        if model_id in ["gemini-2.5-pro", "gemini-2.0-pro-exp", "gemini-1.5-pro"]:
+             return cls.MODELS[GEMINI_PRO_3_PREVIEW]
+
+        if model_id in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+             return cls.MODELS[GEMINI_FLASH_3_PREVIEW]
+
         if model_id not in cls.MODELS:
             raise ValueError(f"Unknown model: {model_id}")
+
         return cls.MODELS[model_id]
     
     @classmethod
     def get_tier_models(cls, tier: ModelTier) -> List[GeminiModel]:
         """Get all models in a specific tier."""
+        # For MEDIUM tier, we fallback to FAST (Flash 3)
+        if tier == ModelTier.MEDIUM:
+            tier = ModelTier.FAST
+
         return [model for model in cls.MODELS.values() if model.tier == tier]
     
     @classmethod
@@ -161,8 +167,8 @@ class ModelRegistry:
             if model.supports_embeddings and model.embedding_dimensions == dimensions:
                 return model
 
-        # Fallback to standard
-        return cls.MODELS.get("gemini-embedding-001")
+        # Fallback to standard 768d
+        return cls.MODELS.get(GEMINI_EMBEDDING_001)
     
     @classmethod
     def get_cost_optimal_model(
@@ -171,18 +177,18 @@ class ModelRegistry:
         required_quality: float = 0.8
     ) -> GeminiModel:
         """Get cost-optimal model based on complexity and quality requirements."""
-        # Adjusted thresholds to favor FAST tier for simple tasks
-        if complexity <= 0.4 and required_quality <= 0.7:
+        # 0.0 - 0.4 -> FAST (Flash)
+        # 0.4 - 0.7 -> FAST (Flash) (since Medium is also Flash 3 now)
+        # 0.7 - 1.0 -> SMART (Pro)
+
+        if complexity <= 0.7 and required_quality <= 0.8:
             tier = ModelTier.FAST
-        elif complexity <= 0.8 and required_quality <= 0.85:
-            tier = ModelTier.MEDIUM  
         else:
             tier = ModelTier.SMART
         
         models = cls.get_tier_models(tier)
         if not models:
-            # Fallback to Smart if lower tier unavailable (unlikely)
-            return cls.get_model(GEMINI_PRO_2_5)
+            return cls.get_model(GEMINI_PRO_3_PREVIEW)
         
         return min(models, key=lambda m: m.cost_per_million_tokens)
 

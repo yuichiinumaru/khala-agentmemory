@@ -256,7 +256,7 @@ class LLMCascade:
             "best_for": ["moderate_reasoning", "summarization"]
         },
         "smart": {
-            "name": "gemini-2.5-pro",
+            "name": "gemini-3-pro-preview",
             "cost_per_1m": 0.1,
             "latency_ms": 2000,
             "best_for": ["complex_reasoning", "debate", "synthesis"]
@@ -304,7 +304,7 @@ class LLMCascade:
             # Use OpenAI API
             pass
         else:
-            response = genai.GenerativeModel("gemini-2.5-pro").generate_content(prompt)
+            response = genai.GenerativeModel("gemini-3-pro-preview").generate_content(prompt)
         
         return response.text
     

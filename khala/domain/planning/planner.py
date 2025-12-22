@@ -52,7 +52,7 @@ class Planner:
         try:
             response = await self.gemini_client.generate_text(
                 prompt,
-                model_id="gemini-2.5-flash", # Use smarter model for planning
+                model_id="gemini-3-flash-preview", # Use smarter model for planning
                 temperature=0.2
             )
             

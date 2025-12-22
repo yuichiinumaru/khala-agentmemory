@@ -641,7 +641,7 @@ class LLMCascade:
     models = {
         "fast": {"model": "gemini-1.5-flash", "cost": 0.0075},
         "medium": {"model": "gpt-4o-mini", "cost": 0.015},
-        "smart": {"model": "gemini-2.5-pro", "cost": 0.1}
+        "smart": {"model": "gemini-3-pro-preview", "cost": 0.1}
     }
     
     async def process(self, task: str, complexity: str):

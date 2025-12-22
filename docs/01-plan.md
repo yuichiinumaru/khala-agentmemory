@@ -28,6 +28,6 @@ Detailed technical plans are organized by domain to maintain granularity without
 ---
 
 ## Technical Constraints
-- **Model Hierarchy**: `gemini-2.5-pro` for reasoning, `gemini-2.5-flash` for routine tasks.
+- **Model Hierarchy**: `gemini-3-pro-preview` for reasoning, `gemini-3-flash-preview` for routine tasks.
 - **Database**: SurrealDB v2.0+ is mandatory.
 - **Protocol**: All operations must be asynchronous and TDD-backed.

@@ -59,7 +59,7 @@ class AgentConfig:
     """Configuration for KHALA agent."""
     model: Dict[str, Any] = field(default_factory=lambda: {
         "provider": "google",
-        "model_id": "gemini-2.5-pro", 
+        "model_id": "gemini-3-pro-preview",
         "temperature": 0.7,
         "max_tokens": 4096
     })
@@ -498,7 +498,7 @@ def create_research_agent() -> KHALAAgent:
     """Create research-focused KHALA agent."""
     config = AgentConfig(
         model={
-            "model_id": "gemini-2.5-pro",
+            "model_id": "gemini-3-pro-preview",
             "temperature": 0.1,
             "max_tokens": 4096
         },
@@ -527,7 +527,7 @@ def create_technical_agent(domain: str) -> KHALAAgent:
     """Create domain-technical specialist agent."""
     config = AgentConfig(
         model={
-            "model_id": "gemini-2.5-pro",
+            "model_id": "gemini-3-pro-preview",
             "temperature": 0.1,
             "max_tokens": 4096
         },

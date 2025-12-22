@@ -23,6 +23,7 @@ except ImportError:
     genai = None
     logging.warning("Google Generative AI not available, entity extraction will be limited")
 
+from ...infrastructure.gemini.models import ModelRegistry, GEMINI_REASONING
 from ...domain.memory.entities import Memory, Entity, Relationship
 from ...domain.memory.value_objects import ImportanceScore, Sentiment
 from ...infrastructure.surrealdb.client import SurrealDBClient
@@ -157,8 +158,9 @@ class EntityExtractionService:
         
         try:
             genai.configure(api_key=api_key)
-            self.gemini_client = genai.GenerativeModel("gemini-2.5-pro")
-            logger.info("Gemini client initialized")
+            model_config = ModelRegistry.get_model(GEMINI_REASONING)
+            self.gemini_client = genai.GenerativeModel(model_config.model_id)
+            logger.info(f"Gemini client initialized with model {model_config.model_id}")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini client: {e}")
             self.gemini_client = None
@@ -371,7 +373,7 @@ Return only the JSON object, no explanation.
                             end_pos=original_text.find(entity_data["text"]) + len(entity_data["text"]),
                             metadata={
                                 "snippet": entity_data.get("snippet", ""),
-                                "extraction_model": "gemini-2.5-pro"
+                                "extraction_model": "gemini-3-pro-preview"
                             },
                             extraction_method="gemini_llm"
                         )

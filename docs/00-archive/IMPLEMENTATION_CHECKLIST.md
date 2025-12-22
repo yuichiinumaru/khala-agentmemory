@@ -25,7 +25,7 @@
 - [ ] Export GOOGLE_API_KEY environment variable
 - [ ] Install google-generativeai library: `pip install google-generativeai`
 - [ ] Test embedding model: `gemini-embedding-001`
-- [ ] Test LLM model: `gemini-2.5-pro`
+- [ ] Test LLM model: `gemini-3-pro-preview`
 - [ ] Configure rate limits (1000 requests/day free)
 
 #### 1.3 Project Structure

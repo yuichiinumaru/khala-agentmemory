@@ -128,7 +128,7 @@ Create one **functional reference agent** with:
 - **Agent Framework**: Agno (https://github.com/agno-agi/agno)
 - **Database**: SurrealDB 2.0+ (https://surrealdb.com)
 - **Embedding Model**: gemini-embedding-001 (768 dimensions)
-- **LLM Primary**: gemini-2.5-pro
+- **LLM Primary**: gemini-3-pro-preview
 - **LLM Fast**: gemini-1.5-flash
 - **LLM Medium**: gpt-4o-mini (OpenAI)
 - **Language**: Python 3.11+
@@ -367,7 +367,7 @@ khala/
 
 **APIs & Services**:
 - Google Gemini API (https://ai.google.dev)
-  - gemini-2.5-pro access
+  - gemini-3-pro-preview access
   - gemini-1.5-flash access
   - gemini-embedding-001 access
 - OpenAI API (for gpt-4o-mini) (https://platform.openai.com)

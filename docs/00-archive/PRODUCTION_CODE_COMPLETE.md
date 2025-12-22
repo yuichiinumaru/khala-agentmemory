@@ -17,7 +17,7 @@ from dataclasses import dataclass
 class GoogleAIConfig:
     api_key: str
     embedding_model: str = "gemini-embedding-001"
-    llm_model: str = "gemini-2.5-pro"
+    llm_model: str = "gemini-3-pro-preview"
     embedding_dimensions: int = 768
 
 @dataclass
@@ -407,7 +407,7 @@ import google.generativeai as genai
 from typing import List, Dict
 
 class EntityExtractor:
-    def __init__(self, api_key: str, model: str = "gemini-2.5-pro"):
+    def __init__(self, api_key: str, model: str = "gemini-3-pro-preview"):
         genai.configure(api_key=api_key)
         self.model = model
     
